@@ -1,28 +1,28 @@
 [
-{
-  "model": "authentication.user",
-  "pk": "0b407fa6-66fe-408b-92e3-9636ee09725f",
-  "fields": {
-    "password": "pbkdf2_sha256$720000$PW1OmO5pKXczwZ8PRP6Ljm$1kywLFLLauuA6DyqUULG7BWfM62PCMULNwfII36voDs=",
-    "email": "admin@hishamos.com",
-    "username": "admin",
-    "first_name": "Hisham",
-    "last_name": "Nasrallah",
-    "role": "admin",
-    "is_active": true,
-    "is_staff": true,
-    "is_superuser": true,
-    "date_joined": "2025-12-06T03:19:39Z",
-    "last_login": "2025-12-07T13:55:52.183Z",
-    "avatar": "",
-    "bio": "",
-    "notification_preferences": {},
-    "two_factor_enabled": false,
-    "two_factor_secret": "",
-    "preferred_language": "en",
-    "timezone": "UTC",
-    "groups": [],
-    "user_permissions": []
+  {
+    "model": "authentication.user",
+    "pk": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "fields": {
+      "password": "pbkdf2_sha256$720000$PW1OmO5pKXczwZ8PRP6Ljm$1kywLFLLauuA6DyqUULG7BWfM62PCMULNwfII36voDs=",
+      "email": "admin@hishamos.com",
+      "username": "admin",
+      "first_name": "Hisham",
+      "last_name": "Nasrallah",
+      "role": "admin",
+      "is_active": true,
+      "is_staff": true,
+      "is_superuser": true,
+      "date_joined": "2025-12-06T03:19:39Z",
+      "last_login": "2025-12-07T13:55:52.183Z",
+      "avatar": "",
+      "bio": "",
+      "notification_preferences": {},
+      "two_factor_enabled": false,
+      "two_factor_secret": "",
+      "preferred_language": "en",
+      "timezone": "UTC",
+      "groups": [],
+      "user_permissions": []
+    }
   }
-}
 ]

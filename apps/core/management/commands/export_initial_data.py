@@ -1,12 +1,15 @@
 """
 Django management command to export all database data as fixtures.
 Simple version - exports everything except users (except admin user).
+Automatically cleans user references to point to admin user for deployment-ready fixtures.
 """
 
+import json
 from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.core import serializers
 from django.apps import apps
+from django.core.serializers.json import DjangoJSONEncoder
 
 
 class Command(BaseCommand):
@@ -84,9 +87,28 @@ class Command(BaseCommand):
             # Save fixture file if we have data
             if all_objects:
                 fixture_file = output_dir / f"{app_label}.json"
-                # Use Django's JSON serializer directly to handle datetime objects
+                # Serialize to Python format first to clean user references
+                serialized_data = serializers.serialize('python', all_objects, use_natural_foreign_keys=False, use_natural_primary_keys=False)
+                
+                # Clean user references: replace all user IDs with admin user ID (if admin exists)
+                if admin_user:
+                    admin_user_id = str(admin_user.id)
+                    for record in serialized_data:
+                        fields = record.get('fields', {})
+                        # Common user reference field names
+                        user_fields = ['owner', 'owner_id', 'created_by', 'created_by_id', 
+                                     'assigned_to', 'assigned_to_id', 'user', 'user_id']
+                        for field_name in user_fields:
+                            if field_name in fields and fields[field_name] is not None:
+                                # Replace with admin user ID
+                                fields[field_name] = admin_user_id
+                        # Handle ManyToMany fields (members, etc.)
+                        if 'members' in fields and fields['members']:
+                            fields['members'] = [admin_user_id]
+                
+                # Save as JSON using Django's JSON encoder (handles datetime, etc.)
                 with open(fixture_file, 'w', encoding='utf-8') as f:
-                    serializers.serialize('json', all_objects, indent=2, stream=f, use_natural_foreign_keys=False, use_natural_primary_keys=False)
+                    json.dump(serialized_data, f, indent=2, ensure_ascii=False, cls=DjangoJSONEncoder)
 
                 total_files += 1
                 total_records += app_total_records

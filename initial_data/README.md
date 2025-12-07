@@ -1,40 +1,58 @@
 # Initial Data
 
-Simple system for exporting and loading database fixtures.
+نظام بسيط لتصدير وتحميل بيانات قاعدة البيانات.
 
-## Export Data
-
-Export all database data (except users, except admin):
+## تصدير البيانات (جاهزة للاستخدام)
 
 ```bash
 python manage.py export_initial_data
 ```
 
-This will:
-- Export all tables from all apps
-- Exclude all users except `admin@hishamos.com`
-- Save fixtures to `initial_data/fixtures/`
+هذا الأمر:
+- يصدر جميع الجداول من جميع التطبيقات
+- يستثني جميع المستخدمين ما عدا `admin@hishamos.com`
+- **ينظف تلقائياً جميع مراجع المستخدمين** ويجعلها تشير إلى admin
+- يجعل الـ fixtures **جاهزة مباشرة للاستخدام** في deployment
 
-## Load Data
+**الملفات المُصدّرة:**
+- `initial_data/fixtures/authentication.json` - admin user فقط
+- `initial_data/fixtures/agents.json`
+- `initial_data/fixtures/commands.json`
+- `initial_data/fixtures/projects.json`
+- `initial_data/fixtures/workflows.json`
+- `initial_data/fixtures/integrations.json`
+- `initial_data/fixtures/chat.json`
+- وغيرها...
 
-Load all fixtures:
+## تحميل البيانات
 
 ```bash
 python manage.py load_initial_data
 ```
 
-This will load all JSON files from `initial_data/fixtures/`.
+هذا الأمر:
+- يحمل جميع الـ fixtures من `initial_data/fixtures/`
+- يتخطى `authentication.json` تلقائياً إذا كان المستخدم موجوداً
+- يعرض ملخص بما تم تحميله
 
-## Manual Loading
+## استخدام مباشر في Deployment
 
-You can also use Django's built-in command:
+**في السيرفر (بعد `migrate` و `setup_admin_user`):**
+
+```bash
+python manage.py load_initial_data
+```
+
+أو:
 
 ```bash
 python manage.py loaddata initial_data/fixtures/*.json
 ```
 
-## Notes
+**ملاحظة:** الـ fixtures جاهزة للاستخدام مباشرة - لا تحتاج تنظيف أو معالجة إضافية.
 
-- All data is exported except users (admin user is included)
-- Fixtures are saved as JSON files, one per app
-- Empty fixtures are not created
+## ملاحظات
+
+- جميع مراجع المستخدمين تم تنظيفها تلقائياً لتشير إلى admin
+- الـ fixtures جاهزة للاستخدام مباشرة في deployment
+- لا تحتاج أي معالجة إضافية

@@ -1,363 +1,363 @@
 [
-{
-  "model": "projects.project",
-  "pk": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
-  "fields": {
-    "name": "calculator",
-    "slug": "calculator",
-    "description": "this project for building aweb application for basic calculator. with modern style",
-    "status": "planning",
-    "start_date": "2025-11-30",
-    "end_date": "2025-12-30",
-    "owner": null,
-    "created_at": "2025-11-30T17:10:10.459Z",
-    "updated_at": "2025-11-30T17:10:10.459Z",
-    "members": []
+  {
+    "model": "projects.project",
+    "pk": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
+    "fields": {
+      "name": "calculator",
+      "slug": "calculator",
+      "description": "this project for building aweb application for basic calculator. with modern style",
+      "status": "planning",
+      "start_date": "2025-11-30",
+      "end_date": "2025-12-30",
+      "owner": null,
+      "created_at": "2025-11-30T17:10:10.459Z",
+      "updated_at": "2025-11-30T17:10:10.459Z",
+      "members": []
+    }
+  },
+  {
+    "model": "projects.project",
+    "pk": "214ae3e7-c8d6-482d-a9c6-4a6a7e59e6d8",
+    "fields": {
+      "name": "tts",
+      "slug": "tts",
+      "description": "dfsfsd",
+      "status": "planning",
+      "start_date": null,
+      "end_date": null,
+      "owner": null,
+      "created_at": "2025-12-04T13:23:43.033Z",
+      "updated_at": "2025-12-04T13:23:43.033Z",
+      "members": []
+    }
+  },
+  {
+    "model": "projects.project",
+    "pk": "4f040fda-bd1c-4125-b8c6-af2736412aba",
+    "fields": {
+      "name": "test project",
+      "slug": "test-project",
+      "description": "sadsad",
+      "status": "planning",
+      "start_date": null,
+      "end_date": null,
+      "owner": null,
+      "created_at": "2025-12-05T22:23:04.100Z",
+      "updated_at": "2025-12-05T22:23:04.100Z",
+      "members": []
+    }
+  },
+  {
+    "model": "projects.project",
+    "pk": "74669934-859e-4e51-b0e0-a475cc3c7ecc",
+    "fields": {
+      "name": "qwewqe",
+      "slug": "qwewqe",
+      "description": "eqwewqe",
+      "status": "planning",
+      "start_date": null,
+      "end_date": null,
+      "owner": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+      "created_at": "2025-12-06T00:40:39.536Z",
+      "updated_at": "2025-12-06T00:40:39.536Z",
+      "members": []
+    }
+  },
+  {
+    "model": "projects.project",
+    "pk": "b01cff89-a49e-4a0a-b84b-4a594787fd06",
+    "fields": {
+      "name": "hishamOS",
+      "slug": "hishamos",
+      "description": "test bugs",
+      "status": "planning",
+      "start_date": null,
+      "end_date": null,
+      "owner": null,
+      "created_at": "2025-12-06T00:45:43.232Z",
+      "updated_at": "2025-12-06T00:45:43.232Z",
+      "members": []
+    }
+  },
+  {
+    "model": "projects.sprint",
+    "pk": "2255b060-52b6-4b2a-b9e4-a48fb314e079",
+    "fields": {
+      "project": "214ae3e7-c8d6-482d-a9c6-4a6a7e59e6d8",
+      "name": "dasdsa",
+      "sprint_number": 1,
+      "goal": "",
+      "status": "planned",
+      "start_date": "2025-12-04",
+      "end_date": "2025-12-04",
+      "total_story_points": 0,
+      "completed_story_points": 0,
+      "created_at": "2025-12-04T14:00:11.442Z",
+      "updated_at": "2025-12-04T14:00:11.442Z"
+    }
+  },
+  {
+    "model": "projects.sprint",
+    "pk": "8efd179c-b3ad-492e-ad28-96fc6ec45d0d",
+    "fields": {
+      "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
+      "name": "preparation sprint",
+      "sprint_number": 1,
+      "goal": "prepare all prerequist needed things and the envirumnment",
+      "status": "planned",
+      "start_date": "2025-11-30",
+      "end_date": "2025-12-30",
+      "total_story_points": 50,
+      "completed_story_points": 0,
+      "created_at": "2025-11-30T17:11:04.790Z",
+      "updated_at": "2025-11-30T17:11:04.790Z"
+    }
+  },
+  {
+    "model": "projects.epic",
+    "pk": "ee215fb6-4357-4e12-8d34-d7b34346c17d",
+    "fields": {
+      "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
+      "title": "dsa",
+      "description": "dasdas",
+      "status": "planned",
+      "start_date": "2025-12-05",
+      "target_date": "2025-12-05",
+      "created_at": "2025-12-05T23:07:26.714Z",
+      "updated_at": "2025-12-05T23:07:26.714Z"
+    }
+  },
+  {
+    "model": "projects.epic",
+    "pk": "28bd736a-b724-4d4e-b323-e5ead986bb40",
+    "fields": {
+      "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
+      "title": "aaa",
+      "description": "aaa",
+      "status": "planned",
+      "start_date": "2025-12-05",
+      "target_date": "2025-12-05",
+      "created_at": "2025-12-05T23:07:41.595Z",
+      "updated_at": "2025-12-05T23:07:41.595Z"
+    }
+  },
+  {
+    "model": "projects.userstory",
+    "pk": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
+    "fields": {
+      "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
+      "sprint": "8efd179c-b3ad-492e-ad28-96fc6ec45d0d",
+      "epic": "28bd736a-b724-4d4e-b323-e5ead986bb40",
+      "title": "authentication part2",
+      "description": "as user i want be able to register and login and logout and reset password and change pasword and deactivate my account and delete my account",
+      "acceptance_criteria": "nothing in my mind for now",
+      "status": "backlog",
+      "priority": "critical",
+      "story_points": 5,
+      "generated_by_ai": false,
+      "generation_workflow": null,
+      "assigned_to": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+      "created_by": null,
+      "created_at": "2025-11-30T17:12:35.652Z",
+      "updated_at": "2025-12-07T14:11:42.030Z"
+    }
+  },
+  {
+    "model": "projects.userstory",
+    "pk": "98cd9a3a-4ce5-42d1-a405-31544fd19832",
+    "fields": {
+      "project": "214ae3e7-c8d6-482d-a9c6-4a6a7e59e6d8",
+      "sprint": "2255b060-52b6-4b2a-b9e4-a48fb314e079",
+      "epic": null,
+      "title": "AAAAAA",
+      "description": "wqqwwq",
+      "acceptance_criteria": "wqwq",
+      "status": "backlog",
+      "priority": "medium",
+      "story_points": null,
+      "generated_by_ai": false,
+      "generation_workflow": null,
+      "assigned_to": null,
+      "created_by": null,
+      "created_at": "2025-12-04T14:00:43.731Z",
+      "updated_at": "2025-12-05T21:01:43.131Z"
+    }
+  },
+  {
+    "model": "projects.userstory",
+    "pk": "0a9289b1-3a33-4452-9dfc-1a28abd265e8",
+    "fields": {
+      "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
+      "sprint": null,
+      "epic": null,
+      "title": "authentication part3",
+      "description": "as user i want be able to register and login and logout and reset password and change pasword and deactivate my account and delete my account",
+      "acceptance_criteria": "nothing in my mind for now",
+      "status": "backlog",
+      "priority": "medium",
+      "story_points": null,
+      "generated_by_ai": false,
+      "generation_workflow": null,
+      "assigned_to": null,
+      "created_by": null,
+      "created_at": "2025-12-05T11:33:56.576Z",
+      "updated_at": "2025-12-06T00:45:10.793Z"
+    }
+  },
+  {
+    "model": "projects.userstory",
+    "pk": "12305045-31ea-498d-b216-3281e65af9c8",
+    "fields": {
+      "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
+      "sprint": "8efd179c-b3ad-492e-ad28-96fc6ec45d0d",
+      "epic": "ee215fb6-4357-4e12-8d34-d7b34346c17d",
+      "title": "dsadsad",
+      "description": "dsadasd",
+      "acceptance_criteria": "dsadasdsad",
+      "status": "backlog",
+      "priority": "low",
+      "story_points": 2,
+      "generated_by_ai": false,
+      "generation_workflow": null,
+      "assigned_to": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+      "created_by": null,
+      "created_at": "2025-12-06T00:44:47.831Z",
+      "updated_at": "2025-12-06T00:44:47.831Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "6e91ca21-48e7-42d7-aad8-9cd992718cd2",
+    "fields": {
+      "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
+      "title": "register",
+      "description": "",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": "2.00",
+      "actual_hours": null,
+      "created_at": "2025-11-30T17:13:03.036Z",
+      "updated_at": "2025-11-30T17:13:03.036Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "f60d4848-d01e-47f8-9f20-a9b6d3867d5e",
+    "fields": {
+      "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
+      "title": "login",
+      "description": "",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": null,
+      "actual_hours": null,
+      "created_at": "2025-11-30T17:13:14.158Z",
+      "updated_at": "2025-11-30T17:13:14.158Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "8c462213-b3f4-4789-b627-3429cd1a1cc5",
+    "fields": {
+      "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
+      "title": "logout",
+      "description": "",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": null,
+      "actual_hours": null,
+      "created_at": "2025-11-30T17:13:23.519Z",
+      "updated_at": "2025-11-30T17:13:23.519Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "6c8ad1fe-5b06-4bbe-8796-2ae07084a573",
+    "fields": {
+      "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
+      "title": "forgot password",
+      "description": "",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": null,
+      "actual_hours": null,
+      "created_at": "2025-11-30T17:13:34.809Z",
+      "updated_at": "2025-11-30T17:13:34.809Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "251847cd-6bfb-4bed-8dc0-d4e3899ac5ea",
+    "fields": {
+      "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
+      "title": "change password",
+      "description": "",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": null,
+      "actual_hours": null,
+      "created_at": "2025-11-30T17:13:44.268Z",
+      "updated_at": "2025-11-30T17:13:44.268Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "a4e7b6df-38c1-48cd-81e8-aea086930708",
+    "fields": {
+      "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
+      "title": "deactivate my account",
+      "description": "",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": null,
+      "actual_hours": null,
+      "created_at": "2025-11-30T17:13:58.393Z",
+      "updated_at": "2025-11-30T17:13:58.393Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "9f52d24b-cab6-44a6-9376-8b4ad47b86a2",
+    "fields": {
+      "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
+      "title": "delete my account",
+      "description": "",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": null,
+      "actual_hours": null,
+      "created_at": "2025-11-30T17:14:07.167Z",
+      "updated_at": "2025-11-30T17:14:07.167Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "836b3d28-b07e-409e-b529-92bfc58724c3",
+    "fields": {
+      "story": "98cd9a3a-4ce5-42d1-a405-31544fd19832",
+      "title": "qwqw",
+      "description": "",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": null,
+      "actual_hours": null,
+      "created_at": "2025-12-04T14:00:52.143Z",
+      "updated_at": "2025-12-04T14:00:52.143Z"
+    }
+  },
+  {
+    "model": "projects.task",
+    "pk": "0d6bcb0c-1489-4f7f-8989-927afeff9fa9",
+    "fields": {
+      "story": "98cd9a3a-4ce5-42d1-a405-31544fd19832",
+      "title": "wqwqw",
+      "description": "wqw",
+      "status": "todo",
+      "assigned_to": null,
+      "estimated_hours": null,
+      "actual_hours": null,
+      "created_at": "2025-12-04T14:00:57.891Z",
+      "updated_at": "2025-12-04T14:00:57.891Z"
+    }
   }
-},
-{
-  "model": "projects.project",
-  "pk": "214ae3e7-c8d6-482d-a9c6-4a6a7e59e6d8",
-  "fields": {
-    "name": "tts",
-    "slug": "tts",
-    "description": "dfsfsd",
-    "status": "planning",
-    "start_date": null,
-    "end_date": null,
-    "owner": null,
-    "created_at": "2025-12-04T13:23:43.033Z",
-    "updated_at": "2025-12-04T13:23:43.033Z",
-    "members": []
-  }
-},
-{
-  "model": "projects.project",
-  "pk": "4f040fda-bd1c-4125-b8c6-af2736412aba",
-  "fields": {
-    "name": "test project",
-    "slug": "test-project",
-    "description": "sadsad",
-    "status": "planning",
-    "start_date": null,
-    "end_date": null,
-    "owner": null,
-    "created_at": "2025-12-05T22:23:04.100Z",
-    "updated_at": "2025-12-05T22:23:04.100Z",
-    "members": []
-  }
-},
-{
-  "model": "projects.project",
-  "pk": "74669934-859e-4e51-b0e0-a475cc3c7ecc",
-  "fields": {
-    "name": "qwewqe",
-    "slug": "qwewqe",
-    "description": "eqwewqe",
-    "status": "planning",
-    "start_date": null,
-    "end_date": null,
-    "owner": "bd810294-0f02-4ba0-a6c2-df19cbf7edda",
-    "created_at": "2025-12-06T00:40:39.536Z",
-    "updated_at": "2025-12-06T00:40:39.536Z",
-    "members": []
-  }
-},
-{
-  "model": "projects.project",
-  "pk": "b01cff89-a49e-4a0a-b84b-4a594787fd06",
-  "fields": {
-    "name": "hishamOS",
-    "slug": "hishamos",
-    "description": "test bugs",
-    "status": "planning",
-    "start_date": null,
-    "end_date": null,
-    "owner": null,
-    "created_at": "2025-12-06T00:45:43.232Z",
-    "updated_at": "2025-12-06T00:45:43.232Z",
-    "members": []
-  }
-},
-{
-  "model": "projects.sprint",
-  "pk": "2255b060-52b6-4b2a-b9e4-a48fb314e079",
-  "fields": {
-    "project": "214ae3e7-c8d6-482d-a9c6-4a6a7e59e6d8",
-    "name": "dasdsa",
-    "sprint_number": 1,
-    "goal": "",
-    "status": "planned",
-    "start_date": "2025-12-04",
-    "end_date": "2025-12-04",
-    "total_story_points": 0,
-    "completed_story_points": 0,
-    "created_at": "2025-12-04T14:00:11.442Z",
-    "updated_at": "2025-12-04T14:00:11.442Z"
-  }
-},
-{
-  "model": "projects.sprint",
-  "pk": "8efd179c-b3ad-492e-ad28-96fc6ec45d0d",
-  "fields": {
-    "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
-    "name": "preparation sprint",
-    "sprint_number": 1,
-    "goal": "prepare all prerequist needed things and the envirumnment",
-    "status": "planned",
-    "start_date": "2025-11-30",
-    "end_date": "2025-12-30",
-    "total_story_points": 50,
-    "completed_story_points": 0,
-    "created_at": "2025-11-30T17:11:04.790Z",
-    "updated_at": "2025-11-30T17:11:04.790Z"
-  }
-},
-{
-  "model": "projects.epic",
-  "pk": "ee215fb6-4357-4e12-8d34-d7b34346c17d",
-  "fields": {
-    "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
-    "title": "dsa",
-    "description": "dasdas",
-    "status": "planned",
-    "start_date": "2025-12-05",
-    "target_date": "2025-12-05",
-    "created_at": "2025-12-05T23:07:26.714Z",
-    "updated_at": "2025-12-05T23:07:26.714Z"
-  }
-},
-{
-  "model": "projects.epic",
-  "pk": "28bd736a-b724-4d4e-b323-e5ead986bb40",
-  "fields": {
-    "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
-    "title": "aaa",
-    "description": "aaa",
-    "status": "planned",
-    "start_date": "2025-12-05",
-    "target_date": "2025-12-05",
-    "created_at": "2025-12-05T23:07:41.595Z",
-    "updated_at": "2025-12-05T23:07:41.595Z"
-  }
-},
-{
-  "model": "projects.userstory",
-  "pk": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
-  "fields": {
-    "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
-    "sprint": "8efd179c-b3ad-492e-ad28-96fc6ec45d0d",
-    "epic": "28bd736a-b724-4d4e-b323-e5ead986bb40",
-    "title": "authentication part2",
-    "description": "as user i want be able to register and login and logout and reset password and change pasword and deactivate my account and delete my account",
-    "acceptance_criteria": "nothing in my mind for now",
-    "status": "backlog",
-    "priority": "critical",
-    "story_points": 5,
-    "generated_by_ai": false,
-    "generation_workflow": null,
-    "assigned_to": "bd810294-0f02-4ba0-a6c2-df19cbf7edda",
-    "created_by": null,
-    "created_at": "2025-11-30T17:12:35.652Z",
-    "updated_at": "2025-12-07T14:11:42.030Z"
-  }
-},
-{
-  "model": "projects.userstory",
-  "pk": "98cd9a3a-4ce5-42d1-a405-31544fd19832",
-  "fields": {
-    "project": "214ae3e7-c8d6-482d-a9c6-4a6a7e59e6d8",
-    "sprint": "2255b060-52b6-4b2a-b9e4-a48fb314e079",
-    "epic": null,
-    "title": "AAAAAA",
-    "description": "wqqwwq",
-    "acceptance_criteria": "wqwq",
-    "status": "backlog",
-    "priority": "medium",
-    "story_points": null,
-    "generated_by_ai": false,
-    "generation_workflow": null,
-    "assigned_to": null,
-    "created_by": null,
-    "created_at": "2025-12-04T14:00:43.731Z",
-    "updated_at": "2025-12-05T21:01:43.131Z"
-  }
-},
-{
-  "model": "projects.userstory",
-  "pk": "0a9289b1-3a33-4452-9dfc-1a28abd265e8",
-  "fields": {
-    "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
-    "sprint": null,
-    "epic": null,
-    "title": "authentication part3",
-    "description": "as user i want be able to register and login and logout and reset password and change pasword and deactivate my account and delete my account",
-    "acceptance_criteria": "nothing in my mind for now",
-    "status": "backlog",
-    "priority": "medium",
-    "story_points": null,
-    "generated_by_ai": false,
-    "generation_workflow": null,
-    "assigned_to": null,
-    "created_by": null,
-    "created_at": "2025-12-05T11:33:56.576Z",
-    "updated_at": "2025-12-06T00:45:10.793Z"
-  }
-},
-{
-  "model": "projects.userstory",
-  "pk": "12305045-31ea-498d-b216-3281e65af9c8",
-  "fields": {
-    "project": "cb3dd7f3-a16c-4c59-a81e-a6484b45149c",
-    "sprint": "8efd179c-b3ad-492e-ad28-96fc6ec45d0d",
-    "epic": "ee215fb6-4357-4e12-8d34-d7b34346c17d",
-    "title": "dsadsad",
-    "description": "dsadasd",
-    "acceptance_criteria": "dsadasdsad",
-    "status": "backlog",
-    "priority": "low",
-    "story_points": 2,
-    "generated_by_ai": false,
-    "generation_workflow": null,
-    "assigned_to": "bd810294-0f02-4ba0-a6c2-df19cbf7edda",
-    "created_by": null,
-    "created_at": "2025-12-06T00:44:47.831Z",
-    "updated_at": "2025-12-06T00:44:47.831Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "6e91ca21-48e7-42d7-aad8-9cd992718cd2",
-  "fields": {
-    "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
-    "title": "register",
-    "description": "",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": "2.00",
-    "actual_hours": null,
-    "created_at": "2025-11-30T17:13:03.036Z",
-    "updated_at": "2025-11-30T17:13:03.036Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "f60d4848-d01e-47f8-9f20-a9b6d3867d5e",
-  "fields": {
-    "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
-    "title": "login",
-    "description": "",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": null,
-    "actual_hours": null,
-    "created_at": "2025-11-30T17:13:14.158Z",
-    "updated_at": "2025-11-30T17:13:14.158Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "8c462213-b3f4-4789-b627-3429cd1a1cc5",
-  "fields": {
-    "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
-    "title": "logout",
-    "description": "",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": null,
-    "actual_hours": null,
-    "created_at": "2025-11-30T17:13:23.519Z",
-    "updated_at": "2025-11-30T17:13:23.519Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "6c8ad1fe-5b06-4bbe-8796-2ae07084a573",
-  "fields": {
-    "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
-    "title": "forgot password",
-    "description": "",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": null,
-    "actual_hours": null,
-    "created_at": "2025-11-30T17:13:34.809Z",
-    "updated_at": "2025-11-30T17:13:34.809Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "251847cd-6bfb-4bed-8dc0-d4e3899ac5ea",
-  "fields": {
-    "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
-    "title": "change password",
-    "description": "",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": null,
-    "actual_hours": null,
-    "created_at": "2025-11-30T17:13:44.268Z",
-    "updated_at": "2025-11-30T17:13:44.268Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "a4e7b6df-38c1-48cd-81e8-aea086930708",
-  "fields": {
-    "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
-    "title": "deactivate my account",
-    "description": "",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": null,
-    "actual_hours": null,
-    "created_at": "2025-11-30T17:13:58.393Z",
-    "updated_at": "2025-11-30T17:13:58.393Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "9f52d24b-cab6-44a6-9376-8b4ad47b86a2",
-  "fields": {
-    "story": "ae1fe5ca-3874-43e5-9751-9f146a26d44b",
-    "title": "delete my account",
-    "description": "",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": null,
-    "actual_hours": null,
-    "created_at": "2025-11-30T17:14:07.167Z",
-    "updated_at": "2025-11-30T17:14:07.167Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "836b3d28-b07e-409e-b529-92bfc58724c3",
-  "fields": {
-    "story": "98cd9a3a-4ce5-42d1-a405-31544fd19832",
-    "title": "qwqw",
-    "description": "",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": null,
-    "actual_hours": null,
-    "created_at": "2025-12-04T14:00:52.143Z",
-    "updated_at": "2025-12-04T14:00:52.143Z"
-  }
-},
-{
-  "model": "projects.task",
-  "pk": "0d6bcb0c-1489-4f7f-8989-927afeff9fa9",
-  "fields": {
-    "story": "98cd9a3a-4ce5-42d1-a405-31544fd19832",
-    "title": "wqwqw",
-    "description": "wqw",
-    "status": "todo",
-    "assigned_to": null,
-    "estimated_hours": null,
-    "actual_hours": null,
-    "created_at": "2025-12-04T14:00:57.891Z",
-    "updated_at": "2025-12-04T14:00:57.891Z"
-  }
-}
 ]

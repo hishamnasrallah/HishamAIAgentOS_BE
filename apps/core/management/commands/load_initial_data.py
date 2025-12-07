@@ -6,6 +6,7 @@ Simple version - loads all fixtures from initial_data/fixtures.
 from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.core.management import call_command
+from django.apps import apps
 
 
 class Command(BaseCommand):
@@ -50,26 +51,52 @@ class Command(BaseCommand):
 
         loaded_count = 0
         error_count = 0
+        skipped_count = 0
+
+        # Check if admin user exists (to skip authentication.json if needed)
+        admin_exists = False
+        try:
+            User = apps.get_model('authentication', 'User')
+            admin_exists = User.objects.filter(email='admin@hishamos.com').exists()
+        except:
+            pass
 
         for fixture_file in fixture_files:
+            # Skip authentication.json if admin user already exists
+            if fixture_file.name == 'authentication.json' and admin_exists:
+                self.stdout.write(f"⏭️  {fixture_file.name}: Skipped (admin user already exists)", ending='')
+                self.stdout.write("")
+                skipped_count += 1
+                continue
+
             try:
                 self.stdout.write(f"📥 Loading {fixture_file.name}...", ending=' ')
                 call_command('loaddata', str(fixture_file), verbosity=0)
                 self.stdout.write(self.style.SUCCESS("✅"))
                 loaded_count += 1
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f"❌ Error: {e}"))
-                error_count += 1
+                error_msg = str(e)
+                # If it's a UNIQUE constraint error for users, skip it
+                if 'authentication.json' in str(fixture_file) and 'UNIQUE constraint' in error_msg:
+                    self.stdout.write(self.style.WARNING("⏭️  Skipped (user already exists)"))
+                    skipped_count += 1
+                else:
+                    self.stdout.write(self.style.ERROR(f"❌ Error: {error_msg[:100]}"))
+                    error_count += 1
 
         # Summary
         self.stdout.write("")
         self.stdout.write("=" * 70)
         if error_count == 0:
             self.stdout.write(self.style.SUCCESS(f"[SUCCESS] All fixtures loaded!"))
-            self.stdout.write(f"   Files loaded: {loaded_count}")
+            self.stdout.write(f"   ✅ Loaded: {loaded_count}")
+            if skipped_count > 0:
+                self.stdout.write(f"   ⏭️  Skipped: {skipped_count}")
         else:
             self.stdout.write(self.style.WARNING(f"[WARNING] Some fixtures failed to load"))
             self.stdout.write(f"   ✅ Loaded: {loaded_count}")
+            if skipped_count > 0:
+                self.stdout.write(f"   ⏭️  Skipped: {skipped_count}")
             self.stdout.write(f"   ❌ Errors: {error_count}")
         self.stdout.write("=" * 70)
         self.stdout.write("")
