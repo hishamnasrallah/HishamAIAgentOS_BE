@@ -1,1517 +1,3044 @@
 [
-  {
-    "model": "workflows.workflow",
-    "pk": "12dc6ac8-ac4c-4b7d-b237-fb15525f8f24",
-    "fields": {
-      "name": "SDLC",
-      "slug": "sdlc",
-      "description": "dasdasd",
-      "definition": {
-        "test": "tset"
-      },
-      "version": "1.0.0",
-      "status": "draft",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T01:00:28.016Z",
-      "updated_at": "2025-12-06T01:00:28.016Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "bb59a28a-9374-47eb-8b3b-51cf61f3a1ed",
-    "fields": {
-      "name": "Simple Test Workflow",
-      "slug": "simple-test-workflow",
-      "description": "A simple single-step workflow for testing",
-      "definition": {
-        "name": "Simple Test Workflow",
-        "version": "1.0.0",
-        "description": "A simple single-step workflow for testing",
-        "steps": [
-          {
-            "id": "step1",
-            "name": "Execute Task",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "task_description": "{{input.task}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 3,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:17.172Z",
-      "updated_at": "2025-12-07T14:10:08.279Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "f5b8938e-f4de-41bd-984a-215115b103e6",
-    "fields": {
-      "name": "Multi-Step Test Workflow",
-      "slug": "multi-step-test-workflow",
-      "description": "A multi-step workflow for testing sequential execution",
-      "definition": {
-        "name": "Multi-Step Test Workflow",
-        "version": "1.0.0",
-        "description": "A multi-step workflow for testing sequential execution",
-        "steps": [
-          {
-            "id": "step1",
-            "name": "First Step",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "task_description": "Process the input: {{input.message}}"
-            },
-            "on_success": "step2"
-          },
-          {
-            "id": "step2",
-            "name": "Second Step",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "task_description": "Continue processing: {{steps.step1.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 17,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:17.192Z",
-      "updated_at": "2025-12-06T12:53:55.547Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "0921846d-dd5d-4ff1-b795-81f88d6ec21d",
-    "fields": {
-      "name": "Conditional Test Workflow",
-      "slug": "conditional-test-workflow",
-      "description": "A workflow with conditional logic",
-      "definition": {
-        "name": "Conditional Test Workflow",
-        "version": "1.0.0",
-        "description": "A workflow with conditional logic",
-        "steps": [
-          {
-            "id": "check",
-            "name": "Check Condition",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "task_description": "Evaluate: {{input.value}}"
-            },
-            "on_success": "process",
-            "on_failure": "skip"
-          },
-          {
-            "id": "process",
-            "name": "Process Data",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "task_description": "Process: {{steps.check.output}}"
-            },
-            "condition": "{{steps.check.output.success}} == true"
-          },
-          {
-            "id": "skip",
-            "name": "Skip Processing",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "task_description": "Skip processing"
-            }
-          }
-        ]
-      },
-      "version": "1.0.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 4,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:17.197Z",
-      "updated_at": "2025-12-06T13:43:23.704Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "76d1204d-3962-4ae3-ad12-0bf4c3658a13",
-    "fields": {
-      "name": "Accessibility Audit",
-      "slug": "accessibility-audit",
-      "description": "Web accessibility audit workflow",
-      "definition": {
-        "name": "Accessibility Audit",
-        "version": "1.0",
-        "description": "Web accessibility audit workflow",
-        "steps": [
-          {
-            "id": "scan_accessibility",
-            "name": "Scan for Accessibility Issues",
-            "agent": "Research Analyst",
-            "inputs": {
-              "website_url": "{{input.url}}"
-            },
-            "on_success": "analyze_wcag"
-          },
-          {
-            "id": "analyze_wcag",
-            "name": "Analyze WCAG Compliance",
-            "agent": "Research Analyst",
-            "inputs": {
-              "scan_results": "{{steps.scan_accessibility.output}}"
-            },
-            "on_success": "create_remediation_plan"
-          },
-          {
-            "id": "create_remediation_plan",
-            "name": "Create Remediation Plan",
-            "agent": "Research Analyst",
-            "inputs": {
-              "wcag_analysis": "{{steps.analyze_wcag.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 1,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.257Z",
-      "updated_at": "2025-12-06T12:19:01.777Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "b5e949f1-118a-4892-b148-2000802a0ccd",
-    "fields": {
-      "name": "API Documentation Generation",
-      "slug": "api-documentation-generation",
-      "description": "Generate comprehensive API documentation",
-      "definition": {
-        "name": "API Documentation Generation",
-        "version": "1.0",
-        "description": "Generate comprehensive API documentation",
-        "steps": [
-          {
-            "id": "analyze_api",
-            "name": "Analyze API Endpoints",
-            "agent": "Research Analyst",
-            "inputs": {
-              "api_spec": "{{input.openapi_spec}}"
-            },
-            "on_success": "generate_docs"
-          },
-          {
-            "id": "generate_docs",
-            "name": "Generate Documentation",
-            "agent": "Research Analyst",
-            "inputs": {
-              "api_analysis": "{{steps.analyze_api.output}}"
-            },
-            "on_success": "add_examples"
-          },
-          {
-            "id": "add_examples",
-            "name": "Add Code Examples",
-            "agent": "Research Analyst",
-            "inputs": {
-              "documentation": "{{steps.generate_docs.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 6,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.264Z",
-      "updated_at": "2025-12-07T14:10:49.669Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "3cb6a6c4-692b-4ab8-8332-84fea41e0e29",
-    "fields": {
-      "name": "Bug Lifecycle",
-      "slug": "bug-lifecycle",
-      "description": "Complete bug lifecycle from report to deployment and closure",
-      "definition": {
-        "name": "Bug Lifecycle",
-        "version": "1.0",
-        "description": "Complete bug lifecycle from report to deployment and closure",
-        "metadata": {
-          "author": "HishamOS",
-          "created_date": "2024-12-01",
-          "tags": [
-            "bug",
-            "sdlc",
-            "qa",
-            "development"
-          ]
-        },
-        "steps": [
-          {
-            "id": "triage",
-            "name": "Bug Triage",
-            "agent": "Research Analyst",
-            "inputs": {
-              "bug_description": "{{input.bug_description}}",
-              "project_context": "{{input.project}}"
-            },
-            "on_success": "assign",
-            "on_failure": "notify_team",
-            "max_retries": 2
-          },
-          {
-            "id": "assign",
-            "name": "Assign to Developer",
-            "agent": "Research Analyst",
-            "inputs": {
-              "bug_info": "{{steps.triage.output}}",
-              "team_capacity": "{{input.team_capacity}}"
-            },
-            "condition": "{{steps.triage.output.severity}} > 2",
-            "on_success": "fix",
-            "max_retries": 1
-          },
-          {
-            "id": "fix",
-            "name": "Implement Fix",
-            "agent": "Research Analyst",
-            "inputs": {
-              "bug_details": "{{steps.triage.output}}",
-              "assigned_dev": "{{steps.assign.output.developer}}"
-            },
-            "on_success": "code_review",
-            "on_failure": "escalate",
-            "max_retries": 3,
-            "timeout_seconds": 600
-          },
-          {
-            "id": "code_review",
-            "name": "Code Review",
-            "agent": "Research Analyst",
-            "inputs": {
-              "code_changes": "{{steps.fix.output.code}}",
-              "bug_context": "{{steps.triage.output}}"
-            },
-            "on_success": "qa_test",
-            "on_failure": "fix",
-            "max_retries": 2
-          },
-          {
-            "id": "qa_test",
-            "name": "QA Testing",
-            "agent": "Research Analyst",
-            "inputs": {
-              "fix_description": "{{steps.fix.output}}",
-              "test_scenarios": "{{steps.triage.output.test_cases}}"
-            },
-            "on_success": "deploy",
-            "on_failure": "fix",
-            "max_retries": 2
-          },
-          {
-            "id": "deploy",
-            "name": "Deploy Fix",
-            "agent": "Research Analyst",
-            "inputs": {
-              "deployment_package": "{{steps.qa_test.output}}",
-              "environment": "production"
-            },
-            "on_success": "close",
-            "on_failure": "rollback",
-            "max_retries": 1,
-            "timeout_seconds": 900
-          },
-          {
-            "id": "close",
-            "name": "Close Bug",
-            "agent": "Research Analyst",
-            "inputs": {
-              "bug_id": "{{input.bug_id}}",
-              "resolution": "{{steps.deploy.output}}"
-            },
-            "max_retries": 1
-          },
-          {
-            "id": "escalate",
-            "name": "Escalate to Senior Dev",
-            "agent": "Research Analyst",
-            "inputs": {
-              "bug_info": "{{steps.triage.output}}",
-              "failure_reason": "{{steps.fix.error}}"
-            },
-            "on_success": "fix"
-          },
-          {
-            "id": "rollback",
-            "name": "Rollback Deployment",
-            "agent": "Research Analyst",
-            "inputs": {
-              "deployment_id": "{{steps.deploy.output.deployment_id}}"
-            },
-            "on_failure": "notify_team"
-          },
-          {
-            "id": "notify_team",
-            "name": "Notify Team of Failure",
-            "agent": "Research Analyst",
-            "inputs": {
-              "workflow_state": "{{steps}}",
-              "error_details": "Critical workflow failure"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.278Z",
-      "updated_at": "2025-12-06T07:48:23.278Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "52a5a50f-6f0c-40ee-8c19-49bceb34d92e",
-    "fields": {
-      "name": "Code Review",
-      "slug": "code-review",
-      "description": "Comprehensive code review with automated checks and peer review",
-      "definition": {
-        "name": "Code Review",
-        "version": "1.0",
-        "description": "Comprehensive code review with automated checks and peer review",
-        "metadata": {
-          "author": "HishamOS",
-          "created_date": "2024-12-01",
-          "tags": [
-            "code-review",
-            "quality",
-            "collaboration"
-          ]
-        },
-        "steps": [
-          {
-            "id": "automated_checks",
-            "name": "Run Automated Checks",
-            "agent": "Research Analyst",
-            "inputs": {
-              "code_diff": "{{input.code_changes}}",
-              "repo_url": "{{input.repository}}"
-            },
-            "on_success": "peer_review",
-            "on_failure": "request_fixes",
-            "max_retries": 1
-          },
-          {
-            "id": "peer_review",
-            "name": "Peer Code Review",
-            "agent": "Research Analyst",
-            "inputs": {
-              "code_changes": "{{input.code_changes}}",
-              "automated_report": "{{steps.automated_checks.output}}",
-              "review_guidelines": "{{input.guidelines}}"
-            },
-            "condition": "{{steps.automated_checks.output.passed}} == true",
-            "on_success": "approval_check",
-            "on_failure": "request_fixes",
-            "max_retries": 1,
-            "timeout_seconds": 600
-          },
-          {
-            "id": "approval_check",
-            "name": "Check Approval Status",
-            "agent": "Research Analyst",
-            "inputs": {
-              "review_feedback": "{{steps.peer_review.output}}"
-            },
-            "condition": "{{steps.peer_review.output.issues_count}} == 0",
-            "on_success": "approve",
-            "on_failure": "request_fixes"
-          },
-          {
-            "id": "request_fixes",
-            "name": "Request Code Fixes",
-            "agent": "Research Analyst",
-            "inputs": {
-              "review_comments": "{{steps.peer_review.output.comments}}",
-              "author": "{{input.author}}"
-            },
-            "skip_if": "{{steps.approval_check.output.approved}} == true"
-          },
-          {
-            "id": "approve",
-            "name": "Approve Changes",
-            "agent": "Research Analyst",
-            "inputs": {
-              "pull_request": "{{input.pr_id}}",
-              "reviews": "{{steps}}"
-            },
-            "max_retries": 1
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 1,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.291Z",
-      "updated_at": "2025-12-07T14:10:28.307Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "d25bed93-113b-4b04-ae4d-c0711c2485db",
-    "fields": {
-      "name": "Content Publishing",
-      "slug": "content-publishing",
-      "description": "Content review and publishing workflow",
-      "definition": {
-        "name": "Content Publishing",
-        "version": "1.0",
-        "description": "Content review and publishing workflow",
-        "steps": [
-          {
-            "id": "review_content",
-            "name": "Review Content Quality",
-            "agent": "Research Analyst",
-            "inputs": {
-              "content": "{{input.draft_content}}"
-            },
-            "on_success": "approve"
-          },
-          {
-            "id": "approve",
-            "name": "Content Approval",
-            "agent": "Research Analyst",
-            "inputs": {
-              "reviewed_content": "{{steps.review_content.output}}"
-            },
-            "condition": "{{steps.review_content.output.quality_score}} > 7",
-            "on_success": "publish",
-            "on_failure": "request_revisions"
-          },
-          {
-            "id": "publish",
-            "name": "Publish Content",
-            "agent": "Research Analyst",
-            "inputs": {
-              "approved_content": "{{steps.approve.output}}"
-            }
-          },
-          {
-            "id": "request_revisions",
-            "name": "Request Content Revisions",
-            "agent": "Research Analyst",
-            "inputs": {
-              "feedback": "{{steps.review_content.output.issues}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.310Z",
-      "updated_at": "2025-12-06T07:48:23.310Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "30f4dc8f-14e0-49f8-b3aa-b44f6fc69ad7",
-    "fields": {
-      "name": "Database Backup",
-      "slug": "database-backup",
-      "description": "Automated database backup workflow",
-      "definition": {
-        "name": "Database Backup",
-        "version": "1.0",
-        "description": "Automated database backup workflow",
-        "steps": [
-          {
-            "id": "create_backup",
-            "name": "Create Database Backup",
-            "agent": "Research Analyst",
-            "inputs": {
-              "database": "{{input.database_name}}"
-            },
-            "on_success": "verify_backup",
-            "timeout_seconds": 3600
-          },
-          {
-            "id": "verify_backup",
-            "name": "Verify Backup Integrity",
-            "agent": "Research Analyst",
-            "inputs": {
-              "backup_file": "{{steps.create_backup.output}}"
-            },
-            "on_success": "store_backup",
-            "on_failure": "create_backup"
-          },
-          {
-            "id": "store_backup",
-            "name": "Store Backup Securely",
-            "agent": "Research Analyst",
-            "inputs": {
-              "verified_backup": "{{steps.verify_backup.output}}",
-              "storage_location": "{{input.backup_storage}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.320Z",
-      "updated_at": "2025-12-06T07:48:23.320Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "be503c33-01ef-42e2-a685-e686031fc8b1",
-    "fields": {
-      "name": "Database Migration",
-      "slug": "database-migration",
-      "description": "Safe database migration workflow",
-      "definition": {
-        "name": "Database Migration",
-        "version": "1.0",
-        "description": "Safe database migration workflow",
-        "steps": [
-          {
-            "id": "analyze_schema",
-            "name": "Analyze Schema Changes",
-            "agent": "Research Analyst",
-            "inputs": {
-              "current_schema": "{{input.schema}}",
-              "target_schema": "{{input.new_schema}}"
-            },
-            "on_success": "generate_migration"
-          },
-          {
-            "id": "generate_migration",
-            "name": "Generate Migration Script",
-            "agent": "Research Analyst",
-            "inputs": {
-              "analysis": "{{steps.analyze_schema.output}}"
-            },
-            "on_success": "test_migration"
-          },
-          {
-            "id": "test_migration",
-            "name": "Test Migration on Staging",
-            "agent": "Research Analyst",
-            "inputs": {
-              "migration_script": "{{steps.generate_migration.output}}",
-              "environment": "staging"
-            },
-            "on_success": "apply_production",
-            "on_failure": "rollback"
-          },
-          {
-            "id": "apply_production",
-            "name": "Apply to Production",
-            "agent": "Research Analyst",
-            "inputs": {
-              "tested_migration": "{{steps.test_migration.output}}"
-            },
-            "max_retries": 1
-          },
-          {
-            "id": "rollback",
-            "name": "Rollback Migration",
-            "agent": "Research Analyst",
-            "inputs": {
-              "failed_migration": "{{steps.test_migration.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.326Z",
-      "updated_at": "2025-12-06T07:48:23.326Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "32607f8f-ea0b-4d1e-a8d2-ed82fc3e924d",
-    "fields": {
-      "name": "Dependency Update",
-      "slug": "dependency-update",
-      "description": "Safe dependency update workflow",
-      "definition": {
-        "name": "Dependency Update",
-        "version": "1.0",
-        "description": "Safe dependency update workflow",
-        "steps": [
-          {
-            "id": "check_updates",
-            "name": "Check for Dependency Updates",
-            "agent": "Research Analyst",
-            "inputs": {
-              "project": "{{input.project_path}}"
-            },
-            "on_success": "analyze_changes"
-          },
-          {
-            "id": "analyze_changes",
-            "name": "Analyze Breaking Changes",
-            "agent": "Research Analyst",
-            "inputs": {
-              "updates": "{{steps.check_updates.output}}"
-            },
-            "on_success": "apply_updates"
-          },
-          {
-            "id": "apply_updates",
-            "name": "Apply Dependency Updates",
-            "agent": "Research Analyst",
-            "inputs": {
-              "safe_updates": "{{steps.analyze_changes.output.safe_updates}}"
-            },
-            "on_success": "test"
-          },
-          {
-            "id": "test",
-            "name": "Run Test Suite",
-            "agent": "Research Analyst",
-            "inputs": {
-              "updated_project": "{{steps.apply_updates.output}}"
-            },
-            "on_success": "commit",
-            "on_failure": "rollback_updates"
-          },
-          {
-            "id": "commit",
-            "name": "Commit Updates",
-            "agent": "Research Analyst",
-            "inputs": {
-              "changes": "{{steps.apply_updates.output}}"
-            }
-          },
-          {
-            "id": "rollback_updates",
-            "name": "Rollback Failed Updates",
-            "agent": "Research Analyst",
-            "inputs": {
-              "failed": "{{steps.test.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.334Z",
-      "updated_at": "2025-12-06T07:48:23.334Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "c29810c9-a15a-485c-8f37-fe0fd1817d7f",
-    "fields": {
-      "name": "Feature Development",
-      "slug": "feature-development",
-      "description": "Complete feature development lifecycle from story to production",
-      "definition": {
-        "name": "Feature Development",
-        "version": "1.0",
-        "description": "Complete feature development lifecycle from story to production",
-        "metadata": {
-          "author": "HishamOS",
-          "created_date": "2024-12-01",
-          "tags": [
-            "feature",
-            "development",
-            "agile"
-          ]
-        },
-        "steps": [
-          {
-            "id": "create_story",
-            "name": "Generate User Story",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "feature_idea": "{{input.feature_description}}",
-              "product_context": "{{input.product_vision}}"
-            },
-            "on_success": "design",
-            "max_retries": 2
-          },
-          {
-            "id": "design",
-            "name": "Technical Design",
-            "agent": "Research Analyst",
-            "inputs": {
-              "user_story": "{{steps.create_story.output}}",
-              "system_architecture": "{{input.architecture}}"
-            },
-            "on_success": "implement",
-            "max_retries": 2
-          },
-          {
-            "id": "implement",
-            "name": "Implement Feature",
-            "agent": "Research Analyst",
-            "inputs": {
-              "technical_design": "{{steps.design.output}}",
-              "user_story": "{{steps.create_story.output}}"
-            },
-            "on_success": "review",
-            "on_failure": "design",
-            "max_retries": 3,
-            "timeout_seconds": 900
-          },
-          {
-            "id": "review",
-            "name": "Code Review",
-            "agent": "Research Analyst",
-            "inputs": {
-              "code_changes": "{{steps.implement.output}}",
-              "design_doc": "{{steps.design.output}}"
-            },
-            "on_success": "test",
-            "on_failure": "implement",
-            "max_retries": 2
-          },
-          {
-            "id": "test",
-            "name": "Feature Testing",
-            "agent": "Research Analyst",
-            "inputs": {
-              "feature_code": "{{steps.implement.output}}",
-              "acceptance_criteria": "{{steps.create_story.output.acceptance_criteria}}"
-            },
-            "on_success": "deploy",
-            "on_failure": "implement",
-            "max_retries": 2
-          },
-          {
-            "id": "deploy",
-            "name": "Deploy Feature",
-            "agent": "Research Analyst",
-            "inputs": {
-              "feature_package": "{{steps.test.output}}",
-              "environment": "{{input.target_environment}}"
-            },
-            "max_retries": 2,
-            "timeout_seconds": 600
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.342Z",
-      "updated_at": "2025-12-06T07:48:23.342Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "519f7d20-6b39-40e2-bfa4-9cf61a0c4159",
-    "fields": {
-      "name": "Incident Response",
-      "slug": "incident-response",
-      "description": "Production incident response workflow",
-      "definition": {
-        "name": "Incident Response",
-        "version": "1.0",
-        "description": "Production incident response workflow",
-        "steps": [
-          {
-            "id": "detect_incident",
-            "name": "Detect and Classify Incident",
-            "agent": "Research Analyst",
-            "inputs": {
-              "alert_data": "{{input.alert}}"
-            },
-            "on_success": "assess_impact"
-          },
-          {
-            "id": "assess_impact",
-            "name": "Assess Impact",
-            "agent": "Research Analyst",
-            "inputs": {
-              "incident": "{{steps.detect_incident.output}}"
-            },
-            "on_success": "mitigate"
-          },
-          {
-            "id": "mitigate",
-            "name": "Mitigate Incident",
-            "agent": "Research Analyst",
-            "inputs": {
-              "impact_assessment": "{{steps.assess_impact.output}}"
-            },
-            "condition": "{{steps.assess_impact.output.severity}} > 3",
-            "on_success": "monitor",
-            "max_retries": 3
-          },
-          {
-            "id": "monitor",
-            "name": "Monitor Resolution",
-            "agent": "Research Analyst",
-            "inputs": {
-              "mitigation": "{{steps.mitigate.output}}"
-            },
-            "on_success": "post_mortem"
-          },
-          {
-            "id": "post_mortem",
-            "name": "Create Post-Mortem",
-            "agent": "Research Analyst",
-            "inputs": {
-              "incident_data": "{{steps}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 1,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.349Z",
-      "updated_at": "2025-12-06T12:53:15.890Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "3fbcdd8d-5e27-40e1-8183-942717449611",
-    "fields": {
-      "name": "Load Testing",
-      "slug": "load-testing",
-      "description": "Performance load testing workflow",
-      "definition": {
-        "name": "Load Testing",
-        "version": "1.0",
-        "description": "Performance load testing workflow",
-        "steps": [
-          {
-            "id": "setup_test_environment",
-            "name": "Setup Load Test Environment",
-            "agent": "Research Analyst",
-            "inputs": {
-              "target_url": "{{input.application_url}}"
-            },
-            "on_success": "run_load_test"
-          },
-          {
-            "id": "run_load_test",
-            "name": "Execute Load Test",
-            "agent": "Research Analyst",
-            "inputs": {
-              "test_config": "{{input.load_test_config}}",
-              "environment": "{{steps.setup_test_environment.output}}"
-            },
-            "on_success": "analyze_results",
-            "timeout_seconds": 1800
-          },
-          {
-            "id": "analyze_results",
-            "name": "Analyze Test Results",
-            "agent": "Research Analyst",
-            "inputs": {
-              "test_results": "{{steps.run_load_test.output}}"
-            },
-            "on_success": "report"
-          },
-          {
-            "id": "report",
-            "name": "Generate Load Test Report",
-            "agent": "Research Analyst",
-            "inputs": {
-              "analysis": "{{steps.analyze_results.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.356Z",
-      "updated_at": "2025-12-06T07:48:23.356Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "6f11894f-f902-41ec-ac85-b301e7c6d0e0",
-    "fields": {
-      "name": "Developer Onboarding",
-      "slug": "developer-onboarding",
-      "description": "Automated developer onboarding process",
-      "definition": {
-        "name": "Developer Onboarding",
-        "version": "1.0",
-        "description": "Automated developer onboarding process",
-        "steps": [
-          {
-            "id": "setup_environment",
-            "name": "Setup Development Environment",
-            "agent": "Research Analyst",
-            "inputs": {
-              "developer_info": "{{input.developer}}"
-            },
-            "on_success": "grant_access"
-          },
-          {
-            "id": "grant_access",
-            "name": "Grant System Access",
-            "agent": "Research Analyst",
-            "inputs": {
-              "developer": "{{input.developer}}",
-              "repositories": "{{input.repos}}"
-            },
-            "on_success": "generate_docs"
-          },
-          {
-            "id": "generate_docs",
-            "name": "Generate Onboarding Documentation",
-            "agent": "Research Analyst",
-            "inputs": {
-              "project_info": "{{input.project}}"
-            },
-            "on_success": "assign_mentor"
-          },
-          {
-            "id": "assign_mentor",
-            "name": "Assign Mentor",
-            "agent": "Research Analyst",
-            "inputs": {
-              "new_developer": "{{input.developer}}",
-              "team": "{{input.team}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.363Z",
-      "updated_at": "2025-12-06T07:48:23.363Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "98f1ac8e-66b9-40da-b2b4-d300fe8ee839",
-    "fields": {
-      "name": "Performance Optimization",
-      "slug": "performance-optimization",
-      "description": "Identify and optimize performance bottlenecks",
-      "definition": {
-        "name": "Performance Optimization",
-        "version": "1.0",
-        "description": "Identify and optimize performance bottlenecks",
-        "steps": [
-          {
-            "id": "profile_application",
-            "name": "Profile Application Performance",
-            "agent": "Research Analyst",
-            "inputs": {
-              "application_url": "{{input.app_url}}",
-              "metrics": "{{input.performance_metrics}}"
-            },
-            "on_success": "analyze_bottlenecks",
-            "timeout_seconds": 600
-          },
-          {
-            "id": "analyze_bottlenecks",
-            "name": "Analyze Performance Bottlenecks",
-            "agent": "Research Analyst",
-            "inputs": {
-              "profile_data": "{{steps.profile_application.output}}"
-            },
-            "on_success": "recommend_optimizations"
-          },
-          {
-            "id": "recommend_optimizations",
-            "name": "Recommend Optimizations",
-            "agent": "Research Analyst",
-            "inputs": {
-              "bottlenecks": "{{steps.analyze_bottlenecks.output}}"
-            },
-            "on_success": "implement"
-          },
-          {
-            "id": "implement",
-            "name": "Implement Optimizations",
-            "agent": "Research Analyst",
-            "inputs": {
-              "recommendations": "{{steps.recommend_optimizations.output}}"
-            },
-            "on_success": "verify",
-            "max_retries": 3
-          },
-          {
-            "id": "verify",
-            "name": "Verify Performance Improvements",
-            "agent": "Research Analyst",
-            "inputs": {
-              "before": "{{steps.profile_application.output}}",
-              "after_changes": "{{steps.implement.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.370Z",
-      "updated_at": "2025-12-06T07:48:23.370Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "f55999dc-013b-4309-a11c-d2cc337041a9",
-    "fields": {
-      "name": "Code Refactoring",
-      "slug": "code-refactoring",
-      "description": "Safe code refactoring workflow",
-      "definition": {
-        "name": "Code Refactoring",
-        "version": "1.0",
-        "description": "Safe code refactoring workflow",
-        "steps": [
-          {
-            "id": "identify_targets",
-            "name": "Identify Refactoring Targets",
-            "agent": "Research Analyst",
-            "inputs": {
-              "codebase": "{{input.repo_url}}"
-            },
-            "on_success": "analyze_impact"
-          },
-          {
-            "id": "analyze_impact",
-            "name": "Analyze Refactoring Impact",
-            "agent": "Research Analyst",
-            "inputs": {
-              "targets": "{{steps.identify_targets.output}}"
-            },
-            "on_success": "refactor"
-          },
-          {
-            "id": "refactor",
-            "name": "Perform Refactoring",
-            "agent": "Research Analyst",
-            "inputs": {
-              "refactoring_plan": "{{steps.analyze_impact.output}}"
-            },
-            "on_success": "test",
-            "max_retries": 2
-          },
-          {
-            "id": "test",
-            "name": "Test Refactored Code",
-            "agent": "Research Analyst",
-            "inputs": {
-              "changes": "{{steps.refactor.output}}"
-            },
-            "on_success": "review",
-            "on_failure": "refactor"
-          },
-          {
-            "id": "review",
-            "name": "Code Review",
-            "agent": "Research Analyst",
-            "inputs": {
-              "refactored_code": "{{steps.refactor.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.376Z",
-      "updated_at": "2025-12-06T07:48:23.376Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "0cf05cc4-9356-45a0-b539-78c1841d0527",
-    "fields": {
-      "name": "Release Management",
-      "slug": "release-management",
-      "description": "Complete software release process from planning to production",
-      "definition": {
-        "name": "Release Management",
-        "version": "1.0",
-        "description": "Complete software release process from planning to production",
-        "metadata": {
-          "author": "HishamOS",
-          "created_date": "2024-12-01",
-          "tags": [
-            "release",
-            "deployment",
-            "devops"
-          ]
-        },
-        "steps": [
-          {
-            "id": "plan_release",
-            "name": "Plan Release Version",
-            "agent": "Research Analyst",
-            "inputs": {
-              "features": "{{input.completed_features}}",
-              "target_date": "{{input.release_date}}"
-            },
-            "on_success": "build",
-            "max_retries": 1
-          },
-          {
-            "id": "build",
-            "name": "Build Release Package",
-            "agent": "Research Analyst",
-            "inputs": {
-              "version": "{{steps.plan_release.output.version}}",
-              "features_list": "{{steps.plan_release.output.features}}"
-            },
-            "on_success": "test",
-            "on_failure": "plan_release",
-            "max_retries": 2,
-            "timeout_seconds": 1200
-          },
-          {
-            "id": "test",
-            "name": "Test Release Build",
-            "agent": "Research Analyst",
-            "inputs": {
-              "build_artifacts": "{{steps.build.output}}",
-              "test_plan": "{{steps.plan_release.output.test_plan}}"
-            },
-            "on_success": "deploy_staging",
-            "on_failure": "build",
-            "max_retries": 2
-          },
-          {
-            "id": "deploy_staging",
-            "name": "Deploy to Staging",
-            "agent": "Research Analyst",
-            "inputs": {
-              "release_package": "{{steps.build.output}}",
-              "environment": "staging"
-            },
-            "on_success": "deploy_production",
-            "on_failure": "test",
-            "max_retries": 2,
-            "timeout_seconds": 900
-          },
-          {
-            "id": "deploy_production",
-            "name": "Deploy to Production",
-            "agent": "Research Analyst",
-            "inputs": {
-              "release_package": "{{steps.build.output}}",
-              "environment": "production",
-              "staging_validation": "{{steps.deploy_staging.output}}"
-            },
-            "condition": "{{steps.deploy_staging.output.success}} == true",
-            "on_success": "monitor",
-            "on_failure": "rollback",
-            "max_retries": 1,
-            "timeout_seconds": 1200
-          },
-          {
-            "id": "monitor",
-            "name": "Monitor Release",
-            "agent": "Research Analyst",
-            "inputs": {
-              "deployment_id": "{{steps.deploy_production.output.deployment_id}}",
-              "metrics": "{{input.health_metrics}}"
-            },
-            "max_retries": 1
-          },
-          {
-            "id": "rollback",
-            "name": "Rollback Release",
-            "agent": "Research Analyst",
-            "inputs": {
-              "failed_deployment": "{{steps.deploy_production.output}}",
-              "previous_version": "{{steps.plan_release.output.previous_version}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.385Z",
-      "updated_at": "2025-12-06T07:48:23.385Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "b39aa37b-27e8-4090-8c72-ba0f779e8d2e",
-    "fields": {
-      "name": "Security Audit",
-      "slug": "security-audit",
-      "description": "Comprehensive security audit process",
-      "definition": {
-        "name": "Security Audit",
-        "version": "1.0",
-        "description": "Comprehensive security audit process",
-        "steps": [
-          {
-            "id": "scan_vulnerabilities",
-            "name": "Scan for Vulnerabilities",
-            "agent": "Research Analyst",
-            "inputs": {
-              "codebase": "{{input.repository}}"
-            },
-            "on_success": "analyze_findings",
-            "max_retries": 2,
-            "timeout_seconds": 900
-          },
-          {
-            "id": "analyze_findings",
-            "name": "Analyze Security Findings",
-            "agent": "Research Analyst",
-            "inputs": {
-              "scan_results": "{{steps.scan_vulnerabilities.output}}"
-            },
-            "condition": "{{steps.scan_vulnerabilities.output.issues_found}} > 0",
-            "on_success": "prioritize"
-          },
-          {
-            "id": "prioritize",
-            "name": "Prioritize Security Issues",
-            "agent": "Research Analyst",
-            "inputs": {
-              "findings": "{{steps.analyze_findings.output}}"
-            },
-            "on_success": "create_tickets"
-          },
-          {
-            "id": "create_tickets",
-            "name": "Create Security Tickets",
-            "agent": "Research Analyst",
-            "inputs": {
-              "prioritized_issues": "{{steps.prioritize.output}}"
-            },
-            "on_success": "report"
-          },
-          {
-            "id": "report",
-            "name": "Generate Security Report",
-            "agent": "Research Analyst",
-            "inputs": {
-              "audit_results": "{{steps}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.391Z",
-      "updated_at": "2025-12-06T07:48:23.391Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "50850dc3-4fe4-4269-a940-07ce5f714fa3",
-    "fields": {
-      "name": "Sprint Planning",
-      "slug": "sprint-planning",
-      "description": "Agile sprint planning with AI assistance",
-      "definition": {
-        "name": "Sprint Planning",
-        "version": "1.0",
-        "description": "Agile sprint planning with AI assistance",
-        "steps": [
-          {
-            "id": "calculate_velocity",
-            "name": "Calculate Team Velocity",
-            "agent": "Research Analyst",
-            "inputs": {
-              "past_sprints": "{{input.sprint_history}}"
-            },
-            "on_success": "recommend_stories"
-          },
-          {
-            "id": "recommend_stories",
-            "name": "Recommend Stories for Sprint",
-            "agent": "Research Analyst",
-            "inputs": {
-              "velocity": "{{steps.calculate_velocity.output.velocity}}",
-              "backlog": "{{input.product_backlog}}"
-            },
-            "on_success": "estimate"
-          },
-          {
-            "id": "estimate",
-            "name": "Estimate Story Points",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "stories": "{{steps.recommend_stories.output.stories}}"
-            },
-            "on_success": "finalize_sprint"
-          },
-          {
-            "id": "finalize_sprint",
-            "name": "Finalize Sprint Plan",
-            "agent": "Research Analyst",
-            "inputs": {
-              "estimated_stories": "{{steps.estimate.output}}",
-              "capacity": "{{input.team_capacity}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 1,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.397Z",
-      "updated_at": "2025-12-07T14:17:59.007Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "0f62bb8c-438b-44ac-9254-29e5c6e1c15a",
-    "fields": {
-      "name": "Technical Debt Review",
-      "slug": "technical-debt-review",
-      "description": "Identify and prioritize technical debt",
-      "definition": {
-        "name": "Technical Debt Review",
-        "version": "1.0",
-        "description": "Identify and prioritize technical debt",
-        "steps": [
-          {
-            "id": "scan_codebase",
-            "name": "Scan for Technical Debt",
-            "agent": "Research Analyst",
-            "inputs": {
-              "repository": "{{input.repo_url}}"
-            },
-            "on_success": "categorize"
-          },
-          {
-            "id": "categorize",
-            "name": "Categorize Debt Items",
-            "agent": "Research Analyst",
-            "inputs": {
-              "debt_items": "{{steps.scan_codebase.output}}"
-            },
-            "on_success": "estimate_effort"
-          },
-          {
-            "id": "estimate_effort",
-            "name": "Estimate Remediation Effort",
-            "agent": "Research Analyst",
-            "inputs": {
-              "categorized_debt": "{{steps.categorize.output}}"
-            },
-            "on_success": "prioritize"
-          },
-          {
-            "id": "prioritize",
-            "name": "Prioritize Debt Reduction",
-            "agent": "Research Analyst",
-            "inputs": {
-              "estimated_debt": "{{steps.estimate_effort.output}}",
-              "business_impact": "{{input.priorities}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.403Z",
-      "updated_at": "2025-12-06T07:48:23.403Z"
-    }
-  },
-  {
-    "model": "workflows.workflow",
-    "pk": "fa6722a0-c6f6-4c1f-a74d-fdceb7ae54b0",
-    "fields": {
-      "name": "User Story Generation",
-      "slug": "user-story-generation",
-      "description": "AI-powered user story generation from feature ideas",
-      "definition": {
-        "name": "User Story Generation",
-        "version": "1.0",
-        "description": "AI-powered user story generation from feature ideas",
-        "steps": [
-          {
-            "id": "analyze_feature",
-            "name": "Analyze Feature Request",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "feature_description": "{{input.feature}}",
-              "product_vision": "{{input.vision}}"
-            },
-            "on_success": "generate_stories"
-          },
-          {
-            "id": "generate_stories",
-            "name": "Generate User Stories",
-            "agent": "Business Analyst Agent",
-            "inputs": {
-              "analysis": "{{steps.analyze_feature.output}}"
-            },
-            "on_success": "add_acceptance_criteria"
-          },
-          {
-            "id": "add_acceptance_criteria",
-            "name": "Add Acceptance Criteria",
-            "agent": "Research Analyst",
-            "inputs": {
-              "stories": "{{steps.generate_stories.output}}"
-            }
-          }
-        ]
-      },
-      "version": "1.0",
-      "status": "active",
-      "is_template": false,
-      "execution_count": 0,
-      "created_by": null,
-      "created_at": "2025-12-06T07:48:23.409Z",
-      "updated_at": "2025-12-06T07:48:23.409Z"
-    }
+{
+  "model": "workflows.workflow",
+  "pk": "12dc6ac8-ac4c-4b7d-b237-fb15525f8f24",
+  "fields": {
+    "name": "SDLC",
+    "slug": "sdlc",
+    "description": "dasdasd",
+    "definition": {
+      "test": "tset"
+    },
+    "version": "1.0.0",
+    "status": "draft",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T01:00:28.016Z",
+    "updated_at": "2025-12-06T01:00:28.016Z"
   }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "bb59a28a-9374-47eb-8b3b-51cf61f3a1ed",
+  "fields": {
+    "name": "Simple Test Workflow",
+    "slug": "simple-test-workflow",
+    "description": "A simple single-step workflow for testing",
+    "definition": {
+      "name": "Simple Test Workflow",
+      "version": "1.0.0",
+      "description": "A simple single-step workflow for testing",
+      "steps": [
+        {
+          "id": "step1",
+          "name": "Execute Task",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "task_description": "{{input.task}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 3,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:17.172Z",
+    "updated_at": "2025-12-07T14:10:08.279Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "f5b8938e-f4de-41bd-984a-215115b103e6",
+  "fields": {
+    "name": "Multi-Step Test Workflow",
+    "slug": "multi-step-test-workflow",
+    "description": "A multi-step workflow for testing sequential execution",
+    "definition": {
+      "name": "Multi-Step Test Workflow",
+      "version": "1.0.0",
+      "description": "A multi-step workflow for testing sequential execution",
+      "steps": [
+        {
+          "id": "step1",
+          "name": "First Step",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "task_description": "Process the input: {{input.message}}"
+          },
+          "on_success": "step2"
+        },
+        {
+          "id": "step2",
+          "name": "Second Step",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "task_description": "Continue processing: {{steps.step1.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 17,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:17.192Z",
+    "updated_at": "2025-12-06T12:53:55.547Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "0921846d-dd5d-4ff1-b795-81f88d6ec21d",
+  "fields": {
+    "name": "Conditional Test Workflow",
+    "slug": "conditional-test-workflow",
+    "description": "A workflow with conditional logic",
+    "definition": {
+      "name": "Conditional Test Workflow",
+      "version": "1.0.0",
+      "description": "A workflow with conditional logic",
+      "steps": [
+        {
+          "id": "check",
+          "name": "Check Condition",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "task_description": "Evaluate: {{input.value}}"
+          },
+          "on_success": "process",
+          "on_failure": "skip"
+        },
+        {
+          "id": "process",
+          "name": "Process Data",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "task_description": "Process: {{steps.check.output}}"
+          },
+          "condition": "{{steps.check.output.success}} == true"
+        },
+        {
+          "id": "skip",
+          "name": "Skip Processing",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "task_description": "Skip processing"
+          }
+        }
+      ]
+    },
+    "version": "1.0.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 4,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:17.197Z",
+    "updated_at": "2025-12-06T13:43:23.704Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "76d1204d-3962-4ae3-ad12-0bf4c3658a13",
+  "fields": {
+    "name": "Accessibility Audit",
+    "slug": "accessibility-audit",
+    "description": "Web accessibility audit workflow",
+    "definition": {
+      "name": "Accessibility Audit",
+      "version": "1.0",
+      "description": "Web accessibility audit workflow",
+      "steps": [
+        {
+          "id": "scan_accessibility",
+          "name": "Scan for Accessibility Issues",
+          "agent": "Research Analyst",
+          "inputs": {
+            "website_url": "{{input.url}}"
+          },
+          "on_success": "analyze_wcag"
+        },
+        {
+          "id": "analyze_wcag",
+          "name": "Analyze WCAG Compliance",
+          "agent": "Research Analyst",
+          "inputs": {
+            "scan_results": "{{steps.scan_accessibility.output}}"
+          },
+          "on_success": "create_remediation_plan"
+        },
+        {
+          "id": "create_remediation_plan",
+          "name": "Create Remediation Plan",
+          "agent": "Research Analyst",
+          "inputs": {
+            "wcag_analysis": "{{steps.analyze_wcag.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 1,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.257Z",
+    "updated_at": "2025-12-06T12:19:01.777Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "b5e949f1-118a-4892-b148-2000802a0ccd",
+  "fields": {
+    "name": "API Documentation Generation",
+    "slug": "api-documentation-generation",
+    "description": "Generate comprehensive API documentation",
+    "definition": {
+      "name": "API Documentation Generation",
+      "version": "1.0",
+      "description": "Generate comprehensive API documentation",
+      "steps": [
+        {
+          "id": "analyze_api",
+          "name": "Analyze API Endpoints",
+          "agent": "Research Analyst",
+          "inputs": {
+            "api_spec": "{{input.openapi_spec}}"
+          },
+          "on_success": "generate_docs"
+        },
+        {
+          "id": "generate_docs",
+          "name": "Generate Documentation",
+          "agent": "Research Analyst",
+          "inputs": {
+            "api_analysis": "{{steps.analyze_api.output}}"
+          },
+          "on_success": "add_examples"
+        },
+        {
+          "id": "add_examples",
+          "name": "Add Code Examples",
+          "agent": "Research Analyst",
+          "inputs": {
+            "documentation": "{{steps.generate_docs.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 6,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.264Z",
+    "updated_at": "2025-12-07T14:10:49.669Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "3cb6a6c4-692b-4ab8-8332-84fea41e0e29",
+  "fields": {
+    "name": "Bug Lifecycle",
+    "slug": "bug-lifecycle",
+    "description": "Complete bug lifecycle from report to deployment and closure",
+    "definition": {
+      "name": "Bug Lifecycle",
+      "version": "1.0",
+      "description": "Complete bug lifecycle from report to deployment and closure",
+      "metadata": {
+        "author": "HishamOS",
+        "created_date": "2024-12-01",
+        "tags": [
+          "bug",
+          "sdlc",
+          "qa",
+          "development"
+        ]
+      },
+      "steps": [
+        {
+          "id": "triage",
+          "name": "Bug Triage",
+          "agent": "Research Analyst",
+          "inputs": {
+            "bug_description": "{{input.bug_description}}",
+            "project_context": "{{input.project}}"
+          },
+          "on_success": "assign",
+          "on_failure": "notify_team",
+          "max_retries": 2
+        },
+        {
+          "id": "assign",
+          "name": "Assign to Developer",
+          "agent": "Research Analyst",
+          "inputs": {
+            "bug_info": "{{steps.triage.output}}",
+            "team_capacity": "{{input.team_capacity}}"
+          },
+          "condition": "{{steps.triage.output.severity}} > 2",
+          "on_success": "fix",
+          "max_retries": 1
+        },
+        {
+          "id": "fix",
+          "name": "Implement Fix",
+          "agent": "Research Analyst",
+          "inputs": {
+            "bug_details": "{{steps.triage.output}}",
+            "assigned_dev": "{{steps.assign.output.developer}}"
+          },
+          "on_success": "code_review",
+          "on_failure": "escalate",
+          "max_retries": 3,
+          "timeout_seconds": 600
+        },
+        {
+          "id": "code_review",
+          "name": "Code Review",
+          "agent": "Research Analyst",
+          "inputs": {
+            "code_changes": "{{steps.fix.output.code}}",
+            "bug_context": "{{steps.triage.output}}"
+          },
+          "on_success": "qa_test",
+          "on_failure": "fix",
+          "max_retries": 2
+        },
+        {
+          "id": "qa_test",
+          "name": "QA Testing",
+          "agent": "Research Analyst",
+          "inputs": {
+            "fix_description": "{{steps.fix.output}}",
+            "test_scenarios": "{{steps.triage.output.test_cases}}"
+          },
+          "on_success": "deploy",
+          "on_failure": "fix",
+          "max_retries": 2
+        },
+        {
+          "id": "deploy",
+          "name": "Deploy Fix",
+          "agent": "Research Analyst",
+          "inputs": {
+            "deployment_package": "{{steps.qa_test.output}}",
+            "environment": "production"
+          },
+          "on_success": "close",
+          "on_failure": "rollback",
+          "max_retries": 1,
+          "timeout_seconds": 900
+        },
+        {
+          "id": "close",
+          "name": "Close Bug",
+          "agent": "Research Analyst",
+          "inputs": {
+            "bug_id": "{{input.bug_id}}",
+            "resolution": "{{steps.deploy.output}}"
+          },
+          "max_retries": 1
+        },
+        {
+          "id": "escalate",
+          "name": "Escalate to Senior Dev",
+          "agent": "Research Analyst",
+          "inputs": {
+            "bug_info": "{{steps.triage.output}}",
+            "failure_reason": "{{steps.fix.error}}"
+          },
+          "on_success": "fix"
+        },
+        {
+          "id": "rollback",
+          "name": "Rollback Deployment",
+          "agent": "Research Analyst",
+          "inputs": {
+            "deployment_id": "{{steps.deploy.output.deployment_id}}"
+          },
+          "on_failure": "notify_team"
+        },
+        {
+          "id": "notify_team",
+          "name": "Notify Team of Failure",
+          "agent": "Research Analyst",
+          "inputs": {
+            "workflow_state": "{{steps}}",
+            "error_details": "Critical workflow failure"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.278Z",
+    "updated_at": "2025-12-06T07:48:23.278Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "52a5a50f-6f0c-40ee-8c19-49bceb34d92e",
+  "fields": {
+    "name": "Code Review",
+    "slug": "code-review",
+    "description": "Comprehensive code review with automated checks and peer review",
+    "definition": {
+      "name": "Code Review",
+      "version": "1.0",
+      "description": "Comprehensive code review with automated checks and peer review",
+      "metadata": {
+        "author": "HishamOS",
+        "created_date": "2024-12-01",
+        "tags": [
+          "code-review",
+          "quality",
+          "collaboration"
+        ]
+      },
+      "steps": [
+        {
+          "id": "automated_checks",
+          "name": "Run Automated Checks",
+          "agent": "Research Analyst",
+          "inputs": {
+            "code_diff": "{{input.code_changes}}",
+            "repo_url": "{{input.repository}}"
+          },
+          "on_success": "peer_review",
+          "on_failure": "request_fixes",
+          "max_retries": 1
+        },
+        {
+          "id": "peer_review",
+          "name": "Peer Code Review",
+          "agent": "Research Analyst",
+          "inputs": {
+            "code_changes": "{{input.code_changes}}",
+            "automated_report": "{{steps.automated_checks.output}}",
+            "review_guidelines": "{{input.guidelines}}"
+          },
+          "condition": "{{steps.automated_checks.output.passed}} == true",
+          "on_success": "approval_check",
+          "on_failure": "request_fixes",
+          "max_retries": 1,
+          "timeout_seconds": 600
+        },
+        {
+          "id": "approval_check",
+          "name": "Check Approval Status",
+          "agent": "Research Analyst",
+          "inputs": {
+            "review_feedback": "{{steps.peer_review.output}}"
+          },
+          "condition": "{{steps.peer_review.output.issues_count}} == 0",
+          "on_success": "approve",
+          "on_failure": "request_fixes"
+        },
+        {
+          "id": "request_fixes",
+          "name": "Request Code Fixes",
+          "agent": "Research Analyst",
+          "inputs": {
+            "review_comments": "{{steps.peer_review.output.comments}}",
+            "author": "{{input.author}}"
+          },
+          "skip_if": "{{steps.approval_check.output.approved}} == true"
+        },
+        {
+          "id": "approve",
+          "name": "Approve Changes",
+          "agent": "Research Analyst",
+          "inputs": {
+            "pull_request": "{{input.pr_id}}",
+            "reviews": "{{steps}}"
+          },
+          "max_retries": 1
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 1,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.291Z",
+    "updated_at": "2025-12-07T14:10:28.307Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "d25bed93-113b-4b04-ae4d-c0711c2485db",
+  "fields": {
+    "name": "Content Publishing",
+    "slug": "content-publishing",
+    "description": "Content review and publishing workflow",
+    "definition": {
+      "name": "Content Publishing",
+      "version": "1.0",
+      "description": "Content review and publishing workflow",
+      "steps": [
+        {
+          "id": "review_content",
+          "name": "Review Content Quality",
+          "agent": "Research Analyst",
+          "inputs": {
+            "content": "{{input.draft_content}}"
+          },
+          "on_success": "approve"
+        },
+        {
+          "id": "approve",
+          "name": "Content Approval",
+          "agent": "Research Analyst",
+          "inputs": {
+            "reviewed_content": "{{steps.review_content.output}}"
+          },
+          "condition": "{{steps.review_content.output.quality_score}} > 7",
+          "on_success": "publish",
+          "on_failure": "request_revisions"
+        },
+        {
+          "id": "publish",
+          "name": "Publish Content",
+          "agent": "Research Analyst",
+          "inputs": {
+            "approved_content": "{{steps.approve.output}}"
+          }
+        },
+        {
+          "id": "request_revisions",
+          "name": "Request Content Revisions",
+          "agent": "Research Analyst",
+          "inputs": {
+            "feedback": "{{steps.review_content.output.issues}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.310Z",
+    "updated_at": "2025-12-06T07:48:23.310Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "30f4dc8f-14e0-49f8-b3aa-b44f6fc69ad7",
+  "fields": {
+    "name": "Database Backup",
+    "slug": "database-backup",
+    "description": "Automated database backup workflow",
+    "definition": {
+      "name": "Database Backup",
+      "version": "1.0",
+      "description": "Automated database backup workflow",
+      "steps": [
+        {
+          "id": "create_backup",
+          "name": "Create Database Backup",
+          "agent": "Research Analyst",
+          "inputs": {
+            "database": "{{input.database_name}}"
+          },
+          "on_success": "verify_backup",
+          "timeout_seconds": 3600
+        },
+        {
+          "id": "verify_backup",
+          "name": "Verify Backup Integrity",
+          "agent": "Research Analyst",
+          "inputs": {
+            "backup_file": "{{steps.create_backup.output}}"
+          },
+          "on_success": "store_backup",
+          "on_failure": "create_backup"
+        },
+        {
+          "id": "store_backup",
+          "name": "Store Backup Securely",
+          "agent": "Research Analyst",
+          "inputs": {
+            "verified_backup": "{{steps.verify_backup.output}}",
+            "storage_location": "{{input.backup_storage}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.320Z",
+    "updated_at": "2025-12-06T07:48:23.320Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "be503c33-01ef-42e2-a685-e686031fc8b1",
+  "fields": {
+    "name": "Database Migration",
+    "slug": "database-migration",
+    "description": "Safe database migration workflow",
+    "definition": {
+      "name": "Database Migration",
+      "version": "1.0",
+      "description": "Safe database migration workflow",
+      "steps": [
+        {
+          "id": "analyze_schema",
+          "name": "Analyze Schema Changes",
+          "agent": "Research Analyst",
+          "inputs": {
+            "current_schema": "{{input.schema}}",
+            "target_schema": "{{input.new_schema}}"
+          },
+          "on_success": "generate_migration"
+        },
+        {
+          "id": "generate_migration",
+          "name": "Generate Migration Script",
+          "agent": "Research Analyst",
+          "inputs": {
+            "analysis": "{{steps.analyze_schema.output}}"
+          },
+          "on_success": "test_migration"
+        },
+        {
+          "id": "test_migration",
+          "name": "Test Migration on Staging",
+          "agent": "Research Analyst",
+          "inputs": {
+            "migration_script": "{{steps.generate_migration.output}}",
+            "environment": "staging"
+          },
+          "on_success": "apply_production",
+          "on_failure": "rollback"
+        },
+        {
+          "id": "apply_production",
+          "name": "Apply to Production",
+          "agent": "Research Analyst",
+          "inputs": {
+            "tested_migration": "{{steps.test_migration.output}}"
+          },
+          "max_retries": 1
+        },
+        {
+          "id": "rollback",
+          "name": "Rollback Migration",
+          "agent": "Research Analyst",
+          "inputs": {
+            "failed_migration": "{{steps.test_migration.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.326Z",
+    "updated_at": "2025-12-06T07:48:23.326Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "32607f8f-ea0b-4d1e-a8d2-ed82fc3e924d",
+  "fields": {
+    "name": "Dependency Update",
+    "slug": "dependency-update",
+    "description": "Safe dependency update workflow",
+    "definition": {
+      "name": "Dependency Update",
+      "version": "1.0",
+      "description": "Safe dependency update workflow",
+      "steps": [
+        {
+          "id": "check_updates",
+          "name": "Check for Dependency Updates",
+          "agent": "Research Analyst",
+          "inputs": {
+            "project": "{{input.project_path}}"
+          },
+          "on_success": "analyze_changes"
+        },
+        {
+          "id": "analyze_changes",
+          "name": "Analyze Breaking Changes",
+          "agent": "Research Analyst",
+          "inputs": {
+            "updates": "{{steps.check_updates.output}}"
+          },
+          "on_success": "apply_updates"
+        },
+        {
+          "id": "apply_updates",
+          "name": "Apply Dependency Updates",
+          "agent": "Research Analyst",
+          "inputs": {
+            "safe_updates": "{{steps.analyze_changes.output.safe_updates}}"
+          },
+          "on_success": "test"
+        },
+        {
+          "id": "test",
+          "name": "Run Test Suite",
+          "agent": "Research Analyst",
+          "inputs": {
+            "updated_project": "{{steps.apply_updates.output}}"
+          },
+          "on_success": "commit",
+          "on_failure": "rollback_updates"
+        },
+        {
+          "id": "commit",
+          "name": "Commit Updates",
+          "agent": "Research Analyst",
+          "inputs": {
+            "changes": "{{steps.apply_updates.output}}"
+          }
+        },
+        {
+          "id": "rollback_updates",
+          "name": "Rollback Failed Updates",
+          "agent": "Research Analyst",
+          "inputs": {
+            "failed": "{{steps.test.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.334Z",
+    "updated_at": "2025-12-06T07:48:23.334Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "c29810c9-a15a-485c-8f37-fe0fd1817d7f",
+  "fields": {
+    "name": "Feature Development",
+    "slug": "feature-development",
+    "description": "Complete feature development lifecycle from story to production",
+    "definition": {
+      "name": "Feature Development",
+      "version": "1.0",
+      "description": "Complete feature development lifecycle from story to production",
+      "metadata": {
+        "author": "HishamOS",
+        "created_date": "2024-12-01",
+        "tags": [
+          "feature",
+          "development",
+          "agile"
+        ]
+      },
+      "steps": [
+        {
+          "id": "create_story",
+          "name": "Generate User Story",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "feature_idea": "{{input.feature_description}}",
+            "product_context": "{{input.product_vision}}"
+          },
+          "on_success": "design",
+          "max_retries": 2
+        },
+        {
+          "id": "design",
+          "name": "Technical Design",
+          "agent": "Research Analyst",
+          "inputs": {
+            "user_story": "{{steps.create_story.output}}",
+            "system_architecture": "{{input.architecture}}"
+          },
+          "on_success": "implement",
+          "max_retries": 2
+        },
+        {
+          "id": "implement",
+          "name": "Implement Feature",
+          "agent": "Research Analyst",
+          "inputs": {
+            "technical_design": "{{steps.design.output}}",
+            "user_story": "{{steps.create_story.output}}"
+          },
+          "on_success": "review",
+          "on_failure": "design",
+          "max_retries": 3,
+          "timeout_seconds": 900
+        },
+        {
+          "id": "review",
+          "name": "Code Review",
+          "agent": "Research Analyst",
+          "inputs": {
+            "code_changes": "{{steps.implement.output}}",
+            "design_doc": "{{steps.design.output}}"
+          },
+          "on_success": "test",
+          "on_failure": "implement",
+          "max_retries": 2
+        },
+        {
+          "id": "test",
+          "name": "Feature Testing",
+          "agent": "Research Analyst",
+          "inputs": {
+            "feature_code": "{{steps.implement.output}}",
+            "acceptance_criteria": "{{steps.create_story.output.acceptance_criteria}}"
+          },
+          "on_success": "deploy",
+          "on_failure": "implement",
+          "max_retries": 2
+        },
+        {
+          "id": "deploy",
+          "name": "Deploy Feature",
+          "agent": "Research Analyst",
+          "inputs": {
+            "feature_package": "{{steps.test.output}}",
+            "environment": "{{input.target_environment}}"
+          },
+          "max_retries": 2,
+          "timeout_seconds": 600
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.342Z",
+    "updated_at": "2025-12-06T07:48:23.342Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "519f7d20-6b39-40e2-bfa4-9cf61a0c4159",
+  "fields": {
+    "name": "Incident Response",
+    "slug": "incident-response",
+    "description": "Production incident response workflow",
+    "definition": {
+      "name": "Incident Response",
+      "version": "1.0",
+      "description": "Production incident response workflow",
+      "steps": [
+        {
+          "id": "detect_incident",
+          "name": "Detect and Classify Incident",
+          "agent": "Research Analyst",
+          "inputs": {
+            "alert_data": "{{input.alert}}"
+          },
+          "on_success": "assess_impact"
+        },
+        {
+          "id": "assess_impact",
+          "name": "Assess Impact",
+          "agent": "Research Analyst",
+          "inputs": {
+            "incident": "{{steps.detect_incident.output}}"
+          },
+          "on_success": "mitigate"
+        },
+        {
+          "id": "mitigate",
+          "name": "Mitigate Incident",
+          "agent": "Research Analyst",
+          "inputs": {
+            "impact_assessment": "{{steps.assess_impact.output}}"
+          },
+          "condition": "{{steps.assess_impact.output.severity}} > 3",
+          "on_success": "monitor",
+          "max_retries": 3
+        },
+        {
+          "id": "monitor",
+          "name": "Monitor Resolution",
+          "agent": "Research Analyst",
+          "inputs": {
+            "mitigation": "{{steps.mitigate.output}}"
+          },
+          "on_success": "post_mortem"
+        },
+        {
+          "id": "post_mortem",
+          "name": "Create Post-Mortem",
+          "agent": "Research Analyst",
+          "inputs": {
+            "incident_data": "{{steps}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 1,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.349Z",
+    "updated_at": "2025-12-06T12:53:15.890Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "3fbcdd8d-5e27-40e1-8183-942717449611",
+  "fields": {
+    "name": "Load Testing",
+    "slug": "load-testing",
+    "description": "Performance load testing workflow",
+    "definition": {
+      "name": "Load Testing",
+      "version": "1.0",
+      "description": "Performance load testing workflow",
+      "steps": [
+        {
+          "id": "setup_test_environment",
+          "name": "Setup Load Test Environment",
+          "agent": "Research Analyst",
+          "inputs": {
+            "target_url": "{{input.application_url}}"
+          },
+          "on_success": "run_load_test"
+        },
+        {
+          "id": "run_load_test",
+          "name": "Execute Load Test",
+          "agent": "Research Analyst",
+          "inputs": {
+            "test_config": "{{input.load_test_config}}",
+            "environment": "{{steps.setup_test_environment.output}}"
+          },
+          "on_success": "analyze_results",
+          "timeout_seconds": 1800
+        },
+        {
+          "id": "analyze_results",
+          "name": "Analyze Test Results",
+          "agent": "Research Analyst",
+          "inputs": {
+            "test_results": "{{steps.run_load_test.output}}"
+          },
+          "on_success": "report"
+        },
+        {
+          "id": "report",
+          "name": "Generate Load Test Report",
+          "agent": "Research Analyst",
+          "inputs": {
+            "analysis": "{{steps.analyze_results.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.356Z",
+    "updated_at": "2025-12-06T07:48:23.356Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "6f11894f-f902-41ec-ac85-b301e7c6d0e0",
+  "fields": {
+    "name": "Developer Onboarding",
+    "slug": "developer-onboarding",
+    "description": "Automated developer onboarding process",
+    "definition": {
+      "name": "Developer Onboarding",
+      "version": "1.0",
+      "description": "Automated developer onboarding process",
+      "steps": [
+        {
+          "id": "setup_environment",
+          "name": "Setup Development Environment",
+          "agent": "Research Analyst",
+          "inputs": {
+            "developer_info": "{{input.developer}}"
+          },
+          "on_success": "grant_access"
+        },
+        {
+          "id": "grant_access",
+          "name": "Grant System Access",
+          "agent": "Research Analyst",
+          "inputs": {
+            "developer": "{{input.developer}}",
+            "repositories": "{{input.repos}}"
+          },
+          "on_success": "generate_docs"
+        },
+        {
+          "id": "generate_docs",
+          "name": "Generate Onboarding Documentation",
+          "agent": "Research Analyst",
+          "inputs": {
+            "project_info": "{{input.project}}"
+          },
+          "on_success": "assign_mentor"
+        },
+        {
+          "id": "assign_mentor",
+          "name": "Assign Mentor",
+          "agent": "Research Analyst",
+          "inputs": {
+            "new_developer": "{{input.developer}}",
+            "team": "{{input.team}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.363Z",
+    "updated_at": "2025-12-06T07:48:23.363Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "98f1ac8e-66b9-40da-b2b4-d300fe8ee839",
+  "fields": {
+    "name": "Performance Optimization",
+    "slug": "performance-optimization",
+    "description": "Identify and optimize performance bottlenecks",
+    "definition": {
+      "name": "Performance Optimization",
+      "version": "1.0",
+      "description": "Identify and optimize performance bottlenecks",
+      "steps": [
+        {
+          "id": "profile_application",
+          "name": "Profile Application Performance",
+          "agent": "Research Analyst",
+          "inputs": {
+            "application_url": "{{input.app_url}}",
+            "metrics": "{{input.performance_metrics}}"
+          },
+          "on_success": "analyze_bottlenecks",
+          "timeout_seconds": 600
+        },
+        {
+          "id": "analyze_bottlenecks",
+          "name": "Analyze Performance Bottlenecks",
+          "agent": "Research Analyst",
+          "inputs": {
+            "profile_data": "{{steps.profile_application.output}}"
+          },
+          "on_success": "recommend_optimizations"
+        },
+        {
+          "id": "recommend_optimizations",
+          "name": "Recommend Optimizations",
+          "agent": "Research Analyst",
+          "inputs": {
+            "bottlenecks": "{{steps.analyze_bottlenecks.output}}"
+          },
+          "on_success": "implement"
+        },
+        {
+          "id": "implement",
+          "name": "Implement Optimizations",
+          "agent": "Research Analyst",
+          "inputs": {
+            "recommendations": "{{steps.recommend_optimizations.output}}"
+          },
+          "on_success": "verify",
+          "max_retries": 3
+        },
+        {
+          "id": "verify",
+          "name": "Verify Performance Improvements",
+          "agent": "Research Analyst",
+          "inputs": {
+            "before": "{{steps.profile_application.output}}",
+            "after_changes": "{{steps.implement.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.370Z",
+    "updated_at": "2025-12-06T07:48:23.370Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "f55999dc-013b-4309-a11c-d2cc337041a9",
+  "fields": {
+    "name": "Code Refactoring",
+    "slug": "code-refactoring",
+    "description": "Safe code refactoring workflow",
+    "definition": {
+      "name": "Code Refactoring",
+      "version": "1.0",
+      "description": "Safe code refactoring workflow",
+      "steps": [
+        {
+          "id": "identify_targets",
+          "name": "Identify Refactoring Targets",
+          "agent": "Research Analyst",
+          "inputs": {
+            "codebase": "{{input.repo_url}}"
+          },
+          "on_success": "analyze_impact"
+        },
+        {
+          "id": "analyze_impact",
+          "name": "Analyze Refactoring Impact",
+          "agent": "Research Analyst",
+          "inputs": {
+            "targets": "{{steps.identify_targets.output}}"
+          },
+          "on_success": "refactor"
+        },
+        {
+          "id": "refactor",
+          "name": "Perform Refactoring",
+          "agent": "Research Analyst",
+          "inputs": {
+            "refactoring_plan": "{{steps.analyze_impact.output}}"
+          },
+          "on_success": "test",
+          "max_retries": 2
+        },
+        {
+          "id": "test",
+          "name": "Test Refactored Code",
+          "agent": "Research Analyst",
+          "inputs": {
+            "changes": "{{steps.refactor.output}}"
+          },
+          "on_success": "review",
+          "on_failure": "refactor"
+        },
+        {
+          "id": "review",
+          "name": "Code Review",
+          "agent": "Research Analyst",
+          "inputs": {
+            "refactored_code": "{{steps.refactor.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.376Z",
+    "updated_at": "2025-12-06T07:48:23.376Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "0cf05cc4-9356-45a0-b539-78c1841d0527",
+  "fields": {
+    "name": "Release Management",
+    "slug": "release-management",
+    "description": "Complete software release process from planning to production",
+    "definition": {
+      "name": "Release Management",
+      "version": "1.0",
+      "description": "Complete software release process from planning to production",
+      "metadata": {
+        "author": "HishamOS",
+        "created_date": "2024-12-01",
+        "tags": [
+          "release",
+          "deployment",
+          "devops"
+        ]
+      },
+      "steps": [
+        {
+          "id": "plan_release",
+          "name": "Plan Release Version",
+          "agent": "Research Analyst",
+          "inputs": {
+            "features": "{{input.completed_features}}",
+            "target_date": "{{input.release_date}}"
+          },
+          "on_success": "build",
+          "max_retries": 1
+        },
+        {
+          "id": "build",
+          "name": "Build Release Package",
+          "agent": "Research Analyst",
+          "inputs": {
+            "version": "{{steps.plan_release.output.version}}",
+            "features_list": "{{steps.plan_release.output.features}}"
+          },
+          "on_success": "test",
+          "on_failure": "plan_release",
+          "max_retries": 2,
+          "timeout_seconds": 1200
+        },
+        {
+          "id": "test",
+          "name": "Test Release Build",
+          "agent": "Research Analyst",
+          "inputs": {
+            "build_artifacts": "{{steps.build.output}}",
+            "test_plan": "{{steps.plan_release.output.test_plan}}"
+          },
+          "on_success": "deploy_staging",
+          "on_failure": "build",
+          "max_retries": 2
+        },
+        {
+          "id": "deploy_staging",
+          "name": "Deploy to Staging",
+          "agent": "Research Analyst",
+          "inputs": {
+            "release_package": "{{steps.build.output}}",
+            "environment": "staging"
+          },
+          "on_success": "deploy_production",
+          "on_failure": "test",
+          "max_retries": 2,
+          "timeout_seconds": 900
+        },
+        {
+          "id": "deploy_production",
+          "name": "Deploy to Production",
+          "agent": "Research Analyst",
+          "inputs": {
+            "release_package": "{{steps.build.output}}",
+            "environment": "production",
+            "staging_validation": "{{steps.deploy_staging.output}}"
+          },
+          "condition": "{{steps.deploy_staging.output.success}} == true",
+          "on_success": "monitor",
+          "on_failure": "rollback",
+          "max_retries": 1,
+          "timeout_seconds": 1200
+        },
+        {
+          "id": "monitor",
+          "name": "Monitor Release",
+          "agent": "Research Analyst",
+          "inputs": {
+            "deployment_id": "{{steps.deploy_production.output.deployment_id}}",
+            "metrics": "{{input.health_metrics}}"
+          },
+          "max_retries": 1
+        },
+        {
+          "id": "rollback",
+          "name": "Rollback Release",
+          "agent": "Research Analyst",
+          "inputs": {
+            "failed_deployment": "{{steps.deploy_production.output}}",
+            "previous_version": "{{steps.plan_release.output.previous_version}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.385Z",
+    "updated_at": "2025-12-06T07:48:23.385Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "b39aa37b-27e8-4090-8c72-ba0f779e8d2e",
+  "fields": {
+    "name": "Security Audit",
+    "slug": "security-audit",
+    "description": "Comprehensive security audit process",
+    "definition": {
+      "name": "Security Audit",
+      "version": "1.0",
+      "description": "Comprehensive security audit process",
+      "steps": [
+        {
+          "id": "scan_vulnerabilities",
+          "name": "Scan for Vulnerabilities",
+          "agent": "Research Analyst",
+          "inputs": {
+            "codebase": "{{input.repository}}"
+          },
+          "on_success": "analyze_findings",
+          "max_retries": 2,
+          "timeout_seconds": 900
+        },
+        {
+          "id": "analyze_findings",
+          "name": "Analyze Security Findings",
+          "agent": "Research Analyst",
+          "inputs": {
+            "scan_results": "{{steps.scan_vulnerabilities.output}}"
+          },
+          "condition": "{{steps.scan_vulnerabilities.output.issues_found}} > 0",
+          "on_success": "prioritize"
+        },
+        {
+          "id": "prioritize",
+          "name": "Prioritize Security Issues",
+          "agent": "Research Analyst",
+          "inputs": {
+            "findings": "{{steps.analyze_findings.output}}"
+          },
+          "on_success": "create_tickets"
+        },
+        {
+          "id": "create_tickets",
+          "name": "Create Security Tickets",
+          "agent": "Research Analyst",
+          "inputs": {
+            "prioritized_issues": "{{steps.prioritize.output}}"
+          },
+          "on_success": "report"
+        },
+        {
+          "id": "report",
+          "name": "Generate Security Report",
+          "agent": "Research Analyst",
+          "inputs": {
+            "audit_results": "{{steps}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.391Z",
+    "updated_at": "2025-12-06T07:48:23.391Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "50850dc3-4fe4-4269-a940-07ce5f714fa3",
+  "fields": {
+    "name": "Sprint Planning",
+    "slug": "sprint-planning",
+    "description": "Agile sprint planning with AI assistance",
+    "definition": {
+      "name": "Sprint Planning",
+      "version": "1.0",
+      "description": "Agile sprint planning with AI assistance",
+      "steps": [
+        {
+          "id": "calculate_velocity",
+          "name": "Calculate Team Velocity",
+          "agent": "Research Analyst",
+          "inputs": {
+            "past_sprints": "{{input.sprint_history}}"
+          },
+          "on_success": "recommend_stories"
+        },
+        {
+          "id": "recommend_stories",
+          "name": "Recommend Stories for Sprint",
+          "agent": "Research Analyst",
+          "inputs": {
+            "velocity": "{{steps.calculate_velocity.output.velocity}}",
+            "backlog": "{{input.product_backlog}}"
+          },
+          "on_success": "estimate"
+        },
+        {
+          "id": "estimate",
+          "name": "Estimate Story Points",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "stories": "{{steps.recommend_stories.output.stories}}"
+          },
+          "on_success": "finalize_sprint"
+        },
+        {
+          "id": "finalize_sprint",
+          "name": "Finalize Sprint Plan",
+          "agent": "Research Analyst",
+          "inputs": {
+            "estimated_stories": "{{steps.estimate.output}}",
+            "capacity": "{{input.team_capacity}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 1,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.397Z",
+    "updated_at": "2025-12-07T14:17:59.007Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "0f62bb8c-438b-44ac-9254-29e5c6e1c15a",
+  "fields": {
+    "name": "Technical Debt Review",
+    "slug": "technical-debt-review",
+    "description": "Identify and prioritize technical debt",
+    "definition": {
+      "name": "Technical Debt Review",
+      "version": "1.0",
+      "description": "Identify and prioritize technical debt",
+      "steps": [
+        {
+          "id": "scan_codebase",
+          "name": "Scan for Technical Debt",
+          "agent": "Research Analyst",
+          "inputs": {
+            "repository": "{{input.repo_url}}"
+          },
+          "on_success": "categorize"
+        },
+        {
+          "id": "categorize",
+          "name": "Categorize Debt Items",
+          "agent": "Research Analyst",
+          "inputs": {
+            "debt_items": "{{steps.scan_codebase.output}}"
+          },
+          "on_success": "estimate_effort"
+        },
+        {
+          "id": "estimate_effort",
+          "name": "Estimate Remediation Effort",
+          "agent": "Research Analyst",
+          "inputs": {
+            "categorized_debt": "{{steps.categorize.output}}"
+          },
+          "on_success": "prioritize"
+        },
+        {
+          "id": "prioritize",
+          "name": "Prioritize Debt Reduction",
+          "agent": "Research Analyst",
+          "inputs": {
+            "estimated_debt": "{{steps.estimate_effort.output}}",
+            "business_impact": "{{input.priorities}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.403Z",
+    "updated_at": "2025-12-06T07:48:23.403Z"
+  }
+},
+{
+  "model": "workflows.workflow",
+  "pk": "fa6722a0-c6f6-4c1f-a74d-fdceb7ae54b0",
+  "fields": {
+    "name": "User Story Generation",
+    "slug": "user-story-generation",
+    "description": "AI-powered user story generation from feature ideas",
+    "definition": {
+      "name": "User Story Generation",
+      "version": "1.0",
+      "description": "AI-powered user story generation from feature ideas",
+      "steps": [
+        {
+          "id": "analyze_feature",
+          "name": "Analyze Feature Request",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "feature_description": "{{input.feature}}",
+            "product_vision": "{{input.vision}}"
+          },
+          "on_success": "generate_stories"
+        },
+        {
+          "id": "generate_stories",
+          "name": "Generate User Stories",
+          "agent": "Business Analyst Agent",
+          "inputs": {
+            "analysis": "{{steps.analyze_feature.output}}"
+          },
+          "on_success": "add_acceptance_criteria"
+        },
+        {
+          "id": "add_acceptance_criteria",
+          "name": "Add Acceptance Criteria",
+          "agent": "Research Analyst",
+          "inputs": {
+            "stories": "{{steps.generate_stories.output}}"
+          }
+        }
+      ]
+    },
+    "version": "1.0",
+    "status": "active",
+    "is_template": false,
+    "execution_count": 0,
+    "created_by": null,
+    "created_at": "2025-12-06T07:48:23.409Z",
+    "updated_at": "2025-12-06T07:48:23.409Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "0d42fa89-92ef-41a3-984b-4074ee6a3f71",
+  "fields": {
+    "workflow": "50850dc3-4fe4-4269-a940-07ce5f714fa3",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "finalize_sprint",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": {
+      "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+      "success": true,
+      "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+    },
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "calculate_velocity": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        },
+        "recommend_stories": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        },
+        "estimate": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        },
+        "finalize_sprint": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Sprint Planning",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-07T14:17:58.351Z",
+    "started_at": null,
+    "completed_at": "2025-12-07T14:17:59.002Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "3a21cb02-1327-4c8b-a922-9b6ee95672f5",
+  "fields": {
+    "workflow": "b5e949f1-118a-4892-b148-2000802a0ccd",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "add_examples",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": {
+      "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+      "success": true,
+      "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+    },
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "analyze_api": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        },
+        "generate_docs": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        },
+        "add_examples": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "API Documentation Generation",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-07T14:10:49.178Z",
+    "started_at": null,
+    "completed_at": "2025-12-07T14:10:49.665Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "8a095b42-ee5c-426c-ac2a-9056a281449d",
+  "fields": {
+    "workflow": "52a5a50f-6f0c-40ee-8c19-49bceb34d92e",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "request_fixes",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": {
+      "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+      "success": true,
+      "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+    },
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "automated_checks": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        },
+        "peer_review": {
+          "success": false,
+          "output": {
+            "success": false,
+            "content": null
+          },
+          "error": "Condition evaluation failed: Failed to evaluate condition '{{steps.automated_checks.output.passed}} == true': \"Key 'passed' not found in path steps.automated_checks.output.passed (at steps.automated_checks.output.passed)\""
+        },
+        "request_fixes": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Code Review",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-07T14:10:27.953Z",
+    "started_at": null,
+    "completed_at": "2025-12-07T14:10:28.301Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "64bd5b31-8394-40cb-9c6b-7d8c8d3cafce",
+  "fields": {
+    "workflow": "bb59a28a-9374-47eb-8b3b-51cf61f3a1ed",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step1",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": {
+      "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+      "success": true,
+      "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+    },
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Simple Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-07T14:10:08.053Z",
+    "started_at": null,
+    "completed_at": "2025-12-07T14:10:08.274Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "0ff14210-2d3e-484e-8b4a-c27e35c7af0b",
+  "fields": {
+    "workflow": "0921846d-dd5d-4ff1-b795-81f88d6ec21d",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "process",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": {
+      "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+      "success": true,
+      "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+    },
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "check": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        },
+        "process": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Conditional Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T13:43:23.393Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T13:43:23.701Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "95af1ee2-8058-402e-b1ab-8167d90edd53",
+  "fields": {
+    "workflow": "0921846d-dd5d-4ff1-b795-81f88d6ec21d",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "process",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": {
+      "skipped": true,
+      "reason": "condition not met"
+    },
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "check": {
+          "success": true,
+          "output": {
+            "content": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+            "success": true,
+            "text": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ..."
+          },
+          "attempts": 1
+        },
+        "process": {
+          "success": true,
+          "output": {
+            "skipped": true,
+            "reason": "condition not met"
+          },
+          "skipped": true
+        }
+      },
+      "workflow": {
+        "name": "Conditional Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T13:05:56.596Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T13:05:56.779Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "ee7e8346-ccfb-4964-ac8a-1fd0187aa1c5",
+  "fields": {
+    "workflow": "0921846d-dd5d-4ff1-b795-81f88d6ec21d",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "process",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": null,
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "check": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "process": {
+          "success": false,
+          "output": null,
+          "error": "Condition evaluation failed: Failed to evaluate condition '{{steps.check.output.success}} == true': 'Cannot access \\'success\\' in non-dict value (type: str, value: \\'Mock Response:\\\\n\\\\nI understand you\\\\\\'re asking about: \"Task: ...\"\\\\n\\\\nHere\\\\\\'s a mock response for testing purposes:\\\\n- This is a simulated AI response\\\\n- No actual API calls were made\\\\n- The workflow execution system is working correctly\\\\n- Configure a real AI platform for actual AI capabilities\\\\n\\\\nInput received: Task: ...\\') at steps.check.output.success in path steps.check.output.success'"
+        }
+      },
+      "workflow": {
+        "name": "Conditional Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T13:04:12.475Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T13:04:12.641Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "62b4a2ca-e619-41eb-b46b-30535260063f",
+  "fields": {
+    "workflow": "0921846d-dd5d-4ff1-b795-81f88d6ec21d",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "process",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": null,
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "check": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "process": {
+          "success": false,
+          "output": null,
+          "error": "Condition evaluation failed: Failed to evaluate condition '{{steps.check.output.success}} == true': \"Cannot access 'success' in non-dict value at steps.check.output.success\""
+        }
+      },
+      "workflow": {
+        "name": "Conditional Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T12:55:11.097Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T12:55:11.268Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "4c128ba1-79bf-4822-ba03-b6bdb420546b",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T12:53:55.244Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T12:53:55.543Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "7c0c6356-163b-4504-bc91-59adbec0344e",
+  "fields": {
+    "workflow": "519f7d20-6b39-40e2-bfa4-9cf61a0c4159",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "mitigate",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": null,
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "detect_incident": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "assess_impact": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "mitigate": {
+          "success": false,
+          "output": null,
+          "error": "Condition evaluation failed: Failed to evaluate condition '{{steps.assess_impact.output.severity}} > 3': \"Cannot access 'severity' in non-dict value at steps.assess_impact.output.severity\""
+        }
+      },
+      "workflow": {
+        "name": "Incident Response",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T12:53:15.567Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T12:53:15.885Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "73f66284-ca3b-4252-8fc2-9c201c9587d5",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T12:51:09.932Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T12:51:10.240Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "acec70b5-7011-4569-b013-13f0e7b16254",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T12:49:39.545Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T12:49:39.886Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "a158d24b-c7c1-4dbb-a424-8dc62062d220",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T12:47:37.690Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T12:47:38.007Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "bb4fecbc-871c-4558-a467-a92429fde44f",
+  "fields": {
+    "workflow": "76d1204d-3962-4ae3-ad12-0bf4c3658a13",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "create_remediation_plan",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "scan_accessibility": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "analyze_wcag": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "create_remediation_plan": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Accessibility Audit",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T12:19:01.297Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T12:19:01.773Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "9472260a-e807-425c-9064-4297c7e10faf",
+  "fields": {
+    "workflow": "bb59a28a-9374-47eb-8b3b-51cf61f3a1ed",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step1",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Simple Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:30:32.251Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:30:32.442Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "61a449dd-b804-41a2-a49a-dde96d3e18cc",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:30:13.183Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:30:13.506Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "01df55eb-5788-4892-bae4-8581b8cfb48e",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:28:15.199Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:28:15.518Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "8be35664-f895-47dc-8389-037f99da4dc4",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:26:58.306Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:26:58.619Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "5611e7f6-7094-4361-bcff-e078e02250af",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:25:17.233Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:25:17.541Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "60d85c1a-3744-42ee-b5ee-7c4e56ff9865",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:23:46.410Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:23:46.732Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "3389c10e-f9b4-4ce9-b337-0b39364e5f21",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:22:02.526Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:22:02.880Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "67537751-96cf-410a-ac6e-f6fc93f2fd13",
+  "fields": {
+    "workflow": "b5e949f1-118a-4892-b148-2000802a0ccd",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "add_examples",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "analyze_api": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "generate_docs": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "add_examples": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "API Documentation Generation",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:21:18.442Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:21:18.906Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "7cbef13d-d497-47e3-ac42-7743f53c7b59",
+  "fields": {
+    "workflow": "b5e949f1-118a-4892-b148-2000802a0ccd",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "add_examples",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "analyze_api": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "generate_docs": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "add_examples": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "API Documentation Generation",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:18:11.121Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:18:11.550Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "87d54248-9b9e-4975-a5a7-62c693fa0cf9",
+  "fields": {
+    "workflow": "b5e949f1-118a-4892-b148-2000802a0ccd",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "add_examples",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "analyze_api": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "generate_docs": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "add_examples": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "API Documentation Generation",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:17:46.460Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:17:46.940Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "a9cf12ea-c8be-4be8-8583-6eb808e98a3f",
+  "fields": {
+    "workflow": "b5e949f1-118a-4892-b148-2000802a0ccd",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "add_examples",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "analyze_api": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "generate_docs": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "add_examples": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "API Documentation Generation",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:15:46.868Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:15:47.344Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "2cb70f71-30de-48c4-817c-6b6ea1d901f3",
+  "fields": {
+    "workflow": "b5e949f1-118a-4892-b148-2000802a0ccd",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "add_examples",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "analyze_api": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "generate_docs": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "add_examples": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "API Documentation Generation",
+        "version": "1.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:15:39.227Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:15:39.690Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "0ea6b136-712b-4c2f-9cc6-e2554bb3de97",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:14:18.255Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:14:18.563Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "df28facb-8f28-4107-b6b4-83afe2e23b54",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": "Mock Response:\n\nI understand you're asking about: \"Task: ...\"\n\nHere's a mock response for testing purposes:\n- This is a simulated AI response\n- No actual API calls were made\n- The workflow execution system is working correctly\n- Configure a real AI platform for actual AI capabilities\n\nInput received: Task: ...",
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:12:37.801Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:12:38.122Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "d8d82dee-697f-4404-8df5-5626c9e0f116",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": null,
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:10:37.115Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:10:37.229Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "7998be97-38df-4e67-809d-33a37dc87405",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {},
+    "output_data": null,
+    "state": {
+      "input": {},
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:05:35.688Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:05:35.781Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "84fcc52b-d95c-495a-a09c-152680a54d06",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": null,
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:05:07.684Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:05:07.778Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "06560495-9fe2-4f0e-8ed1-578c6d9d9f05",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {},
+    "output_data": null,
+    "state": {
+      "input": {},
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T08:01:08.709Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T08:01:08.832Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "87845295-9c4a-4955-bca2-b0d05a18ebe9",
+  "fields": {
+    "workflow": "f5b8938e-f4de-41bd-984a-215115b103e6",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step2",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": null,
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        },
+        "step2": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Multi-Step Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T07:57:10.034Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T07:57:10.130Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "2b89968d-89ff-4538-9348-d3bc8d56a7b6",
+  "fields": {
+    "workflow": "bb59a28a-9374-47eb-8b3b-51cf61f3a1ed",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step1",
+    "status": "completed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": null,
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {
+        "step1": {
+          "success": true,
+          "output": null,
+          "attempts": 1
+        }
+      },
+      "workflow": {
+        "name": "Simple Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "",
+    "retry_count": 0,
+    "created_at": "2025-12-06T07:56:40.660Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T07:56:40.715Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "9a3e6209-5425-41c4-b124-8923b9a3aaea",
+  "fields": {
+    "workflow": "bb59a28a-9374-47eb-8b3b-51cf61f3a1ed",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step1",
+    "status": "failed",
+    "input_data": {
+      "name": "hisham"
+    },
+    "output_data": null,
+    "state": {
+      "input": {
+        "name": "hisham"
+      },
+      "steps": {},
+      "workflow": {
+        "name": "Simple Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "'WorkflowExecution' object has no attribute 'updated_at'",
+    "retry_count": 0,
+    "created_at": "2025-12-06T07:52:40.115Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T07:52:47.302Z"
+  }
+},
+{
+  "model": "workflows.workflowexecution",
+  "pk": "37d5f5fd-b4ae-42e4-97d5-21b4d883077c",
+  "fields": {
+    "workflow": "bb59a28a-9374-47eb-8b3b-51cf61f3a1ed",
+    "user": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "current_step": "step1",
+    "status": "failed",
+    "input_data": {},
+    "output_data": null,
+    "state": {
+      "input": {},
+      "steps": {},
+      "workflow": {
+        "name": "Simple Test Workflow",
+        "version": "1.0.0"
+      }
+    },
+    "error_message": "'WorkflowExecution' object has no attribute 'updated_at'",
+    "retry_count": 0,
+    "created_at": "2025-12-06T07:48:54.560Z",
+    "started_at": null,
+    "completed_at": "2025-12-06T07:49:01.751Z"
+  }
+}
 ]
