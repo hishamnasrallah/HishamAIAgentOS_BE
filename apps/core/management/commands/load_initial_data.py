@@ -35,8 +35,31 @@ class Command(BaseCommand):
             self.stdout.write("   Please run 'python manage.py export_initial_data' first")
             return
 
+        # Define loading order to respect foreign key dependencies
+        # Order: authentication → integrations → agents → commands → projects → workflows → chat → others
+        loading_order = [
+            'authentication.json',
+            'integrations.json',
+            'agents.json',
+            'commands.json',
+            'projects.json',
+            'workflows.json',
+            'chat.json',
+        ]
+        
         # Get all JSON fixture files
-        fixture_files = sorted(fixtures_dir.glob("*.json"))
+        all_fixture_files = list(fixtures_dir.glob("*.json"))
+        
+        # Sort by loading order, then alphabetically for any remaining files
+        fixture_files = []
+        for ordered_file in loading_order:
+            matching = [f for f in all_fixture_files if f.name == ordered_file]
+            if matching:
+                fixture_files.extend(matching)
+        
+        # Add any remaining files not in the order list
+        remaining = [f for f in all_fixture_files if f.name not in loading_order]
+        fixture_files.extend(sorted(remaining))
 
         if not fixture_files:
             self.stdout.write(
@@ -80,8 +103,15 @@ class Command(BaseCommand):
                 if 'authentication.json' in str(fixture_file) and 'UNIQUE constraint' in error_msg:
                     self.stdout.write(self.style.WARNING("⏭️  Skipped (user already exists)"))
                     skipped_count += 1
+                elif 'foreign key' in error_msg.lower() or 'invalid foreign key' in error_msg.lower():
+                    # Foreign key constraint - might be missing dependency
+                    self.stdout.write(self.style.ERROR(f"❌ Foreign key error (missing dependency)"))
+                    self.stdout.write(f"   Try loading dependencies first or check fixture data")
+                    error_count += 1
                 else:
-                    self.stdout.write(self.style.ERROR(f"❌ Error: {error_msg[:100]}"))
+                    # Truncate long error messages
+                    short_error = error_msg[:150] + "..." if len(error_msg) > 150 else error_msg
+                    self.stdout.write(self.style.ERROR(f"❌ {short_error}"))
                     error_count += 1
 
         # Summary
