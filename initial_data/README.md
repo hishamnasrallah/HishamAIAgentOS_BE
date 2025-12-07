@@ -4,6 +4,8 @@
 
 ## تصدير البيانات (جاهزة للاستخدام)
 
+**⚠️ مهم:** يجب تصدير البيانات محلياً أولاً قبل استخدامها في deployment.
+
 ```bash
 python manage.py export_initial_data
 ```
@@ -13,6 +15,10 @@ python manage.py export_initial_data
 - يستثني جميع المستخدمين ما عدا `admin@hishamos.com`
 - **ينظف تلقائياً جميع مراجع المستخدمين** ويجعلها تشير إلى admin
 - يجعل الـ fixtures **جاهزة مباشرة للاستخدام** في deployment
+
+**بعد التصدير:**
+1. ارفع ملفات `initial_data/fixtures/*.json` إلى السيرفر
+2. في السيرفر: `python manage.py load_initial_data`
 
 **الملفات المُصدّرة:**
 - `initial_data/fixtures/authentication.json` - admin user فقط
