@@ -1,41 +1,5 @@
 [
   {
-    "model": "chat.conversation",
-    "pk": "d12f907f-b70a-44a6-aa2b-4e4a71d66c76",
-    "fields": {
-      "user": null,
-      "agent": "a44d98b8-a121-4282-8b6f-882be9ea4f65",
-      "title": "New Chat",
-      "created_at": "2025-12-07T14:02:52.472Z",
-      "updated_at": "2025-12-07T14:02:52.472Z",
-      "is_archived": false
-    }
-  },
-  {
-    "model": "chat.conversation",
-    "pk": "63c72113-df7e-4932-9d84-dcd291ab9a61",
-    "fields": {
-      "user": null,
-      "agent": "0fd07a57-b39e-48b0-ba28-d747a62c5eb5",
-      "title": "New Chat",
-      "created_at": "2025-12-06T06:37:48.510Z",
-      "updated_at": "2025-12-06T06:37:48.510Z",
-      "is_archived": false
-    }
-  },
-  {
-    "model": "chat.conversation",
-    "pk": "12d09d72-7bbc-41ab-9949-e6842f2e5f65",
-    "fields": {
-      "user": null,
-      "agent": "0fd07a57-b39e-48b0-ba28-d747a62c5eb5",
-      "title": "New Chat",
-      "created_at": "2025-12-05T21:44:31.292Z",
-      "updated_at": "2025-12-05T21:44:31.292Z",
-      "is_archived": false
-    }
-  },
-  {
     "model": "chat.message",
     "pk": "161b2830-9705-4323-b443-371fc972ce40",
     "fields": {

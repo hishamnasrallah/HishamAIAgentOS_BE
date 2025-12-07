@@ -37,6 +37,11 @@ class FixturePreparer:
         'members': True,  # ManyToMany - will be set to empty list
     }
     
+    # Models that require user field (cannot be null) - these records will be excluded
+    MODELS_REQUIRING_USER = {
+        'chat.conversation',  # user field is required (NOT NULL)
+    }
+    
     def __init__(self, source_dir: Path, output_dir: Path):
         self.source_dir = source_dir
         self.output_dir = output_dir
@@ -46,6 +51,7 @@ class FixturePreparer:
             'records_processed': 0,
             'user_references_cleaned': 0,
             'files_skipped': 0,
+            'records_excluded': 0,  # Records excluded because they require user
         }
     
     def prepare_all(self) -> Dict[str, Any]:
@@ -77,6 +83,8 @@ class FixturePreparer:
         print(f"✅ Files processed: {self.stats['files_processed']}")
         print(f"📦 Records processed: {self.stats['records_processed']}")
         print(f"🧹 User references cleaned: {self.stats['user_references_cleaned']}")
+        if self.stats['records_excluded'] > 0:
+            print(f"🚫 Records excluded (require user): {self.stats['records_excluded']}")
         print(f"⏭️  Files skipped: {self.stats['files_skipped']}")
         print(f"💾 Output directory: {self.output_dir.absolute()}")
         print("=" * 70)
@@ -112,8 +120,23 @@ class FixturePreparer:
             # Process each record
             cleaned_data = []
             user_refs_cleaned = 0
+            records_excluded = 0
             
             for record in fixture_data:
+                # Check if this model requires user and record has user reference
+                model_key = f"{record.get('model', '')}"
+                if model_key in self.MODELS_REQUIRING_USER:
+                    # Check if record has user reference
+                    fields = record.get('fields', {})
+                    has_user_ref = any(
+                        field_name in fields and fields[field_name] is not None
+                        for field_name in ['user', 'user_id']
+                    )
+                    if has_user_ref:
+                        # Exclude this record - it requires user but we can't provide one
+                        records_excluded += 1
+                        continue
+                
                 cleaned_record = self._clean_record(record)
                 if cleaned_record:
                     cleaned_data.append(cleaned_record)
@@ -128,8 +151,15 @@ class FixturePreparer:
             self.stats['files_processed'] += 1
             self.stats['records_processed'] += len(cleaned_data)
             self.stats['user_references_cleaned'] += user_refs_cleaned
+            self.stats['records_excluded'] += records_excluded
             
-            print(f"✅ ({len(cleaned_data)} records, {user_refs_cleaned} user refs cleaned)")
+            status_msg = f"✅ ({len(cleaned_data)} records"
+            if user_refs_cleaned > 0:
+                status_msg += f", {user_refs_cleaned} user refs cleaned"
+            if records_excluded > 0:
+                status_msg += f", {records_excluded} excluded (require user)"
+            status_msg += ")"
+            print(status_msg)
             
         except json.JSONDecodeError as e:
             print(f"❌ Invalid JSON: {e}")
