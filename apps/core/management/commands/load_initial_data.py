@@ -94,7 +94,7 @@ class Command(BaseCommand):
 
             try:
                 self.stdout.write(f"📥 Loading {fixture_file.name}...", ending=' ')
-                call_command('loaddata', str(fixture_file), verbosity=0)
+                call_command('loaddata', str(fixture_file), verbosity=1)
                 self.stdout.write(self.style.SUCCESS("✅"))
                 loaded_count += 1
             except Exception as e:
@@ -104,13 +104,20 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.WARNING("⏭️  Skipped (user already exists)"))
                     skipped_count += 1
                 elif 'foreign key' in error_msg.lower() or 'invalid foreign key' in error_msg.lower():
-                    # Foreign key constraint - might be missing dependency
-                    self.stdout.write(self.style.ERROR(f"❌ Foreign key error (missing dependency)"))
-                    self.stdout.write(f"   Try loading dependencies first or check fixture data")
+                    # Foreign key constraint - extract more details
+                    self.stdout.write(self.style.ERROR(f"❌ Foreign key error"))
+                    # Try to extract table and key info from error
+                    if 'table' in error_msg.lower():
+                        # Extract table name if possible
+                        import re
+                        table_match = re.search(r"table '(\w+)'", error_msg)
+                        if table_match:
+                            self.stdout.write(f"   Table: {table_match.group(1)}")
+                    self.stdout.write(f"   Full error: {error_msg[:200]}")
                     error_count += 1
                 else:
                     # Truncate long error messages
-                    short_error = error_msg[:150] + "..." if len(error_msg) > 150 else error_msg
+                    short_error = error_msg[:200] + "..." if len(error_msg) > 200 else error_msg
                     self.stdout.write(self.style.ERROR(f"❌ {short_error}"))
                     error_count += 1
 
