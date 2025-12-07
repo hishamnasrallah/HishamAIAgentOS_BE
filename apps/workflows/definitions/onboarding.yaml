@@ -1,0 +1,34 @@
+# Onboarding
+name: "Developer Onboarding"
+version: "1.0"
+description: "Automated developer onboarding process"
+
+steps:
+  - id: "setup_environment"
+    name: "Setup Development Environment"
+    agent: "DevOps Agent"
+    inputs:
+      developer_info: "{{input.developer}}"
+    on_success: "grant_access"
+    
+  - id: "grant_access"
+    name: "Grant System Access"
+    agent: "DevOps Agent"
+    inputs:
+      developer: "{{input.developer}}"
+      repositories: "{{input.repos}}"
+    on_success: "generate_docs"
+    
+  - id: "generate_docs"
+    name: "Generate Onboarding Documentation"
+    agent: "Documentation Agent"
+    inputs:
+      project_info: "{{input.project}}"
+    on_success: "assign_mentor"
+    
+  - id: "assign_mentor"
+    name: "Assign Mentor"
+    agent: "Project Manager Agent"
+    inputs:
+      new_developer: "{{input.developer}}"
+      team: "{{input.team}}"

@@ -1,0 +1,33 @@
+# Technical Debt Review
+name: "Technical Debt Review"
+version: "1.0"
+description: "Identify and prioritize technical debt"
+
+steps:
+  - id: "scan_codebase"
+    name: "Scan for Technical Debt"
+    agent: "Architect Agent"
+    inputs:
+      repository: "{{input.repo_url}}"
+    on_success: "categorize"
+    
+  - id: "categorize"
+    name: "Categorize Debt Items"
+    agent: "Architect Agent"
+    inputs:
+      debt_items: "{{steps.scan_codebase.output}}"
+    on_success: "estimate_effort"
+    
+  - id: "estimate_effort"
+    name: "Estimate Remediation Effort"
+    agent: "Project Manager Agent"
+    inputs:
+      categorized_debt: "{{steps.categorize.output}}"
+    on_success: "prioritize"
+    
+  - id: "prioritize"
+    name: "Prioritize Debt Reduction"
+    agent: "Project Manager Agent"
+    inputs:
+      estimated_debt: "{{steps.estimate_effort.output}}"
+      business_impact: "{{input.priorities}}"

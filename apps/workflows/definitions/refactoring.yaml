@@ -1,0 +1,41 @@
+# Refactoring
+name: "Code Refactoring"
+version: "1.0"
+description: "Safe code refactoring workflow"
+
+steps:
+  - id: "identify_targets"
+    name: "Identify Refactoring Targets"
+    agent: "Architect Agent"
+    inputs:
+      codebase: "{{input.repo_url}}"
+    on_success: "analyze_impact"
+    
+  - id: "analyze_impact"
+    name: "Analyze Refactoring Impact"
+    agent: "Architect Agent"
+    inputs:
+      targets: "{{steps.identify_targets.output}}"
+    on_success: "refactor"
+    
+  - id: "refactor"
+    name: "Perform Refactoring"
+    agent: "Coding Agent"
+    inputs:
+      refactoring_plan: "{{steps.analyze_impact.output}}"
+    on_success: "test"
+    max_retries: 2
+    
+  - id: "test"
+    name: "Test Refactored Code"
+    agent: "QA Agent"
+    inputs:
+      changes: "{{steps.refactor.output}}"
+    on_success: "review"
+    on_failure: "refactor"
+    
+  - id: "review"
+    name: "Code Review"
+    agent: "Code Review Agent"
+    inputs:
+      refactored_code: "{{steps.refactor.output}}"

@@ -1,0 +1,461 @@
+# ============================================
+# HishamOS Backend - Comprehensive .gitignore
+# Django + Python + Celery + Redis
+# ============================================
+
+# ==================== Python ====================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+db.sqlite3-wal
+db.sqlite3-shm
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+celerybeat.db
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ==================== Django ====================
+# Django specific
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+db.sqlite3-wal
+db.sqlite3-shm
+
+# Django migrations (keep structure, ignore specific migrations if needed)
+# migrations/  # Uncomment to ignore all migrations
+
+# Django static files (collected)
+/static/
+/staticfiles/
+/static_root/
+/media/
+/media_root/
+
+# Django admin
+/admin_media/
+
+# Django cache
+*.cache
+cache/
+.python-html/
+
+# Django templates (compiled)
+*.pyc
+*.pyo
+
+# Django test database
+test_db.sqlite3
+
+# Django coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# ==================== Celery ====================
+celerybeat-schedule
+celerybeat.pid
+celerybeat.db
+celerybeat-schedule.db
+
+# ==================== Redis ====================
+dump.rdb
+*.rdb
+
+# ==================== Environment Variables ====================
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+.env.staging
+*.env
+
+# ==================== IDEs and Editors ====================
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# PyCharm / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+.\#*
+*~
+*.elc
+auto-save-list
+tramp
+.#*
+
+# Visual Studio Code
+.vscode/
+.history/
+
+# ==================== OS Files ====================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ==================== Logs ====================
+*.log
+logs/
+*.log.*
+log/
+*.log.*.gz
+*.log.*.bz2
+*.log.*.xz
+
+# Django logs
+django.log
+*.log.*
+logs/*.log
+
+# Application logs
+app.log
+error.log
+access.log
+
+# ==================== Database ====================
+# SQLite
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# PostgreSQL
+*.sql
+*.dump
+*.backup
+pgdata/
+postgres-data/
+
+# MySQL
+*.sql.gz
+*.mysql
+
+# Database backups
+*.sql.bak
+*.dump.bak
+backups/
+*.backup
+
+# ==================== Static and Media Files ====================
+/staticfiles/
+/static_root/
+/media/
+/media_root/
+/collectstatic/
+
+# ==================== Secrets and Keys ====================
+secrets/
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+secrets.yaml
+secrets.yml
+*.secret
+*.credentials
+credentials.json
+service-account.json
+
+# ==================== Testing ====================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+test-results/
+test-reports/
+.pytest/
+
+# ==================== Profiling ====================
+*.prof
+*.pstats
+*.cprof
+
+# ==================== Documentation ====================
+# Built documentation (keep source)
+docs/_build/
+docs/.doctrees/
+
+# ==================== Temporary Files ====================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.cache/
+tmp/
+temp/
+*.orig
+*.rej
+
+# ==================== Package Managers ====================
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# pipenv
+Pipfile.lock
+
+# Poetry
+poetry.lock
+
+# ==================== Docker ====================
+# Docker volumes
+docker-volumes/
+*.env.docker
+
+# ==================== Project Specific ====================
+# Project backups
+backup_full_project_*/
+_old_*/
+_archive_/
+
+# Temporary scripts
+tmp_*.py
+test_*.py.bak
+
+# Local configuration overrides
+local_config.py
+local_settings.py
+settings_local.py
+
+# ==================== Monitoring and Analytics ====================
+*.pid
+*.seed
+*.pid.lock
+
+# ==================== Migration Backups ====================
+migrations/backup/
+migrations/old/
+
+# ==================== Coverage Reports ====================
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# ==================== Type Checking ====================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+pyrightconfig.json
+
+# ==================== Jupyter Notebooks ====================
+.ipynb_checkpoints
+*.ipynb_checkpoints
+
+# ==================== Project Management ====================
+# Keep these if they contain useful info, uncomment to ignore
+# TODO.md
+# NOTES.md
+# CHANGELOG.md

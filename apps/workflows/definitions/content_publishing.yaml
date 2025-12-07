@@ -1,0 +1,33 @@
+# Content Publishing
+name: "Content Publishing"
+version: "1.0"
+description: "Content review and publishing workflow"
+
+steps:
+  - id: "review_content"
+    name: "Review Content Quality"
+    agent: "Documentation Agent"
+    inputs:
+      content: "{{input.draft_content}}"
+    on_success: "approve"
+    
+  - id: "approve"
+    name: "Content Approval"
+    agent: "Project Manager Agent"
+    inputs:
+      reviewed_content: "{{steps.review_content.output}}"
+    condition: "{{steps.review_content.output.quality_score}} > 7"
+    on_success: "publish"
+    on_failure: "request_revisions"
+    
+  - id: "publish"
+    name: "Publish Content"
+    agent: "DevOps Agent"
+    inputs:
+      approved_content: "{{steps.approve.output}}"
+    
+  - id: "request_revisions"
+    name: "Request Content Revisions"
+    agent: "Documentation Agent"
+    inputs:
+      feedback: "{{steps.review_content.output.issues}}"

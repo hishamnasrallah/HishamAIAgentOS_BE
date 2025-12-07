@@ -1,0 +1,24 @@
+# API Documentation Generation
+name: "API Documentation Generation"
+version: "1.0"
+description: "Generate comprehensive API documentation"
+
+steps:
+  - id: "analyze_api"
+    name: "Analyze API Endpoints"
+    agent: "Documentation Agent"
+    inputs:
+      api_spec: "{{input.openapi_spec}}"
+    on_success: "generate_docs"
+  - id: "generate_docs"
+    name: "Generate Documentation"
+    agent: "Documentation Agent"
+    inputs:
+      api_analysis: "{{steps.analyze_api.output}}"
+    on_success: "add_examples"
+    
+  - id: "add_examples"
+    name: "Add Code Examples"
+    agent: "Coding Agent"
+    inputs:
+      documentation: "{{steps.generate_docs.output}}"

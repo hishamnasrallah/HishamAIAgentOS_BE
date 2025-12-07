@@ -1,0 +1,76 @@
+# Feature Development Workflow
+# 6-step workflow from story creation to deployment
+
+name: "Feature Development" 
+version: "1.0"
+description: "Complete feature development lifecycle from story to production"
+
+metadata:
+  author: "HishamOS"
+  created_date: "2024-12-01"
+  tags: ["feature", "development", "agile"]
+
+steps:
+  # Step 1: Story Generation
+  - id: "create_story"
+    name: "Generate User Story"
+    agent: "Business Analyst Agent"
+    inputs:
+      feature_idea: "{{input.feature_description}}"
+      product_context: "{{input.product_vision}}"
+    on_success: "design"
+    max_retries: 2
+    
+  # Step 2: Technical Design
+  - id: "design"
+    name: "Technical Design"
+    agent: "Architect Agent"
+    inputs:
+      user_story: "{{steps.create_story.output}}"
+      system_architecture: "{{input.architecture}}"
+    on_success: "implement"
+    max_retries: 2
+    
+  # Step 3: Implementation
+  - id: "implement"
+    name: "Implement Feature"
+    agent: "Coding Agent"
+    inputs:
+      technical_design: "{{steps.design.output}}"
+      user_story: "{{steps.create_story.output}}"
+    on_success: "review"
+    on_failure: "design"  # Back to design if implementation blocked
+    max_retries: 3
+    timeout_seconds: 900
+    
+  # Step 4: Code Review
+  - id: "review"
+    name: "Code Review"
+    agent: "Code Review Agent"
+    inputs:
+      code_changes: "{{steps.implement.output}}"
+      design_doc: "{{steps.design.output}}"
+    on_success: "test"
+    on_failure: "implement"  # Back to coding
+    max_retries: 2
+    
+  # Step 5: Testing
+  - id: "test"
+    name: "Feature Testing"
+    agent: "QA Agent"
+    inputs:
+      feature_code: "{{steps.implement.output}}"
+      acceptance_criteria: "{{steps.create_story.output.acceptance_criteria}}"
+    on_success: "deploy"
+    on_failure: "implement"
+    max_retries: 2
+    
+  # Step 6: Deployment
+  - id: "deploy"
+    name: "Deploy Feature"
+    agent: "DevOps Agent"
+    inputs:
+      feature_package: "{{steps.test.output}}"
+      environment: "{{input.target_environment}}"
+    max_retries: 2
+    timeout_seconds: 600

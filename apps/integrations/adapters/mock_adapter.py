@@ -1,0 +1,288 @@
+"""
+Mock AI Adapter for testing without API keys.
+
+This adapter simulates AI responses without making actual API calls.
+Useful for development and testing workflows.
+"""
+
+import asyncio
+from typing import Dict, Any, Optional, List, AsyncIterator
+from datetime import datetime
+
+from .base import BaseAIAdapter, CompletionRequest, CompletionResponse
+from apps.integrations.models import AIPlatform
+
+
+class MockAdapter(BaseAIAdapter):
+    """
+    Mock adapter that simulates AI responses.
+    
+    Returns deterministic or configurable responses for testing.
+    """
+    
+    def __init__(self, platform_config: Optional[AIPlatform] = None):
+        """
+        Initialize mock adapter.
+        
+        Args:
+            platform_config: Optional AIPlatform config (not required for mock)
+        """
+        # Create a minimal platform config if none provided
+        if platform_config is None:
+            class MockPlatform:
+                platform_name = 'mock'
+                display_name = 'Mock AI Platform'
+                api_key = ''
+                api_url = ''
+                organization_id = ''
+                default_model = 'mock-model-v1'
+                is_enabled = True
+                status = 'active'
+                
+                def get_api_key(self) -> str:
+                    """Return empty string for mock platform."""
+                    return ''
+            
+            platform_config = MockPlatform()
+        
+        # Override __init__ to handle mock platform without calling super().__init__ first
+        # This avoids calling get_api_key() on MockPlatform before we set it up
+        self.platform_config = platform_config
+        self.platform_name = 'mock'
+        self.api_key = platform_config.get_api_key() if hasattr(platform_config, 'get_api_key') else ''
+        self.default_model = getattr(platform_config, 'default_model', 'mock-model-v1')
+        self.max_retries = 3
+        self.retry_delay = 1.0
+        import logging
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+    
+    async def generate_completion(
+        self,
+        request: CompletionRequest,
+        model: Optional[str] = None
+    ) -> CompletionResponse:
+        """
+        Generate a mock completion response.
+        
+        Args:
+            request: Completion request
+            model: Model name (optional)
+            
+        Returns:
+            Mock completion response
+        """
+        # Simulate some processing time
+        await asyncio.sleep(0.1)
+        
+        # Generate a mock response based on the prompt
+        mock_content = self._generate_mock_response(request.prompt, request.system_prompt)
+        
+        # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
+        estimated_tokens = len(mock_content) // 4 + len(request.prompt) // 4
+        if request.system_prompt:
+            estimated_tokens += len(request.system_prompt) // 4
+        
+        # Mock cost (very low for testing)
+        mock_cost = estimated_tokens * 0.00001  # $0.00001 per token
+        
+        return CompletionResponse(
+            content=mock_content,
+            model=model or self.platform_config.default_model or 'mock-model-v1',
+            platform='mock',
+            tokens_used=estimated_tokens,
+            cost=mock_cost,
+            finish_reason='stop',
+            metadata={
+                'mock': True,
+                'timestamp': datetime.now().isoformat(),
+                'prompt_length': len(request.prompt),
+            }
+        )
+    
+    def _generate_mock_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        """
+        Generate a mock response based on the prompt.
+        
+        Args:
+            prompt: User prompt
+            system_prompt: System prompt (optional)
+            
+        Returns:
+            Mock response text
+        """
+        # Simple mock response generation
+        prompt_lower = prompt.lower()
+        
+        # Generate contextual responses based on prompt keywords
+        if 'analyze' in prompt_lower or 'analysis' in prompt_lower:
+            return f"""Mock Analysis Result:
+
+Based on the provided input: "{prompt[:100]}..."
+
+Analysis Summary:
+- Key finding 1: This is a mock analysis result for testing purposes.
+- Key finding 2: The workflow execution system is functioning correctly.
+- Recommendation: Continue testing with this mock adapter.
+
+Note: This is a simulated response. For real AI capabilities, configure an actual AI platform."""
+        
+        elif 'generate' in prompt_lower or 'create' in prompt_lower:
+            return f"""Mock Generated Content:
+
+Here is the generated content based on your request: "{prompt[:100]}..."
+
+Generated Output:
+1. Item A: Mock generated content
+2. Item B: Additional mock content
+3. Item C: More mock content for testing
+
+This is a simulated response generated by the mock adapter."""
+        
+        elif 'review' in prompt_lower or 'evaluate' in prompt_lower:
+            return f"""Mock Review Result:
+
+Review of: "{prompt[:100]}..."
+
+Review Summary:
+✓ Positive aspects: Mock positive feedback
+⚠ Areas for improvement: Mock suggestions
+✓ Overall assessment: Mock assessment result
+
+Note: This is a simulated review for testing purposes."""
+        
+        elif 'test' in prompt_lower or 'testing' in prompt_lower:
+            return f"""Mock Test Result:
+
+Test executed for: "{prompt[:100]}..."
+
+Test Results:
+- Status: PASSED (mock)
+- Coverage: 85% (mock)
+- Issues found: 0 (mock)
+- Recommendations: Continue testing
+
+This is a simulated test result."""
+        
+        else:
+            # Default generic response
+            return f"""Mock Response:
+
+I understand you're asking about: "{prompt[:100]}..."
+
+Here's a mock response for testing purposes:
+- This is a simulated AI response
+- No actual API calls were made
+- The workflow execution system is working correctly
+- Configure a real AI platform for actual AI capabilities
+
+Input received: {prompt[:200]}..."""
+    
+    async def check_health(self) -> Dict[str, Any]:
+        """
+        Check health of mock adapter (always healthy).
+        
+        Returns:
+            Health status dictionary
+        """
+        return {
+            'status': 'healthy',
+            'available': True,
+            'platform': 'mock',
+            'message': 'Mock adapter is always available for testing',
+            'timestamp': datetime.now().isoformat(),
+        }
+    
+    async def generate_streaming_completion(
+        self,
+        request: CompletionRequest,
+        model: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """
+        Generate a streaming mock completion response.
+        
+        Args:
+            request: Completion request
+            model: Model name (optional)
+            
+        Yields:
+            String chunks as they are generated
+        """
+        # Generate the full mock response
+        mock_content = self._generate_mock_response(request.prompt, request.system_prompt)
+        
+        # Simulate streaming by yielding chunks
+        chunk_size = 50  # Characters per chunk
+        for i in range(0, len(mock_content), chunk_size):
+            chunk = mock_content[i:i + chunk_size]
+            yield chunk
+            # Small delay to simulate streaming
+            await asyncio.sleep(0.05)
+    
+    def calculate_cost(
+        self,
+        model: str,
+        input_tokens: int,
+        output_tokens: int
+    ) -> float:
+        """
+        Calculate cost for token usage (mock pricing).
+        
+        Args:
+            model: Model identifier
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens
+            
+        Returns:
+            Cost in USD (very low for testing)
+        """
+        # Mock pricing: $0.00001 per token (input + output)
+        cost_per_token = 0.00001
+        total_tokens = input_tokens + output_tokens
+        return total_tokens * cost_per_token
+    
+    def validate_request(self, request: CompletionRequest, model: str) -> None:
+        """
+        Validate request parameters for mock adapter.
+        
+        Args:
+            request: Completion request to validate
+            model: Model to validate against
+            
+        Raises:
+            ValueError: If validation fails
+        """
+        # Basic validation for mock adapter
+        if not request.prompt or not request.prompt.strip():
+            raise ValueError("Prompt cannot be empty")
+        
+        if request.max_tokens < 1:
+            raise ValueError("max_tokens must be at least 1")
+        
+        if request.max_tokens > 100000:  # Reasonable upper limit
+            raise ValueError("max_tokens exceeds maximum allowed (100000)")
+        
+        if request.temperature < 0 or request.temperature > 2:
+            raise ValueError("temperature must be between 0 and 2")
+    
+    def get_available_models(self) -> List[str]:
+        """
+        Get list of available mock models.
+        
+        Returns:
+            List of mock model names
+        """
+        return [
+            'mock-model-v1',
+            'mock-model-v2',
+            'mock-model-turbo',
+        ]
+    
+    def is_available(self) -> bool:
+        """
+        Check if mock adapter is available (always True).
+        
+        Returns:
+            True (mock is always available)
+        """
+        return True
+

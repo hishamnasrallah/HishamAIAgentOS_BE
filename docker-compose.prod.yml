@@ -1,0 +1,206 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: hishamos_postgres_prod
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Uncomment if you have init-db.sql file in scripts/ directory:
+      # - ../scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - hishamos_network
+    # No ports exposed in production - only internal network access
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: hishamos_redis_prod
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - hishamos_network
+    # No ports exposed in production - only internal network access
+
+  # Django Backend (Production)
+  backend:
+    build:
+      context: .
+      dockerfile: ../infrastructure/docker/Dockerfile.backend.prod
+    container_name: hishamos_backend_prod
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        python manage.py collectstatic --noinput &&
+        daphne -b 0.0.0.0 -p 8000 core.asgi:application
+      "
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings.production
+      - DEBUG=False
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      - logs_volume:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/monitoring/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - hishamos_network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Celery Worker (Production)
+  celery:
+    build:
+      context: .
+      dockerfile: ../infrastructure/docker/Dockerfile.backend.prod
+    container_name: hishamos_celery_prod
+    command: celery -A core worker --loglevel=info --concurrency=4
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings.production
+      - DEBUG=False
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      - logs_volume:/app/logs
+    depends_on:
+      - backend
+      - redis
+      - postgres
+    restart: unless-stopped
+    networks:
+      - hishamos_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Celery Beat (Scheduler) - Production
+  celery-beat:
+    build:
+      context: .
+      dockerfile: ../infrastructure/docker/Dockerfile.backend.prod
+    container_name: hishamos_celery_beat_prod
+    command: celery -A core beat --loglevel=info
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings.production
+      - DEBUG=False
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      - logs_volume:/app/logs
+    depends_on:
+      - backend
+      - redis
+      - postgres
+    restart: unless-stopped
+    networks:
+      - hishamos_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Frontend (Production - Nginx)
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../../infrastructure/docker/Dockerfile.frontend.prod
+    container_name: hishamos_frontend_prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - hishamos_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Nginx Reverse Proxy (Optional - if not using frontend nginx)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: hishamos_nginx_prod
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+  #     - static_volume:/static:ro
+  #   depends_on:
+  #     - backend
+  #     - frontend
+  #   restart: unless-stopped
+  #   networks:
+  #     - hishamos_network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  static_volume:
+    driver: local
+  media_volume:
+    driver: local
+  logs_volume:
+    driver: local
+
+networks:
+  hishamos_network:
+    driver: bridge
+

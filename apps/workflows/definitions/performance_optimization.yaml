@@ -1,0 +1,43 @@
+# Performance Optimization Workflow
+name: "Performance Optimization"
+version: "1.0"
+description: "Identify and optimize performance bottlenecks"
+
+steps:
+  - id: "profile_application"
+    name: "Profile Application Performance"
+    agent: "DevOps Agent"
+    inputs:
+      application_url: "{{input.app_url}}"
+      metrics: "{{input.performance_metrics}}"
+    on_success: "analyze_bottlenecks"
+    timeout_seconds: 600
+    
+  - id: "analyze_bottlenecks"
+    name: "Analyze Performance Bottlenecks"
+    agent: "Architect Agent"
+    inputs:
+      profile_data: "{{steps.profile_application.output}}"
+    on_success: "recommend_optimizations"
+    
+  - id: "recommend_optimizations"
+    name: "Recommend Optimizations"
+    agent: "Architect Agent"
+    inputs:
+      bottlenecks: "{{steps.analyze_bottlenecks.output}}"
+    on_success: "implement"
+    
+  - id: "implement"
+    name: "Implement Optimizations"
+    agent: "Coding Agent"
+    inputs:
+      recommendations: "{{steps.recommend_optimizations.output}}"
+    on_success: "verify"
+    max_retries: 3
+    
+  - id: "verify"
+    name: "Verify Performance Improvements"
+    agent: "DevOps Agent"
+    inputs:
+      before: "{{steps.profile_application.output}}"
+      after_changes: "{{steps.implement.output}}"

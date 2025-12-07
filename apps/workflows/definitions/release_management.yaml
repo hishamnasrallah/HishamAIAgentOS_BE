@@ -1,0 +1,88 @@
+# Release Management Workflow
+# 6-step process from version planning to production monitoring
+
+name: "Release Management"
+version: "1.0"
+description: "Complete software release process from planning to production"
+
+metadata:
+  author: "HishamOS"
+  created_date: "2024-12-01"
+  tags: ["release", "deployment", "devops"]
+
+steps:
+  # Step 1: Version Planning
+  - id: "plan_release"
+    name: "Plan Release Version"
+    agent: "Release Manager Agent"
+    inputs:
+      features: "{{input.completed_features}}"
+      target_date: "{{input.release_date}}"
+    on_success: "build"
+    max_retries: 1
+    
+  # Step 2: Build Release
+  - id: "build"
+    name: "Build Release Package"
+    agent: "DevOps Agent"
+    inputs:
+      version: "{{steps.plan_release.output.version}}"
+      features_list: "{{steps.plan_release.output.features}}"
+    on_success: "test"
+    on_failure: "plan_release"
+    max_retries: 2
+    timeout_seconds: 1200
+    
+  # Step 3: Test Release
+  - id: "test"
+    name: "Test Release Build"
+    agent: "QA Agent"
+    inputs:
+      build_artifacts: "{{steps.build.output}}"
+      test_plan: "{{steps.plan_release.output.test_plan}}"
+    on_success: "deploy_staging"
+    on_failure: "build"
+    max_retries: 2
+    
+  # Step 4: Deploy to Staging
+  - id: "deploy_staging"
+    name: "Deploy to Staging"
+    agent: "DevOps Agent"
+    inputs:
+      release_package: "{{steps.build.output}}"
+      environment: "staging"
+    on_success: "deploy_production"
+    on_failure: "test"
+    max_retries: 2
+    timeout_seconds: 900
+    
+  # Step 5: Deploy to Production
+  - id: "deploy_production"
+    name: "Deploy to Production"
+    agent: "DevOps Agent"
+    inputs:
+      release_package: "{{steps.build.output}}"
+      environment: "production"
+      staging_validation: "{{steps.deploy_staging.output}}"
+    condition: "{{steps.deploy_staging.output.success}} == true"
+    on_success: "monitor"
+    on_failure: "rollback"
+    max_retries: 1
+    timeout_seconds: 1200
+    
+  # Step 6: Monitor Production
+  - id: "monitor"
+    name: "Monitor Release"
+    agent: "DevOps Agent"
+    inputs:
+      deployment_id: "{{steps.deploy_production.output.deployment_id}}"
+      metrics: "{{input.health_metrics}}"
+    max_retries: 1
+    
+  # Rollback scenario 
+  - id: "rollback"
+    name: "Rollback Release"
+    agent: "DevOps Agent"
+    inputs:
+      failed_deployment: "{{steps.deploy_production.output}}"
+      previous_version: "{{steps.plan_release.output.previous_version}}"

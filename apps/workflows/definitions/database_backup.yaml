@@ -1,0 +1,28 @@
+# Data Backup
+name: "Database Backup"
+version: "1.0"
+description: "Automated database backup workflow"
+
+steps:
+  - id: "create_backup"
+    name: "Create Database Backup"
+    agent: "DevOps Agent"
+    inputs:
+      database: "{{input.database_name}}"
+    on_success: "verify_backup"
+    timeout_seconds: 3600
+    
+  - id: "verify_backup"
+    name: "Verify Backup Integrity"
+    agent: "DevOps Agent"
+    inputs:
+      backup_file: "{{steps.create_backup.output}}"
+    on_success: "store_backup"
+    on_failure: "create_backup"
+    
+  - id: "store_backup"
+    name: "Store Backup Securely"
+    agent: "DevOps Agent"
+    inputs:
+      verified_backup: "{{steps.verify_backup.output}}"
+      storage_location: "{{input.backup_storage}}"

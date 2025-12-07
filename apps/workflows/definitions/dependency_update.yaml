@@ -1,0 +1,46 @@
+# Dependency Update
+name: "Dependency Update"
+version: "1.0"
+description: "Safe dependency update workflow"
+
+steps:
+  - id: "check_updates"
+    name: "Check for Dependency Updates"
+    agent: "DevOps Agent"
+    inputs:
+      project: "{{input.project_path}}"
+    on_success: "analyze_changes"
+    
+  - id: "analyze_changes"
+    name: "Analyze Breaking Changes"
+    agent: "Architect Agent"
+    inputs:
+      updates: "{{steps.check_updates.output}}"
+    on_success: "apply_updates"
+    
+  - id: "apply_updates"
+    name: "Apply Dependency Updates"
+    agent: "DevOps Agent"
+    inputs:
+      safe_updates: "{{steps.analyze_changes.output.safe_updates}}"
+    on_success: "test"
+    
+  - id: "test"
+    name: "Run Test Suite"
+    agent: "QA Agent"
+    inputs:
+      updated_project: "{{steps.apply_updates.output}}"
+    on_success: "commit"
+    on_failure: "rollback_updates"
+    
+  - id: "commit"
+    name: "Commit Updates"
+    agent: "DevOps Agent"
+    inputs:
+      changes: "{{steps.apply_updates.output}}"
+    
+  - id: "rollback_updates"
+    name: "Rollback Failed Updates"
+    agent: "DevOps Agent"
+    inputs:
+      failed: "{{steps.test.output}}"

@@ -1,0 +1,112 @@
+# Bug Lifecycle Workflow Definition
+# 7-step workflow from bug report to deployment
+
+name: "Bug Lifecycle"
+version: "1.0"
+description: "Complete bug lifecycle from report to deployment and closure"
+
+metadata:
+  author: "HishamOS"
+  created_date: "2024-12-01"
+  tags: ["bug", "sdlc", "qa", "development"]
+
+steps:
+  # Step 1: Bug Triage
+  - id: "triage"
+    name: "Bug Triage"
+    agent: "Bug Triage Agent"
+    inputs:
+      bug_description: "{{input.bug_description}}"
+      project_context: "{{input.project}}"
+    on_success: "assign"
+    on_failure: "notify_team"
+    max_retries: 2
+    
+  # Step 2: Assign to Developer
+  - id: "assign"
+    name: "Assign to Developer"
+    agent: "Project Manager Agent"
+    inputs:
+      bug_info: "{{steps.triage.output}}"
+      team_capacity: "{{input.team_capacity}}"
+    condition: "{{steps.triage.output.severity}} > 2"
+    on_success: "fix"
+    max_retries: 1
+    
+  # Step 3: Fix Implementation
+  - id: "fix"
+    name: "Implement Fix"
+    agent: "Coding Agent"
+    inputs:
+      bug_details: "{{steps.triage.output}}"
+      assigned_dev: "{{steps.assign.output.developer}}"
+    on_success: "code_review"
+    on_failure: "escalate"
+    max_retries: 3
+    timeout_seconds: 600
+    
+  # Step 4: Code Review
+  - id: "code_review"
+    name: "Code Review"
+    agent: "Code Review Agent"
+    inputs:
+      code_changes: "{{steps.fix.output.code}}"
+      bug_context: "{{steps.triage.output}}"
+    on_success: "qa_test"
+    on_failure: "fix"  # Back to fix if review fails
+    max_retries: 2
+    
+  # Step 5: QA Testing
+  - id: "qa_test"
+    name: "QA Testing"
+    agent: "QA Agent"
+    inputs:
+      fix_description: "{{steps.fix.output}}"
+      test_scenarios: "{{steps.triage.output.test_cases}}"
+    on_success: "deploy"
+    on_failure: "fix"  # Back to fix if tests fail
+    max_retries: 2
+    
+  # Step 6: Deploy to Production  
+  - id: "deploy"
+    name: "Deploy Fix"
+    agent: "DevOps Agent"
+    inputs:
+      deployment_package: "{{steps.qa_test.output}}"
+      environment: "production"
+    on_success: "close"
+    on_failure: "rollback"
+    max_retries: 1
+    timeout_seconds: 900
+    
+  # Step 7: Close Bug
+  - id: "close"
+    name: "Close Bug"
+    agent: "Project Manager Agent"
+    inputs:
+      bug_id: "{{input.bug_id}}"
+      resolution: "{{steps.deploy.output}}"
+    max_retries: 1
+    
+  # Alternative paths
+  - id: "escalate"
+    name: "Escalate to Senior Dev"
+    agent: "Project Manager Agent"
+    inputs:
+      bug_info: "{{steps.triage.output}}"
+      failure_reason: "{{steps.fix.error}}"
+    on_success: "fix"
+    
+  - id: "rollback"
+    name: "Rollback Deployment"
+    agent: "DevOps Agent"
+    inputs:
+      deployment_id: "{{steps.deploy.output.deployment_id}}"
+    on_failure: "notify_team"
+    
+  - id: "notify_team"
+    name: "Notify Team of Failure"
+    agent: "Project Manager Agent"
+    inputs:
+      workflow_state: "{{steps}}"
+      error_details: "Critical workflow failure"

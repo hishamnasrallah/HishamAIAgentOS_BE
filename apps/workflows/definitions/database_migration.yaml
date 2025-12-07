@@ -1,0 +1,42 @@
+# Database Migration
+name: "Database Migration"
+version: "1.0"
+description: "Safe database migration workflow"
+
+steps:
+  - id: "analyze_schema"
+    name: "Analyze Schema Changes"
+    agent: "Database Specialist Agent"
+    inputs:
+      current_schema: "{{input.schema}}"
+      target_schema: "{{input.new_schema}}"
+    on_success: "generate_migration"
+    
+  - id: "generate_migration"
+    name: "Generate Migration Script"
+    agent: "Database Specialist Agent"
+    inputs:
+      analysis: "{{steps.analyze_schema.output}}"
+    on_success: "test_migration"
+    
+  - id: "test_migration"
+    name: "Test Migration on Staging"
+    agent: "DevOps Agent"
+    inputs:
+      migration_script: "{{steps.generate_migration.output}}"
+      environment: "staging"
+    on_success: "apply_production"
+    on_failure: "rollback"
+    
+  - id: "apply_production"
+    name: "Apply to Production"
+    agent: "DevOps Agent"
+    inputs:
+      tested_migration: "{{steps.test_migration.output}}"
+    max_retries: 1
+    
+  - id: "rollback"
+    name: "Rollback Migration"
+    agent: "DevOps Agent"
+    inputs:
+      failed_migration: "{{steps.test_migration.output}}"

@@ -1,0 +1,26 @@
+# User Story Generation
+name: "User Story Generation"
+version: "1.0"
+description: "AI-powered user story generation from feature ideas"
+
+steps:
+  - id: "analyze_feature"
+    name: "Analyze Feature Request"
+    agent: "Business Analyst Agent"
+    inputs:
+      feature_description: "{{input.feature}}"
+      product_vision: "{{input.vision}}"
+    on_success: "generate_stories"
+    
+  - id: "generate_stories"
+    name: "Generate User Stories"
+    agent: "Business Analyst Agent"
+    inputs:
+      analysis: "{{steps.analyze_feature.output}}"
+    on_success: "add_acceptance_criteria"
+    
+  - id: "add_acceptance_criteria"
+    name: "Add Acceptance Criteria"
+    agent: "QA Agent"
+    inputs:
+      stories: "{{steps.generate_stories.output}}"

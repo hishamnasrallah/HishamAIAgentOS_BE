@@ -1,0 +1,34 @@
+# Sprint Planning Workflow
+name: "Sprint Planning"
+version: "1.0"
+description: "Agile sprint planning with AI assistance"
+
+steps:
+  - id: "calculate_velocity"
+    name: "Calculate Team Velocity"
+    agent: "Scrum Master Agent"
+    inputs:
+      past_sprints: "{{input.sprint_history}}"
+    on_success: "recommend_stories"
+    
+  - id: "recommend_stories"
+    name: "Recommend Stories for Sprint"
+    agent: "Project Manager Agent"
+    inputs:
+      velocity: "{{steps.calculate_velocity.output.velocity}}"
+      backlog: "{{input.product_backlog}}"
+    on_success: "estimate"
+    
+  - id: "estimate"
+    name: "Estimate Story Points"
+    agent: "Business Analyst Agent"
+    inputs:
+      stories: "{{steps.recommend_stories.output.stories}}"
+    on_success: "finalize_sprint"
+    
+  - id: "finalize_sprint"
+    name: "Finalize Sprint Plan"
+    agent: "Scrum Master Agent"
+    inputs:
+      estimated_stories: "{{steps.estimate.output}}"
+      capacity: "{{input.team_capacity}}"

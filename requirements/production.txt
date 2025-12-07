@@ -1,0 +1,11 @@
+-r base.txt
+
+# Production server
+gunicorn==21.2.0
+gevent==24.2.1
+
+# Production monitoring
+newrelic==9.5.0
+
+# Additional security
+django-ratelimit==4.1.0

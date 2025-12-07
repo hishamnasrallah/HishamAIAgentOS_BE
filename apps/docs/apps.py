@@ -1,0 +1,12 @@
+"""
+App configuration for documentation viewer.
+"""
+
+from django.apps import AppConfig
+
+
+class DocsConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'apps.docs'
+    verbose_name = 'Documentation Viewer'
+

@@ -1,0 +1,65 @@
+# Code Review Workflow
+# 5-step peer review process with automated checks
+
+name: "Code Review"
+version: "1.0"
+description: "Comprehensive code review with automated checks and peer review"
+
+metadata:
+  author: "HishamOS"
+  created_date: "2024-12-01"
+  tags: ["code-review", "quality", "collaboration"]
+
+steps:
+  # Step 1: Automated Checks
+  - id: "automated_checks"
+    name: "Run Automated Checks"
+    agent: "QA Agent"
+    inputs:
+      code_diff: "{{input.code_changes}}"
+      repo_url: "{{input.repository}}"
+    on_success: "peer_review"
+    on_failure: "request_fixes"
+    max_retries: 1
+    
+  # Step 2: Peer Review
+  - id: "peer_review"
+    name: "Peer Code Review"
+    agent: "Code Review Agent"
+    inputs:
+      code_changes: "{{input.code_changes}}"
+      automated_report: "{{steps.automated_checks.output}}"
+      review_guidelines: "{{input.guidelines}}"
+    condition: "{{steps.automated_checks.output.passed}} == true"
+    on_success: "approval_check"
+    on_failure: "request_fixes"
+    max_retries: 1
+    timeout_seconds: 600
+    
+  # Step 3: Approval Check
+  - id: "approval_check"
+    name: "Check Approval Status"
+    agent: "Code Review Agent"
+    inputs:
+      review_feedback: "{{steps.peer_review.output}}"
+    condition: "{{steps.peer_review.output.issues_count}} == 0"
+    on_success: "approve"
+    on_failure: "request_fixes"
+    
+  # Step 4: Request Fixes
+  - id: "request_fixes"
+    name: "Request Code Fixes"
+    agent: "Code Review Agent"
+    inputs:
+      review_comments: "{{steps.peer_review.output.comments}}"
+      author: "{{input.author}}"
+    skip_if: "{{steps.approval_check.output.approved}} == true"
+    
+  # Step 5: Approve and Merge
+  - id: "approve"
+    name: "Approve Changes"
+    agent: "Code Review Agent"
+    inputs:
+      pull_request: "{{input.pr_id}}"
+      reviews: "{{steps}}"
+    max_retries: 1

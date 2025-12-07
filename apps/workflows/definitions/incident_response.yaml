@@ -1,0 +1,41 @@
+# Incident Response
+name: "Incident Response"
+version: "1.0"
+description: "Production incident response workflow"
+
+steps:
+  - id: "detect_incident"
+    name: "Detect and Classify Incident"
+    agent: "DevOps Agent"
+    inputs:
+      alert_data: "{{input.alert}}"
+    on_success: "assess_impact"
+    
+  - id: "assess_impact"
+    name: "Assess Impact"
+    agent: "DevOps Agent"
+    inputs:
+      incident: "{{steps.detect_incident.output}}"
+    on_success: "mitigate"
+    
+  - id: "mitigate"
+    name: "Mitigate Incident"
+    agent: "DevOps Agent"
+    inputs:
+      impact_assessment: "{{steps.assess_impact.output}}"
+    condition: "{{steps.assess_impact.output.severity}} > 3"
+    on_success: "monitor"
+    max_retries: 3
+    
+  - id: "monitor"
+    name: "Monitor Resolution"
+    agent: "DevOps Agent"
+    inputs:
+      mitigation: "{{steps.mitigate.output}}"
+    on_success: "post_mortem"
+    
+  - id: "post_mortem"
+    name: "Create Post-Mortem"
+    agent: "Documentation Agent"
+    inputs:
+      incident_data: "{{steps}}"

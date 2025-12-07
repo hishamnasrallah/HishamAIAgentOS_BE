@@ -1,0 +1,25 @@
+# Accessibility Audit  
+name: "Accessibility Audit"
+version: "1.0"
+description: "Web accessibility audit workflow"
+
+steps:
+  - id: "scan_accessibility"
+    name: "Scan for Accessibility Issues"
+    agent: "QA Agent"
+    inputs:
+      website_url: "{{input.url}}"
+    on_success: "analyze_wcag"
+    
+  - id: "analyze_wcag"
+    name: "Analyze WCAG Compliance"
+    agent: "UX Designer Agent"
+    inputs:
+      scan_results: "{{steps.scan_accessibility.output}}"
+    on_success: "create_remediation_plan"
+    
+  - id: "create_remediation_plan"
+    name: "Create Remediation Plan"
+    agent: "UX Designer Agent"
+    inputs:
+      wcag_analysis: "{{steps.analyze_wcag.output}}"

@@ -1,0 +1,73 @@
+# Change Request Workflow
+# 5-step change management process
+
+name: "Change Request"
+version: "1.0"
+description: "Change request lifecycle from submission to implementation"
+
+metadata:
+  author: "HishamOS"
+  created_date: "2024-12-01"
+  tags: ["change-management", "process", "approval"]
+
+steps:
+  # Step 1: Analyze Change Request
+  - id: "analyze"
+    name: "Analyze Change Impact"
+    agent: "Architect Agent"
+    inputs:
+      change_description: "{{input.change_request}}"
+      current_system: "{{input.system_state}}"
+    on_success: "approval"
+    max_retries: 2
+    
+  # Step 2: Get Approval
+  - id: "approval"
+    name: "Request Approval"
+    agent: "Project Manager Agent"
+    inputs:
+      impact_analysis: "{{steps.analyze.output}}"
+      stakeholders: "{{input.approvers}}"
+    condition: "{{steps.analyze.output.risk_level}} < 5"
+    on_success: "implement"
+    on_failure: "reject"
+    max_retries: 1
+    
+  # Step 3: Implement Change
+  - id: "implement"
+    name: "Implement Change"
+    agent: "Coding Agent"
+    inputs:
+      change_spec: "{{steps.analyze.output}}"
+      approval_details: "{{steps.approval.output}}"
+    skip_if: "{{steps.approval.output.approved}} == false"
+    on_success: "verify"
+    max_retries: 3
+    timeout_seconds: 900
+    
+  # Step 4: Verify Implementation
+  - id: "verify"
+    name: "Verify Change"
+    agent: "QA Agent"
+    inputs:
+      implementation: "{{steps.implement.output}}"
+      acceptance_criteria: "{{steps.analyze.output.criteria}}"
+    on_success: "close"
+    on_failure: "implement"
+    max_retries: 2
+    
+  # Step 5: Close Change Request
+  - id: "close"
+    name: "Close Change Request"
+    agent: "Project Manager Agent"
+    inputs:
+      change_id: "{{input.change_id}}"
+      outcome: "{{steps.verify.output}}"
+    
+  # Alternative: Rejection
+  - id: "reject"
+    name: "Reject Change Request"
+    agent  "Project Manager Agent"
+    inputs:
+      change_id: "{{input.change_id}}"
+      rejection_reason: "{{steps.approval.output.reason}}"

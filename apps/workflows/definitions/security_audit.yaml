@@ -1,0 +1,42 @@
+# Security Audit Workflow
+name: "Security Audit"
+version: "1.0"
+description: "Comprehensive security audit process"
+
+steps:
+  - id: "scan_vulnerabilities"
+    name: "Scan for Vulnerabilities"
+    agent: "Security Specialist Agent"
+    inputs:
+      codebase: "{{input.repository}}"
+    on_success: "analyze_findings"
+    max_retries: 2
+    timeout_seconds: 900
+    
+  - id: "analyze_findings"
+    name: "Analyze Security Findings"
+    agent: "Security Specialist Agent"
+    inputs:
+      scan_results: "{{steps.scan_vulnerabilities.output}}"
+    condition: "{{steps.scan_vulnerabilities.output.issues_found}} > 0"
+    on_success: "prioritize"
+    
+  - id: "prioritize"
+    name: "Prioritize Security Issues"
+    agent: "Security Specialist Agent"
+    inputs:
+      findings: "{{steps.analyze_findings.output}}"
+    on_success: "create_tickets"
+    
+  - id: "create_tickets"
+    name: "Create Security Tickets"
+    agent: "Project Manager Agent"
+    inputs:
+      prioritized_issues: "{{steps.prioritize.output}}"
+    on_success: "report"
+    
+  - id: "report"
+    name: "Generate Security Report"
+    agent: "Documentation Agent"
+    inputs:
+      audit_results: "{{steps}}"

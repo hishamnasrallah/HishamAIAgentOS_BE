@@ -1,0 +1,34 @@
+# Load Testing
+name: "Load Testing"
+version: "1.0"
+description: "Performance load testing workflow"
+
+steps:
+  - id: "setup_test_environment"
+    name: "Setup Load Test Environment"
+    agent: "DevOps Agent"
+    inputs:
+      target_url: "{{input.application_url}}"
+    on_success: "run_load_test"
+    
+  - id: "run_load_test"
+    name: "Execute Load Test"
+    agent: "QA Agent"
+    inputs:
+      test_config: "{{input.load_test_config}}"
+      environment: "{{steps.setup_test_environment.output}}"
+    on_success: "analyze_results"
+    timeout_seconds: 1800
+    
+  - id: "analyze_results"
+    name: "Analyze Test Results"
+    agent: "DevOps Agent"
+    inputs:
+      test_results: "{{steps.run_load_test.output}}"
+    on_success: "report"
+    
+  - id: "report"
+    name: "Generate Load Test Report"
+    agent: "Documentation Agent"
+    inputs:
+      analysis: "{{steps.analyze_results.output}}"
