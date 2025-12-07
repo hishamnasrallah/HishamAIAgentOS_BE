@@ -1,3 +1,10 @@
 # This directory contains database fixtures
 # Add fixture files here after exporting data
 
+agents.json
+authentication.json
+chat.json
+commands.json
+integrations.json
+projects.json
+workflows.json

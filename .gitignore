@@ -418,7 +418,7 @@ _old_*/
 _archive_/
 
 # Database fixtures (may contain sensitive data)
-initial_data/fixtures/*.json
+#initial_data/fixtures/*.json
 initial_data/fixtures/*.xml
 !initial_data/fixtures/.gitkeep
 initial_data/fixtures/backup_*/

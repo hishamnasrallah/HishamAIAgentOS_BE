@@ -1,0 +1,80 @@
+[
+  {
+    "model": "authentication.user",
+    "pk": "bd810294-0f02-4ba0-a6c2-df19cbf7edda",
+    "fields": {
+      "password": "pbkdf2_sha256$1000000$vXMzPw6ng3TykJcjCV504L$PUQR4Z7d86QtZNOhC65xlz8h6ud0UN257Jk6CjneOu4=",
+      "email": "hisham@hishamos.com",
+      "username": "hisham",
+      "first_name": "",
+      "last_name": "",
+      "role": "developer",
+      "is_active": true,
+      "is_staff": false,
+      "is_superuser": false,
+      "date_joined": "2025-12-05T21:21:43Z",
+      "last_login": "2025-12-06T00:32:20.159Z",
+      "avatar": "",
+      "bio": "",
+      "notification_preferences": {},
+      "two_factor_enabled": false,
+      "two_factor_secret": "",
+      "preferred_language": "en",
+      "timezone": "UTC",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "authentication.user",
+    "pk": "0b407fa6-66fe-408b-92e3-9636ee09725f",
+    "fields": {
+      "password": "pbkdf2_sha256$720000$PW1OmO5pKXczwZ8PRP6Ljm$1kywLFLLauuA6DyqUULG7BWfM62PCMULNwfII36voDs=",
+      "email": "admin@hishamos.com",
+      "username": "admin",
+      "first_name": "Hisham",
+      "last_name": "Nasrallah",
+      "role": "admin",
+      "is_active": true,
+      "is_staff": true,
+      "is_superuser": true,
+      "date_joined": "2025-12-06T03:19:39Z",
+      "last_login": "2025-12-06T23:49:19.431Z",
+      "avatar": "",
+      "bio": "",
+      "notification_preferences": {},
+      "two_factor_enabled": false,
+      "two_factor_secret": "",
+      "preferred_language": "en",
+      "timezone": "UTC",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "authentication.user",
+    "pk": "b16dda28-7042-4630-b879-74db5ab0f51a",
+    "fields": {
+      "password": "pbkdf2_sha256$720000$URiurx56ZlpHTRFEo2H7gU$spuRXPDbKj1WAxz1/nTI238HeY5EktzZxGDjSDRxZsw=",
+      "email": "test@example.com",
+      "username": "test_user",
+      "first_name": "",
+      "last_name": "",
+      "role": "viewer",
+      "is_active": true,
+      "is_staff": true,
+      "is_superuser": true,
+      "date_joined": "2025-12-06T06:09:10.909Z",
+      "last_login": null,
+      "avatar": "",
+      "bio": "",
+      "notification_preferences": {},
+      "two_factor_enabled": false,
+      "two_factor_secret": "",
+      "preferred_language": "en",
+      "timezone": "UTC",
+      "groups": [],
+      "user_permissions": []
+    }
+  }
+]
