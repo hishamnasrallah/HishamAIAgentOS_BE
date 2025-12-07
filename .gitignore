@@ -417,6 +417,13 @@ backup_full_project_*/
 _old_*/
 _archive_/
 
+# Database fixtures (may contain sensitive data)
+initial_data/fixtures/*.json
+initial_data/fixtures/*.xml
+!initial_data/fixtures/.gitkeep
+initial_data/fixtures/backup_*/
+initial_data/fixtures/*_backup/
+
 # Temporary scripts
 tmp_*.py
 test_*.py.bak

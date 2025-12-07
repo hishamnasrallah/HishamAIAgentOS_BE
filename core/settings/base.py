@@ -60,22 +60,31 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+    'core.csrf_middleware.DisableCSRFForAPI',  # Disable CSRF for API endpoints
+    'django.middleware.csrf.CsrfViewMiddleware',  # Still enabled for admin/forms
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'apps.authentication.middleware.AuthenticationLoggingMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-]
-
+# CORS settings - Allow all origins by default for flexibility
+# Can be restricted via environment variable CORS_ALLOWED_ORIGINS
+CORS_ALLOW_ALL_ORIGINS = env.bool('CORS_ALLOW_ALL_ORIGINS', default=True)
 CORS_ALLOW_CREDENTIALS = True
+
+# Specific origins (used when CORS_ALLOW_ALL_ORIGINS is False)
+CORS_ALLOWED_ORIGINS = env.list(
+    'CORS_ALLOWED_ORIGINS',
+    default=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+)
 
 ROOT_URLCONF = 'core.urls'
 
@@ -324,3 +333,38 @@ CSRF_COOKIE_SECURE = False
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
+
+# CSRF Trusted Origins - Flexible configuration
+# Allows requests from any origin by default (can be restricted via environment variable)
+# Note: Wildcards (*) are supported by Django for CSRF_TRUSTED_ORIGINS
+_csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS')
+if _csrf_origins_env:
+    # Use environment variable if provided
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in _csrf_origins_env.split(',')]
+else:
+    # Default: Comprehensive list of common origins
+    # Note: Django doesn't support full wildcards like http://*
+    # API endpoints have CSRF disabled via middleware, so this mainly affects admin/session auth
+    CSRF_TRUSTED_ORIGINS = [
+        # Localhost variants (common ports)
+        'http://localhost',
+        'http://127.0.0.1',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:5174',
+        'http://127.0.0.1:5174',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        # Cloud platforms (wildcard patterns supported)
+        'https://*.replit.dev',
+        'https://*.repl.co',
+        'https://*.render.com',
+        'https://*.railway.app',
+        'https://*.fly.dev',
+        'https://*.vercel.app',
+        'https://*.netlify.app',
+        'https://*.herokuapp.com',
+        'https://*.pythonanywhere.com',
+    ]

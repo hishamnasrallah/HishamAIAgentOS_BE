@@ -61,3 +61,33 @@ CACHES = {
         'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
     }
 }
+
+# CSRF Trusted Origins for development - Allow all origins
+# Allows requests from any origin for maximum flexibility during development
+_csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS')
+if _csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in _csrf_origins_env.split(',')]
+else:
+    # Default: Comprehensive list of common origins for development
+    # Note: API endpoints have CSRF disabled via middleware, so this mainly affects admin/session auth
+    CSRF_TRUSTED_ORIGINS = [
+        # Localhost variants (common ports)
+        'http://localhost',
+        'http://127.0.0.1',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:5174',
+        'http://127.0.0.1:5174',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        # Cloud platforms (wildcard patterns supported)
+        'https://*.replit.dev',
+        'https://*.repl.co',
+        'https://*.render.com',
+        'https://*.railway.app',
+        'https://*.fly.dev',
+        'https://*.vercel.app',
+        'https://*.netlify.app',
+    ]
