@@ -42,10 +42,18 @@ class FixturePreparer:
         'chat.conversation',  # user field is required (NOT NULL)
     }
     
+    # Models that depend on excluded models - these will also be excluded
+    # Format: {model_name: [list of foreign key fields that point to excluded models]}
+    DEPENDENT_MODELS = {
+        'chat.message': ['conversation', 'conversation_id'],  # Depends on Conversation
+    }
+    
     def __init__(self, source_dir: Path, output_dir: Path):
         self.source_dir = source_dir
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Track excluded primary keys by model to filter dependent records
+        self.excluded_pks: Dict[str, Set[str]] = {}
         self.stats = {
             'files_processed': 0,
             'records_processed': 0,
@@ -84,7 +92,7 @@ class FixturePreparer:
         print(f"📦 Records processed: {self.stats['records_processed']}")
         print(f"🧹 User references cleaned: {self.stats['user_references_cleaned']}")
         if self.stats['records_excluded'] > 0:
-            print(f"🚫 Records excluded (require user): {self.stats['records_excluded']}")
+            print(f"🚫 Records excluded: {self.stats['records_excluded']} (require user or depend on excluded records)")
         print(f"⏭️  Files skipped: {self.stats['files_skipped']}")
         print(f"💾 Output directory: {self.output_dir.absolute()}")
         print("=" * 70)
@@ -117,23 +125,66 @@ class FixturePreparer:
                 print(f"❌ Invalid format (expected list)")
                 return
             
-            # Process each record
-            cleaned_data = []
-            user_refs_cleaned = 0
-            records_excluded = 0
+            # Process records in two passes:
+            # Pass 1: Identify and track excluded records that require user
+            # Pass 2: Exclude dependent records and clean remaining records
             
+            # Pass 1: Identify excluded records (for tracking)
+            file_excluded_pks = {}  # Track excluded PKs in this file only
             for record in fixture_data:
-                # Check if this model requires user and record has user reference
                 model_key = f"{record.get('model', '')}"
                 if model_key in self.MODELS_REQUIRING_USER:
-                    # Check if record has user reference
                     fields = record.get('fields', {})
                     has_user_ref = any(
                         field_name in fields and fields[field_name] is not None
                         for field_name in ['user', 'user_id']
                     )
                     if has_user_ref:
+                        record_pk = record.get('pk')
+                        # Track excluded PK for dependent models in this file
+                        if model_key not in file_excluded_pks:
+                            file_excluded_pks[model_key] = set()
+                        if record_pk:
+                            file_excluded_pks[model_key].add(str(record_pk))
+            
+            # Pass 2: Process all records
+            cleaned_data = []
+            user_refs_cleaned = 0
+            records_excluded = 0
+            
+            for record in fixture_data:
+                model_key = f"{record.get('model', '')}"
+                fields = record.get('fields', {})
+                record_pk = record.get('pk')
+                
+                # Check if this model requires user and record has user reference
+                if model_key in self.MODELS_REQUIRING_USER:
+                    has_user_ref = any(
+                        field_name in fields and fields[field_name] is not None
+                        for field_name in ['user', 'user_id']
+                    )
+                    if has_user_ref:
                         # Exclude this record - it requires user but we can't provide one
+                        records_excluded += 1
+                        continue
+                
+                # Check if this record depends on an excluded model
+                if model_key in self.DEPENDENT_MODELS:
+                    fk_fields = self.DEPENDENT_MODELS[model_key]
+                    should_exclude = False
+                    
+                    for fk_field in fk_fields:
+                        fk_value = fields.get(fk_field)
+                        if fk_value:
+                            # Check if this FK points to an excluded record in this file
+                            for excluded_model, excluded_pks_set in file_excluded_pks.items():
+                                if str(fk_value) in excluded_pks_set:
+                                    should_exclude = True
+                                    break
+                            if should_exclude:
+                                break
+                    
+                    if should_exclude:
                         records_excluded += 1
                         continue
                 

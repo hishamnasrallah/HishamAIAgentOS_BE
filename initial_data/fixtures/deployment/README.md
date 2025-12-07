@@ -10,7 +10,19 @@ This directory contains fixtures that are ready for deployment without manual in
 
 ## 🚀 Usage
 
-### Load All Deployment Fixtures
+### Load All Deployment Fixtures (One Command)
+
+```bash
+# From backend directory - One command to load everything
+python initial_data/scripts/load_deployment_fixtures.py
+```
+
+This script will:
+- Load all fixtures in the correct order
+- Show progress for each file
+- Display a summary of loaded fixtures
+
+### Load Manually
 
 ```bash
 # From backend directory

@@ -425,12 +425,19 @@ python initial_data/scripts/prepare_fixtures.py
 
 **Option 1: Use Deployment-Ready Fixtures (Recommended)**
 
+**One-command solution:**
+```bash
+# Load all deployment-ready fixtures with one command
+python initial_data/scripts/load_deployment_fixtures.py
+```
+
+**Or manually:**
 ```bash
 # Load deployment-ready fixtures (no user conflicts, all references cleaned)
 python manage.py loaddata initial_data/fixtures/deployment/*.json
 ```
 
-These fixtures are prepared using:
+**To prepare fixtures first:**
 ```bash
 python initial_data/scripts/prepare_and_export.py
 ```

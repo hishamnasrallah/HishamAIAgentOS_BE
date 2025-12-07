@@ -214,7 +214,25 @@ python manage.py export_initial_data --exclude-users
 
 ## 📦 Importing Fixtures
 
-### Using Safe Loading Script (Recommended)
+### Using Deployment Fixtures (Recommended - One Command)
+
+```bash
+# Load deployment-ready fixtures (prepared, no conflicts)
+python initial_data/scripts/load_deployment_fixtures.py
+```
+
+This script:
+- Loads all fixtures from `initial_data/fixtures/deployment/`
+- Loads fixtures in the correct order automatically
+- Shows progress and summary
+- No user conflicts (already cleaned)
+
+**To prepare deployment fixtures first:**
+```bash
+python initial_data/scripts/prepare_and_export.py
+```
+
+### Using Safe Loading Script
 
 ```bash
 # Automatically handles user conflicts
