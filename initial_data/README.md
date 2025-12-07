@@ -95,11 +95,28 @@ initial_data/
 
 ## 🚀 Quick Start
 
+### Export and Prepare Fixtures for Deployment (Recommended)
+
+**One-command solution for deployment-ready fixtures:**
+
+```bash
+# Export and prepare fixtures in one step (excludes users, cleans references)
+python initial_data/scripts/prepare_and_export.py
+```
+
+This will:
+1. Export all data (excluding users)
+2. Clean all user references in fixtures
+3. Save deployment-ready fixtures to `initial_data/fixtures/deployment/`
+
 ### Export All Data from Database
 
 ```bash
 # From backend directory
 python manage.py export_initial_data
+
+# Export for deployment (excludes users automatically)
+python manage.py export_initial_data --prepare-for-deployment
 
 # Or with custom output directory
 python manage.py export_initial_data --output initial_data/fixtures/
@@ -107,6 +124,20 @@ python manage.py export_initial_data --output initial_data/fixtures/
 # Export specific apps only
 python manage.py export_initial_data --apps agents commands
 ```
+
+### Prepare Existing Fixtures for Deployment
+
+If you already have fixtures and want to make them deployment-ready:
+
+```bash
+# Clean user references from existing fixtures
+python initial_data/scripts/prepare_fixtures.py
+```
+
+This will:
+- Remove `authentication.json` (user data)
+- Clean all user references (set to `null` or empty lists)
+- Save cleaned fixtures to `initial_data/fixtures/deployment/`
 
 ### Import Data from Fixtures
 
@@ -183,15 +214,27 @@ python manage.py export_initial_data --exclude-users
 
 ## 📦 Importing Fixtures
 
+### Using Safe Loading Script (Recommended)
+
+```bash
+# Automatically handles user conflicts
+python initial_data/scripts/load_fixtures_safe.py
+```
+
+This script:
+- Checks if users exist in the database
+- Automatically skips `authentication.json` if users are found
+- Loads all other fixtures in the correct order
+- Shows a summary of loaded fixtures
+
 ### Using Django's loaddata
 
 ```bash
-# Load all fixtures
+# Load all fixtures (⚠️ May fail if users exist)
 python manage.py loaddata initial_data/fixtures/*.json
 
 # Load specific fixtures in order
 python manage.py loaddata \
-    initial_data/fixtures/core.json \
     initial_data/fixtures/integrations.json \
     initial_data/fixtures/agents.json \
     initial_data/fixtures/commands.json
@@ -204,13 +247,18 @@ python manage.py loaddata initial_data/fixtures/*.json --verbosity 2
 
 When importing, load fixtures in this order:
 
-1. **Core** (`core.json`) - System settings, feature flags
+1. **Authentication** (`authentication.json`) - Users (⚠️ Skip if you have existing users)
 2. **Integrations** (`integrations.json`) - AI platforms
 3. **Agents** (`agents.json`) - Agent definitions
 4. **Commands** (`commands.json`) - Command templates (depends on agents)
-5. **Projects** (`projects.json`) - Projects and related data
-6. **Workflows** (`workflows.json`) - Workflows
+5. **Projects** (`projects.json`) - Projects and related data (depends on users)
+6. **Workflows** (`workflows.json`) - Workflows (depends on users)
 7. **Other** - Monitoring, chat, results (optional)
+
+**⚠️ Important:** If you already have users in your database:
+- **Skip** `authentication.json` when loading
+- Projects and workflows may reference users that don't exist
+- Either edit fixture files to use your existing user IDs, or skip those fixtures
 
 ---
 
@@ -260,33 +308,88 @@ python manage.py export_initial_data \
 
 ### 3. Set Up New Environment
 
+**Option A: Fresh Database (No existing users)**
+
 ```bash
 # 1. Run migrations
 python manage.py migrate
 
-# 2. Load template fixtures
-python manage.py loaddata initial_data/fixtures/templates/*.json
-
-# 3. Create admin user
+# 2. Create admin user first
 python manage.py setup_admin_user
+
+# 3. Load fixtures (skip authentication.json if it conflicts)
+python manage.py loaddata initial_data/fixtures/integrations.json
+python manage.py loaddata initial_data/fixtures/agents.json
+python manage.py loaddata initial_data/fixtures/commands.json
+# Skip projects/workflows if they reference users that don't match
 
 # 4. Create default agents (if not in fixtures)
 python scripts/create_default_agents.py
+```
+
+**Option B: Existing Database (Has users)**
+
+```bash
+# 1. Export without users first (if not already done)
+python manage.py export_initial_data --exclude-users
+
+# 2. Load fixtures (skip authentication.json)
+python manage.py loaddata initial_data/fixtures/integrations.json
+python manage.py loaddata initial_data/fixtures/agents.json
+python manage.py loaddata initial_data/fixtures/commands.json
+
+# 3. For projects/workflows: Either skip them or edit fixture files to use your user IDs
 ```
 
 ---
 
 ## 🛠️ Troubleshooting
 
+**For detailed troubleshooting guide, see:** [`FIXTURE_LOADING_GUIDE.md`](FIXTURE_LOADING_GUIDE.md)
+
 ### Issue: Foreign Key Constraints
 
 **Error:** `IntegrityError: FOREIGN KEY constraint failed`
 
-**Solution:** Load fixtures in the correct order (see "Order Matters!" section above).
+**Solution:** 
+- Load fixtures in the correct order (see "Order Matters!" section above)
+- Ensure all referenced objects exist (e.g., users before projects, agents before commands)
+- If loading into existing database, ensure referenced IDs match existing records
 
-### Issue: Duplicate Key Errors
+### Issue: Duplicate Key Errors (Users)
 
-**Error:** `IntegrityError: UNIQUE constraint failed`
+**Error:** `IntegrityError: UNIQUE constraint failed: users.username` or `users.email`
+
+**Cause:** Fixture contains users that already exist in your database.
+
+**Solution 1: Exclude users when exporting (Recommended)**
+```bash
+# Export without user data
+python manage.py export_initial_data --exclude-users
+
+# Then load fixtures (skip authentication.json)
+python manage.py loaddata initial_data/fixtures/integrations.json
+python manage.py loaddata initial_data/fixtures/agents.json
+# ... etc
+```
+
+**Solution 2: Clear database first (⚠️ Deletes all data)**
+```bash
+python manage.py flush --noinput
+python manage.py migrate
+python manage.py setup_admin_user
+python manage.py loaddata initial_data/fixtures/*.json
+```
+
+**Solution 3: Edit fixture to use existing user IDs**
+- Open the fixture file (e.g., `projects.json`)
+- Find references to user IDs
+- Replace with your existing user IDs
+- Save and reload
+
+### Issue: Duplicate Key Errors (Other Models)
+
+**Error:** `IntegrityError: UNIQUE constraint failed: agents.agent_id`
 
 **Solution:** 
 - Clear existing data before loading:
@@ -295,6 +398,7 @@ python scripts/create_default_agents.py
   python manage.py migrate
   python manage.py loaddata initial_data/fixtures/*.json
   ```
+- Or skip the conflicting fixture and create data manually
 
 ### Issue: Encrypted API Keys
 

@@ -65,8 +65,23 @@ class Command(BaseCommand):
             action='store_true',
             help='Exclude user data (useful for templates)'
         )
+        parser.add_argument(
+            '--prepare-for-deployment',
+            action='store_true',
+            help='Export and prepare fixtures for deployment (excludes users, cleans user references)'
+        )
 
     def handle(self, *args, **options):
+        # If prepare-for-deployment, automatically exclude users
+        if options.get('prepare_for_deployment'):
+            options['exclude_users'] = True
+            self.stdout.write(
+                self.style.WARNING(
+                    "  ℹ️  Deployment mode: Users excluded"
+                )
+            )
+            self.stdout.write("")
+        
         output_dir = Path(options['output'])
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -174,6 +189,30 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write("To import these fixtures, use:")
         self.stdout.write(f"   python manage.py loaddata {output_dir}/*.{options['format']}")
+        
+        # If prepare-for-deployment, suggest running prepare script
+        if options.get('prepare_for_deployment'):
+            self.stdout.write("")
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "✅ Fixtures exported for deployment (users excluded)"
+                )
+            )
+            self.stdout.write(
+                "   Next: Run 'python initial_data/scripts/prepare_fixtures.py' to clean user references"
+            )
+        
+        # If prepare-for-deployment, suggest running prepare script
+        if options.get('prepare_for_deployment'):
+            self.stdout.write("")
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "✅ Fixtures exported for deployment (users excluded)"
+                )
+            )
+            self.stdout.write(
+                "   Run 'python initial_data/scripts/prepare_fixtures.py' to clean user references"
+            )
 
     def _get_apps_to_export(self, specified_apps=None):
         """Get list of apps to export."""

@@ -378,11 +378,26 @@ If scripts don't work, you can create data manually:
 
 If you want to export all your current database data to JSON fixtures for backup, migration, or setting up new environments:
 
-**Export All Data:**
+**🚀 Quick Export for Deployment (Recommended):**
+
+```bash
+# One command to export and prepare deployment-ready fixtures
+python initial_data/scripts/prepare_and_export.py
+```
+
+This creates deployment-ready fixtures in `initial_data/fixtures/deployment/` that:
+- Exclude user data (no conflicts)
+- Have all user references cleaned (set to null)
+- Can be loaded directly without manual intervention
+
+**Manual Export Options:**
 
 ```bash
 # Export all data to initial_data/fixtures/
 python manage.py export_initial_data
+
+# Export for deployment (excludes users, ready for prepare script)
+python manage.py export_initial_data --prepare-for-deployment
 
 # Export with custom output directory
 python manage.py export_initial_data --output initial_data/fixtures/backup_2024-12-06/
@@ -397,22 +412,114 @@ python manage.py export_initial_data --exclude-users
 python manage.py export_initial_data --include-audit --include-metrics
 ```
 
-**Import Data from Fixtures:**
+**Prepare Existing Fixtures:**
 
 ```bash
-# Load all fixtures (in correct order)
-python manage.py loaddata initial_data/fixtures/core.json
+# Clean user references from existing fixtures
+python initial_data/scripts/prepare_fixtures.py
+```
+
+**Import Data from Fixtures:**
+
+**⚠️ Important:** If you already have a user in your database (e.g., created via `setup_admin_user`), you need to handle user conflicts.
+
+**Option 1: Use Deployment-Ready Fixtures (Recommended)**
+
+```bash
+# Load deployment-ready fixtures (no user conflicts, all references cleaned)
+python manage.py loaddata initial_data/fixtures/deployment/*.json
+```
+
+These fixtures are prepared using:
+```bash
+python initial_data/scripts/prepare_and_export.py
+```
+
+**Option 1B: Use Safe Loading Script**
+
+```bash
+# Automatically skips authentication.json if users exist
+python initial_data/scripts/load_fixtures_safe.py
+```
+
+This script will:
+- Check if users exist in the database
+- Automatically skip `authentication.json` if users are found
+- Load all other fixtures in the correct order
+- Show a summary of what was loaded
+
+**Option 1B: Load without user data manually**
+
+```bash
+# First, export fixtures without users (if not already done)
+python manage.py export_initial_data --exclude-users
+
+# Then load fixtures in correct order (skip authentication.json if it contains users)
 python manage.py loaddata initial_data/fixtures/integrations.json
 python manage.py loaddata initial_data/fixtures/agents.json
 python manage.py loaddata initial_data/fixtures/commands.json
 python manage.py loaddata initial_data/fixtures/projects.json
 python manage.py loaddata initial_data/fixtures/workflows.json
-
-# Or load all at once
-python manage.py loaddata initial_data/fixtures/*.json
 ```
 
-**For more details, see:** `initial_data/README.md`
+**Option 2: Clear database first (⚠️ Deletes all existing data)**
+
+```bash
+# WARNING: This will delete ALL existing data!
+python manage.py flush --noinput
+python manage.py migrate
+
+# Then create admin user
+python manage.py setup_admin_user
+
+# Then load fixtures (SKIP authentication.json to avoid user conflicts)
+python manage.py loaddata initial_data/fixtures/integrations.json
+python manage.py loaddata initial_data/fixtures/agents.json
+python manage.py loaddata initial_data/fixtures/commands.json
+python manage.py loaddata initial_data/fixtures/projects.json
+python manage.py loaddata initial_data/fixtures/workflows.json
+# Skip: initial_data/fixtures/authentication.json (user already exists)
+```
+
+**⚠️ Important:** After `setup_admin_user`, skip `authentication.json` because it contains a user with the same username "admin".
+
+**Option 3: Load fixtures manually, skipping conflicts**
+
+If you have existing users and want to keep them:
+
+```bash
+# Load fixtures one by one, skipping authentication.json if it causes conflicts
+python manage.py loaddata initial_data/fixtures/integrations.json
+python manage.py loaddata initial_data/fixtures/agents.json
+python manage.py loaddata initial_data/fixtures/commands.json
+
+# For projects/workflows that reference users, you may need to:
+# 1. Edit the fixture files to use your existing user IDs, OR
+# 2. Skip those fixtures and create projects/workflows manually
+```
+
+**Troubleshooting Fixture Loading:**
+
+**Error: `UNIQUE constraint failed: users.username`**
+- **Cause:** Fixture contains a user that already exists
+- **Solution:** 
+  - Use `--exclude-users` when exporting: `python manage.py export_initial_data --exclude-users`
+  - Or skip `authentication.json` when loading: Don't load `initial_data/fixtures/authentication.json`
+
+**Error: `No fixture named 'core' found`**
+- **Cause:** `core.json` doesn't exist (not all apps export fixtures)
+- **Solution:** Skip it, it's optional. Only load fixtures that exist.
+
+**Error: `Foreign key constraint failed`**
+- **Cause:** Fixture references users/agents that don't exist
+- **Solution:**
+  1. Load fixtures in correct order (integrations → agents → commands → projects → workflows)
+  2. Ensure users exist before loading projects/workflows
+  3. Or edit fixture files to use existing user/agent IDs
+
+**For more details, see:** 
+- `initial_data/README.md` - Complete fixture documentation
+- `initial_data/FIXTURE_LOADING_GUIDE.md` - Troubleshooting guide for fixture loading issues
 
 ### Step 8: Collect Static Files
 
