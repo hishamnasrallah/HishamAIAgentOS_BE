@@ -28,6 +28,9 @@ from apps.agents.models import Agent
 template_renderer = TemplateRenderer()
 parameter_validator = ParameterValidator()
 
+# Logger
+logger = logging.getLogger(__name__)
+
 
 class CommandCategoryViewSet(viewsets.ModelViewSet):
     """Command category viewset."""
