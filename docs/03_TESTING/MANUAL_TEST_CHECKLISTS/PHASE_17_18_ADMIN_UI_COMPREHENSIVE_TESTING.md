@@ -63,10 +63,11 @@ changelog:
 
 # Phase 17-18: Admin & Configuration UI - Comprehensive Manual Testing Checklist
 
-**Date:** December 2024  
+**Date:** December 6, 2024  
 **Component:** Complete Admin & Configuration UI System  
 **Phase:** Phase 17-18  
-**Status:** ✅ Complete (100%)
+**Status:** ✅ Complete (100%)  
+**Last Updated:** December 6, 2024 - Added bulk operations, import/export, activity log, role management, permissions matrix
 
 ---
 
@@ -332,6 +333,161 @@ changelog:
 - [ ] Try to delete yourself:
   - [ ] Should show error or prevent action
   - [ ] Your account remains
+
+#### 2.9 Bulk Operations (NEW - Dec 2024)
+- [ ] Select multiple users using checkboxes:
+  - [ ] Individual checkboxes work for each user
+  - [ ] "Select All" checkbox selects/deselects all users
+  - [ ] Selected count displays correctly
+- [ ] Bulk action bar appears when users are selected:
+  - [ ] Shows number of selected users
+  - [ ] Shows "Activate" button
+  - [ ] Shows "Deactivate" button
+  - [ ] Shows "Assign Role" dropdown
+  - [ ] Shows "Delete" button
+  - [ ] Shows "Clear Selection" button
+- [ ] Bulk Activate:
+  - [ ] Select multiple inactive users
+  - [ ] Click "Activate" button
+  - [ ] All selected users become active
+  - [ ] Success message appears
+  - [ ] Selection clears automatically
+- [ ] Bulk Deactivate:
+  - [ ] Select multiple active users (not yourself)
+  - [ ] Click "Deactivate" button
+  - [ ] All selected users become inactive
+  - [ ] Success message appears
+  - [ ] Selection clears automatically
+  - [ ] Try to deactivate yourself - shows error
+- [ ] Bulk Delete:
+  - [ ] Select multiple users (not yourself)
+  - [ ] Click "Delete" button
+  - [ ] Confirmation dialog appears
+  - [ ] Confirm deletion
+  - [ ] All selected users are deleted
+  - [ ] Success message appears
+  - [ ] Selection clears automatically
+  - [ ] Try to delete yourself - shows error
+- [ ] Bulk Assign Role:
+  - [ ] Select multiple users
+  - [ ] Click "Assign Role" dropdown
+  - [ ] Select a role (admin, manager, developer, viewer)
+  - [ ] All selected users get the new role
+  - [ ] Success message appears
+  - [ ] Selection clears automatically
+  - [ ] Role badges update in the list
+
+#### 2.10 User Import/Export (NEW - Dec 2024)
+- [ ] Navigate to "Import/Export" tab in Users page
+- [ ] Export Users:
+  - [ ] Click "Export Users" button
+  - [ ] CSV file downloads automatically
+  - [ ] File name includes date: `users_export_YYYY-MM-DD.csv`
+  - [ ] CSV contains all user fields:
+    - [ ] Email
+    - [ ] Username
+    - [ ] First Name
+    - [ ] Last Name
+    - [ ] Role
+    - [ ] Is Active
+    - [ ] 2FA Enabled
+    - [ ] Date Joined
+    - [ ] Last Login
+  - [ ] Export respects current filters (role, status, search)
+- [ ] Import Users:
+  - [ ] Click "Choose File" button
+  - [ ] Select a valid CSV file
+  - [ ] File name and size display
+  - [ ] Click "Import Users" button
+  - [ ] Import processes successfully
+  - [ ] Success message shows created/updated counts
+  - [ ] New users appear in list
+  - [ ] Existing users are updated
+  - [ ] Error handling:
+    - [ ] Upload non-CSV file - shows error
+    - [ ] Upload CSV with invalid format - shows error
+    - [ ] Upload CSV with missing required fields - shows error
+    - [ ] Upload CSV with invalid role - shows error
+    - [ ] Error messages are clear and helpful
+
+#### 2.11 User Activity Log (NEW - Dec 2024)
+- [ ] Navigate to "Activity Log" tab in Users page
+- [ ] User Selection:
+  - [ ] Input field for user ID or email
+  - [ ] Enter valid user ID
+  - [ ] Activity log loads for that user
+- [ ] Activity Display:
+  - [ ] Activities list displays:
+    - [ ] Action badge (create, update, delete, execute, login, logout)
+    - [ ] Resource type badge
+    - [ ] Description/details
+    - [ ] Changes (if applicable)
+    - [ ] IP address
+    - [ ] Timestamp (relative time, e.g., "2 hours ago")
+  - [ ] Activities are sorted by most recent first
+  - [ ] Total count badge shows correct number
+- [ ] Search Functionality:
+  - [ ] Search by action - filters activities
+  - [ ] Search by resource type - filters activities
+  - [ ] Search by description - filters activities
+  - [ ] Clear search - shows all activities
+- [ ] Empty States:
+  - [ ] No user selected - shows "Select a user to view their activity log"
+  - [ ] User with no activities - shows "No activities found"
+  - [ ] Search with no results - shows "No activities match your search"
+- [ ] Access Control:
+  - [ ] Admin can view any user's activity
+  - [ ] Regular users can only view their own activity
+  - [ ] Non-admin trying to view another user's activity - shows error
+
+#### 2.12 Role Management Tab (NEW - Dec 2024)
+- [ ] Navigate to "Roles" tab in Users page
+- [ ] Create New Role:
+  - [ ] Enter role name
+  - [ ] Enter role description
+  - [ ] Click "Create Role" button
+  - [ ] New role appears in roles table
+- [ ] Edit Role:
+  - [ ] Click "Edit" button on a role
+  - [ ] Modify name or description
+  - [ ] Click "Save" button
+  - [ ] Changes are saved
+- [ ] Delete Role:
+  - [ ] Click "Delete" button on a custom role
+  - [ ] Confirmation dialog appears
+  - [ ] Confirm deletion
+  - [ ] Role is deleted
+  - [ ] System roles (admin, manager, developer, viewer) cannot be deleted
+- [ ] Role Display:
+  - [ ] Roles table shows:
+    - [ ] Role name (with "System" badge for predefined roles)
+    - [ ] Description
+    - [ ] User count
+    - [ ] Actions (Edit/Delete buttons)
+  - [ ] System roles are protected from deletion
+
+#### 2.13 Permissions Matrix Tab (NEW - Dec 2024)
+- [ ] Navigate to "Permissions Matrix" tab in Users page
+- [ ] Permissions Grid:
+  - [ ] Grid displays roles as rows
+  - [ ] Grid displays permissions as columns
+  - [ ] Resources grouped: users, agents, workflows, commands, projects, integrations, settings, analytics
+  - [ ] Permissions per resource: view, create, edit, delete
+- [ ] Permission Editing:
+  - [ ] Click checkbox to grant permission
+  - [ ] Uncheck to revoke permission
+  - [ ] Changes are tracked (pending state)
+  - [ ] Click "Save" button for a role
+  - [ ] Permissions are saved
+  - [ ] Success message appears
+- [ ] Reset Functionality:
+  - [ ] Make changes to permissions
+  - [ ] Click "Reset" button
+  - [ ] Permissions revert to original state
+- [ ] Admin Role Protection:
+  - [ ] Admin role permissions are locked (cannot be changed)
+  - [ ] Lock icon/badge indicates protected role
+  - [ ] Checkboxes for admin role are disabled
 
 ---
 
@@ -779,13 +935,30 @@ changelog:
 ### 13. Backend Integration
 
 #### 13.1 API Endpoints
-- [ ] All user management endpoints work
+- [ ] All user management endpoints work:
+  - [ ] `GET /api/v1/auth/users/` - List users
+  - [ ] `POST /api/v1/auth/users/` - Create user
+  - [ ] `GET /api/v1/auth/users/{id}/` - Get user
+  - [ ] `PATCH /api/v1/auth/users/{id}/` - Update user
+  - [ ] `DELETE /api/v1/auth/users/{id}/` - Delete user
+  - [ ] `POST /api/v1/auth/users/{id}/activate/` - Activate user
+  - [ ] `POST /api/v1/auth/users/{id}/deactivate/` - Deactivate user
+  - [ ] `POST /api/v1/auth/users/bulk_activate/` - Bulk activate (NEW)
+  - [ ] `POST /api/v1/auth/users/bulk_deactivate/` - Bulk deactivate (NEW)
+  - [ ] `POST /api/v1/auth/users/bulk_delete/` - Bulk delete (NEW)
+  - [ ] `POST /api/v1/auth/users/bulk_assign_role/` - Bulk assign role (NEW)
+  - [ ] `GET /api/v1/auth/users/export/` - Export users to CSV (NEW)
+  - [ ] `POST /api/v1/auth/users/import_users/` - Import users from CSV (NEW)
+  - [ ] `GET /api/v1/auth/users/{id}/activity/` - Get user activity log (NEW)
 - [ ] All platform management endpoints work
 - [ ] All agent management endpoints work
 - [ ] All system settings endpoints work
 - [ ] All analytics endpoints work
 - [ ] Data persists correctly
 - [ ] Data validation works on backend
+- [ ] All new bulk operation endpoints require admin role
+- [ ] All new import/export endpoints require admin role
+- [ ] Activity log endpoint respects access control (admin or own user)
 
 #### 13.2 Real-time Updates
 - [ ] Analytics data updates (if WebSocket implemented)
@@ -838,6 +1011,12 @@ changelog:
 - [ ] Activate/deactivate user
 - [ ] Delete user
 - [ ] Search and filter users
+- [ ] **Bulk operations (activate, deactivate, delete, assign role)** (NEW)
+- [ ] **Import users from CSV** (NEW)
+- [ ] **Export users to CSV** (NEW)
+- [ ] **View user activity log** (NEW)
+- [ ] **Create and manage custom roles** (NEW)
+- [ ] **Edit permissions via matrix** (NEW)
 - [ ] All operations work correctly
 
 #### 15.2 Platform Management Workflow

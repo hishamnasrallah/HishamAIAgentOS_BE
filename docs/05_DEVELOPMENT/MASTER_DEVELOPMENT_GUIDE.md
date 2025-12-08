@@ -285,24 +285,41 @@ hishamAiAgentOS/
      - Update next steps if priorities changed
      - Update success metrics
 
-3. **Create Manual Test Checklist** ⚠️ **NEW - REQUIRED FOR PHASE COMPLETION**
-   - **When:** After completing a phase implementation (or significant phase milestone)
-   - **Location:** `docs/03_TESTING/manual_test_checklist/PHASE_{N}_TESTING.md`
-   - **Format:** Follow existing test checklist format (see `docs/03_TESTING/manual_test_checklist/README.md`)
+3. **Create/Update Manual Test Checklist** ⚠️ **REQUIRED - ALWAYS UPDATE**
+   - **When:** After completing ANY feature implementation or phase milestone
+   - **Location:** `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/PHASE_{N}_TESTING.md` or update existing checklist
+   - **Format:** Follow existing test checklist format (see `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/README.md`)
    - **Content:** Must include:
      - Backend Django Admin Testing (if applicable)
-     - Backend API Testing (all endpoints)
-     - Frontend Testing (if applicable)
+     - Backend API Testing (all endpoints) - **MUST include new endpoints**
+     - Frontend Testing (if applicable) - **MUST include new components**
      - Security Testing
      - Error Handling
      - Integration Testing
      - Complete Workflows
-   - **Update:** `docs/03_TESTING/manual_test_checklist/README.md` to mark checklist as complete
+   - **Update:** Add new test cases for new features
+   - **Update:** `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/README.md` if new checklist created
    - **Reference:** See existing checklists for format examples
+   - **⚠️ CRITICAL:** Test checklist MUST be updated whenever new features are added, not just at phase completion
+   - **⚠️ CRITICAL:** If checklist exists, you MUST update it with new test cases for new features/endpoints
 
-4. **Update Related Documentation**
+4. **Create/Update Expected Output Document** ⚠️ **REQUIRED - ALWAYS UPDATE**
+   - **When:** After completing ANY feature implementation or phase milestone
+   - **Location:** `docs/07_TRACKING/expected_output/phase_{N}_expected.md` or update existing file
+   - **Format:** Follow template in `docs/05_DEVELOPMENT/DOCUMENTATION_MAINTENANCE.md`
+   - **Content:** Must include:
+     - Success Criteria
+     - API Endpoints (all new endpoints) - **MUST include ALL new endpoints**
+     - Test Scenarios (for new features) - **MUST include scenarios for ALL new features**
+     - Error Handling Scenarios - **MUST include error cases for new features**
+     - Validation Steps
+   - **⚠️ CRITICAL:** Expected output document MUST be updated whenever new features/endpoints are added
+   - **⚠️ CRITICAL:** If document exists, you MUST update it with new endpoints, scenarios, and error cases
+   - **Update:** Add new endpoints and scenarios for new features
+   - **⚠️ CRITICAL:** Expected output document MUST be updated whenever new features are added
+
+5. **Update Related Documentation**
    - See `docs/05_DEVELOPMENT/DOCUMENTATION_MAINTENANCE.md` for detailed instructions
-   - Update expected output files if applicable
    - Update audit file if needed
 
 5. **Check for Other Updates**

@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'apps.workflows',
     'apps.projects',
     'apps.integrations',
+    'apps.integrations_external',  # Phase 21: External integrations (GitHub, Slack, Email, Webhooks)
     'apps.results',
     'apps.monitoring',
     'apps.chat',  # Phase 13-14: Chat interface
@@ -57,6 +58,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'core.security_middleware.RequestThrottlingMiddleware',  # Request throttling
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -64,8 +66,10 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',  # Still enabled for admin/forms
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'apps.authentication.middleware.AuthenticationLoggingMiddleware',
+    'apps.monitoring.middleware.AuditLoggingMiddleware',  # Automatic audit logging for all API requests
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'core.security_middleware.SecurityHeadersMiddleware',  # Security headers
 ]
 
 # CORS settings - Allow all origins by default for flexibility
@@ -174,6 +178,17 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 25,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
+    # Rate limiting/throttling
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'apps.authentication.throttling.APIKeyRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',  # Anonymous users: 100 requests per hour
+        'user': '1000/hour',  # Authenticated users: 1000 requests per hour
+        'api_key': '60/minute',  # Default API key rate: 60 requests per minute
+    },
 }
 
 # JWT Settings
@@ -204,6 +219,37 @@ REDIS_PORT = env.int('REDIS_PORT', default=6379)
 REDIS_DB = env.int('REDIS_DB', default=0)
 REDIS_URL = env('REDIS_URL', default='redis://localhost:6379/0')
 
+# Cache Configuration
+# Use Redis if available, fallback to local memory for development
+try:
+    import django_redis
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                'IGNORE_EXCEPTIONS': True,  # Fallback gracefully if Redis is unavailable
+            },
+            'KEY_PREFIX': 'hishamos',
+            'TIMEOUT': 300,  # Default 5 minutes
+        }
+    }
+except ImportError:
+    # Fallback to local memory cache if django-redis is not installed
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'hishamos-cache',
+            'TIMEOUT': 300,
+        }
+    }
+
+# Cache timeout settings (in seconds)
+CACHE_TIMEOUT_SHORT = 60  # 1 minute
+CACHE_TIMEOUT_MEDIUM = 300  # 5 minutes
+CACHE_TIMEOUT_LONG = 600  # 10 minutes
+
 # Channels - Using InMemory for development (no Redis required)
 CHANNEL_LAYERS = {
     'default': {
@@ -227,6 +273,9 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@hishamos.com')
 
 # Logging
+# Enable structured JSON logging in production, verbose in development
+USE_JSON_LOGGING = env.bool('USE_JSON_LOGGING', default=False)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -239,30 +288,41 @@ LOGGING = {
             'format': '{levelname} {message}',
             'style': '{',
         },
+        'json': {
+            '()': 'core.logging_formatters.JSONFormatter',
+        },
+        'json_contextual': {
+            '()': 'core.logging_formatters.ContextualJSONFormatter',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'formatter': 'json' if USE_JSON_LOGGING else 'verbose',
         },
         'file': {
             'class': 'logging.FileHandler',
             'filename': BASE_DIR / 'logs' / 'django.log',
-            'formatter': 'verbose',
+            'formatter': 'json' if USE_JSON_LOGGING else 'verbose',
+        },
+        'json_file': {
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs' / 'django.json.log',
+            'formatter': 'json_contextual',
         },
     },
     'root': {
-        'handlers': ['console', 'file'],
+        'handlers': ['console', 'file'] + (['json_file'] if USE_JSON_LOGGING else []),
         'level': 'INFO',
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console', 'file'] + (['json_file'] if USE_JSON_LOGGING else []),
             'level': 'INFO',
             'propagate': False,
         },
         'apps': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console', 'file'] + (['json_file'] if USE_JSON_LOGGING else []),
             'level': 'DEBUG',
             'propagate': False,
         },
@@ -325,6 +385,24 @@ SPECTACULAR_SETTINGS = {
 # Rate Limiting
 RATE_LIMIT_PER_MINUTE = env.int('RATE_LIMIT_PER_MINUTE', default=60)
 RATE_LIMIT_PER_HOUR = env.int('RATE_LIMIT_PER_HOUR', default=1000)
+
+# Secrets Management (HashiCorp Vault)
+VAULT_ENABLED = env.bool('VAULT_ENABLED', default=False)
+VAULT_ADDR = env('VAULT_ADDR', default='')
+VAULT_TOKEN = env('VAULT_TOKEN', default='')
+VAULT_MOUNT_POINT = env('VAULT_MOUNT_POINT', default='secret')
+USE_LOCAL_ENCRYPTION = env.bool('USE_LOCAL_ENCRYPTION', default=True)
+SECRETS_ENCRYPTION_KEY = env('SECRETS_ENCRYPTION_KEY', default=None)
+
+# Alerting Configuration
+ALERT_EMAIL_RECIPIENTS = env.list('ALERT_EMAIL_RECIPIENTS', default=[])
+SLACK_ALERT_WEBHOOK = env('SLACK_ALERT_WEBHOOK', default='')
+ALERT_WEBHOOK_URL = env('ALERT_WEBHOOK_URL', default='')
+
+# Enhanced Caching Configuration
+MEMORY_CACHE_TTL = env.int('MEMORY_CACHE_TTL', default=60)  # 1 minute
+REDIS_CACHE_TTL = env.int('REDIS_CACHE_TTL', default=300)  # 5 minutes
+DB_CACHE_TTL = env.int('DB_CACHE_TTL', default=3600)  # 1 hour
 
 # Security Settings (Override in production)
 SECURE_SSL_REDIRECT = False

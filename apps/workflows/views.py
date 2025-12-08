@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 from django.db import models
 from django.conf import settings
+from django.core.cache import cache
 from asgiref.sync import async_to_sync
 import uuid
 import logging
@@ -44,7 +45,10 @@ class WorkflowViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """All authenticated users can view workflows."""
-        queryset = Workflow.objects.all()
+        queryset = Workflow.objects.all().only(
+            'id', 'name', 'slug', 'description', 'version', 'status',
+            'is_template', 'execution_count', 'created_at', 'updated_at'
+        )
         
         # Filter by is_template if requested
         is_template = self.request.query_params.get('is_template', None)
@@ -53,6 +57,19 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_template=is_template_bool)
         
         return queryset
+    
+    def list(self, request, *args, **kwargs):
+        """List workflows with caching."""
+        is_template = request.query_params.get('is_template', None)
+        cache_key = f'workflows_list_{is_template or "all"}'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is None:
+            response = super().list(request, *args, **kwargs)
+            cache.set(cache_key, response.data, settings.CACHE_TIMEOUT_MEDIUM)
+            return response
+        
+        return Response(cached_data)
     
     def get_serializer_class(self):
         if self.action == 'list':
@@ -154,10 +171,19 @@ class WorkflowViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=['get'])
     def templates(self, request):
-        """Get all workflow templates."""
-        templates = Workflow.objects.filter(is_template=True, status='active')
-        serializer = self.get_serializer(templates, many=True)
-        return Response(serializer.data)
+        """Get all workflow templates with caching."""
+        cache_key = 'workflow_templates_list'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is None:
+            templates = Workflow.objects.filter(
+                is_template=True, status='active'
+            ).only('id', 'name', 'slug', 'description', 'version')
+            serializer = self.get_serializer(templates, many=True)
+            cached_data = serializer.data
+            cache.set(cache_key, cached_data, settings.CACHE_TIMEOUT_LONG)
+        
+        return Response(cached_data)
     
     @extend_schema(
         description="Create a workflow from a template",

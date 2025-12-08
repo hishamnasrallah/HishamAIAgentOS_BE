@@ -8,13 +8,19 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import permissions
 from django.contrib.auth import get_user_model
+from django.http import HttpResponse
+from django.utils import timezone
+from django.db import models
+import csv
+import io
 from .models import APIKey
 from .serializers import UserSerializer, UserCreateSerializer, APIKeySerializer
+from apps.monitoring.mixins import AuditLoggingMixin
 
 User = get_user_model()
 
 
-class UserViewSet(viewsets.ModelViewSet):
+class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     """
     User viewset.
     
@@ -58,6 +64,11 @@ class UserViewSet(viewsets.ModelViewSet):
         # Create/delete require admin
         return [IsAuthenticated(), permissions.IsAdminUser()]
     
+    # Note: Audit logging is now handled automatically by:
+    # 1. Middleware for API requests
+    # 2. Signals for model saves
+    # No need for explicit logging here
+    
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def me(self, request):
         """Get current user."""
@@ -100,6 +111,306 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save(update_fields=['is_active'])
         serializer = self.get_serializer(user)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def bulk_activate(self, request):
+        """Bulk activate users (admin only)."""
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only admins can perform bulk operations.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_ids = request.data.get('user_ids', [])
+        if not user_ids:
+            return Response(
+                {'error': 'user_ids is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        users = User.objects.filter(id__in=user_ids)
+        updated_count = users.update(is_active=True)
+        
+        return Response({
+            'message': f'{updated_count} user(s) activated.',
+            'updated_count': updated_count
+        })
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def bulk_deactivate(self, request):
+        """Bulk deactivate users (admin only)."""
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only admins can perform bulk operations.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_ids = request.data.get('user_ids', [])
+        if not user_ids:
+            return Response(
+                {'error': 'user_ids is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Prevent deactivating yourself
+        if str(request.user.id) in user_ids:
+            return Response(
+                {'error': 'You cannot deactivate your own account.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        users = User.objects.filter(id__in=user_ids)
+        updated_count = users.update(is_active=False)
+        
+        return Response({
+            'message': f'{updated_count} user(s) deactivated.',
+            'updated_count': updated_count
+        })
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def bulk_delete(self, request):
+        """Bulk delete users (admin only)."""
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only admins can perform bulk operations.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_ids = request.data.get('user_ids', [])
+        if not user_ids:
+            return Response(
+                {'error': 'user_ids is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Prevent deleting yourself
+        if str(request.user.id) in user_ids:
+            return Response(
+                {'error': 'You cannot delete your own account.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        users = User.objects.filter(id__in=user_ids)
+        deleted_count = users.count()
+        users.delete()
+        
+        return Response({
+            'message': f'{deleted_count} user(s) deleted.',
+            'deleted_count': deleted_count
+        })
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def bulk_assign_role(self, request):
+        """Bulk assign role to users (admin only)."""
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only admins can perform bulk operations.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_ids = request.data.get('user_ids', [])
+        role = request.data.get('role')
+        
+        if not user_ids:
+            return Response(
+                {'error': 'user_ids is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not role:
+            return Response(
+                {'error': 'role is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if role not in dict(User.ROLE_CHOICES):
+            return Response(
+                {'error': f'Invalid role. Must be one of: {", ".join(dict(User.ROLE_CHOICES).keys())}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        users = User.objects.filter(id__in=user_ids)
+        updated_count = users.update(role=role)
+        
+        return Response({
+            'message': f'Role "{role}" assigned to {updated_count} user(s).',
+            'updated_count': updated_count
+        })
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def export(self, request):
+        """Export users to CSV (admin only)."""
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only admins can export users.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Apply filters
+        queryset = self.get_queryset()
+        role = request.query_params.get('role')
+        is_active = request.query_params.get('is_active')
+        search = request.query_params.get('search')
+        
+        if role:
+            queryset = queryset.filter(role=role)
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+        if search:
+            queryset = queryset.filter(
+                models.Q(email__icontains=search) |
+                models.Q(username__icontains=search) |
+                models.Q(first_name__icontains=search) |
+                models.Q(last_name__icontains=search)
+            )
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            'Email', 'Username', 'First Name', 'Last Name', 'Role',
+            'Is Active', '2FA Enabled', 'Date Joined', 'Last Login'
+        ])
+        
+        for user in queryset:
+            writer.writerow([
+                user.email,
+                user.username,
+                user.first_name or '',
+                user.last_name or '',
+                user.role,
+                'Yes' if user.is_active else 'No',
+                'Yes' if user.two_factor_enabled else 'No',
+                user.date_joined.isoformat() if user.date_joined else '',
+                user.last_login.isoformat() if user.last_login else '',
+            ])
+        
+        response = HttpResponse(output.getvalue(), content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="users_export_{timezone.now().date()}.csv"'
+        return response
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def import_users(self, request):
+        """Import users from CSV (admin only)."""
+        if request.user.role != 'admin':
+            return Response(
+                {'error': 'Only admins can import users.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if 'file' not in request.FILES:
+            return Response(
+                {'error': 'No file provided.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        file = request.FILES['file']
+        if not file.name.endswith('.csv'):
+            return Response(
+                {'error': 'File must be a CSV file.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            decoded_file = file.read().decode('utf-8')
+            csv_reader = csv.DictReader(io.StringIO(decoded_file))
+            
+            created_count = 0
+            updated_count = 0
+            errors = []
+            
+            for row_num, row in enumerate(csv_reader, start=2):
+                try:
+                    email = row.get('Email', '').strip()
+                    if not email:
+                        errors.append(f'Row {row_num}: Email is required')
+                        continue
+                    
+                    username = row.get('Username', '').strip() or email.split('@')[0]
+                    first_name = row.get('First Name', '').strip()
+                    last_name = row.get('Last Name', '').strip()
+                    role = row.get('Role', 'viewer').strip().lower()
+                    is_active = row.get('Is Active', 'Yes').strip().lower() in ('yes', 'true', '1')
+                    
+                    if role not in dict(User.ROLE_CHOICES):
+                        role = 'viewer'
+                    
+                    user, created = User.objects.get_or_create(
+                        email=email,
+                        defaults={
+                            'username': username,
+                            'first_name': first_name,
+                            'last_name': last_name,
+                            'role': role,
+                            'is_active': is_active,
+                        }
+                    )
+                    
+                    if not created:
+                        user.username = username
+                        user.first_name = first_name
+                        user.last_name = last_name
+                        user.role = role
+                        user.is_active = is_active
+                        user.save()
+                        updated_count += 1
+                    else:
+                        created_count += 1
+                        
+                except Exception as e:
+                    errors.append(f'Row {row_num}: {str(e)}')
+            
+            return Response({
+                'message': f'Import completed. Created: {created_count}, Updated: {updated_count}',
+                'created_count': created_count,
+                'updated_count': updated_count,
+                'errors': errors[:10],  # Limit errors to first 10
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to process CSV file: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def activity(self, request, pk=None):
+        """Get user activity log (admin only or own user)."""
+        user = self.get_object()
+        
+        # Users can only see their own activity, admins can see anyone's
+        if request.user.role != 'admin' and user.id != request.user.id:
+            return Response(
+                {'error': 'You can only view your own activity.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Query AuditLog model for user activity
+        from apps.monitoring.models import AuditLog
+        
+        limit = int(request.query_params.get('limit', 50))
+        offset = int(request.query_params.get('offset', 0))
+        
+        activities = AuditLog.objects.filter(user=user).order_by('-timestamp')[offset:offset+limit]
+        
+        activity_data = []
+        for activity in activities:
+            activity_data.append({
+                'id': str(activity.id),
+                'action': activity.action,
+                'resource_type': activity.resource_type,
+                'resource_id': str(activity.resource_id) if activity.resource_id else None,
+                'details': activity.description,  # Use description field
+                'changes': activity.changes,
+                'ip_address': str(activity.ip_address) if activity.ip_address else None,
+                'created_at': activity.timestamp.isoformat(),  # Use timestamp field
+            })
+        
+        return Response({
+            'user_id': str(user.id),
+            'activities': activity_data,
+            'total': AuditLog.objects.filter(user=user).count(),
+        })
 
 
 class APIKeyViewSet(viewsets.ModelViewSet):

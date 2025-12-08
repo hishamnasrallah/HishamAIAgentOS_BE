@@ -21,6 +21,7 @@ fastapi==0.109.0
 # Celery
 celery==5.3.6
 redis==5.0.1
+django-redis==5.4.0  # Redis cache backend for Django
 django-celery-beat>=2.7.0  # Django 5.0 compatible version
 
 # Authentication
@@ -64,3 +65,10 @@ PyYAML>=6.0.1  # For parsing YAML frontmatter in documentation
 # Date and time
 python-dateutil==2.8.2
 pytz==2024.1
+
+# Testing
+pytest==7.4.4
+pytest-django==4.8.0
+pytest-cov==4.1.0
+pytest-asyncio==0.23.3
+pytest-mock==3.12.0

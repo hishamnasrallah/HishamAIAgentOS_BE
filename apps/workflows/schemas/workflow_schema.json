@@ -152,6 +152,114 @@
                     "examples": [
                         "{{steps.triage.output.severity}} == 1"
                     ]
+                },
+                "parallel": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether this step can execute in parallel with other steps in the same parallel_group"
+                },
+                "parallel_group": {
+                    "type": "string",
+                    "description": "Group identifier for steps that should execute in parallel. Steps with the same parallel_group and parallel=true will execute simultaneously",
+                    "examples": [
+                        "processing",
+                        "validation",
+                        "data_processing"
+                    ]
+                },
+                "depends_on": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of step IDs that must complete before this step can execute. Used for parallel execution dependency management",
+                    "examples": [
+                        ["step1", "step2"],
+                        ["init"]
+                    ]
+                },
+                "branch_group": {
+                    "type": "string",
+                    "description": "Identifier for a conditional branch group. Steps with the same branch_group are mutually exclusive - only one branch matching its condition will execute",
+                    "examples": [
+                        "priority_branch",
+                        "severity_branch"
+                    ]
+                },
+                "merge_after": {
+                    "type": "string",
+                    "description": "Branch group ID to merge after. This step will wait for all branches in the specified group to complete (or be skipped) before executing",
+                    "examples": [
+                        "priority_branch",
+                        "severity_branch"
+                    ]
+                },
+                "step_type": {
+                    "type": "string",
+                    "enum": ["agent", "merge", "loop", "sub_workflow"],
+                    "default": "agent",
+                    "description": "Type of step. 'agent' executes an agent, 'merge' merges branch groups, 'loop' executes a loop, 'sub_workflow' executes a nested workflow"
+                },
+                "loop": {
+                    "type": "object",
+                    "description": "Loop configuration (required if step_type is 'loop')",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["for", "while"],
+                            "description": "Loop type: 'for' iterates over an array, 'while' loops while condition is true"
+                        },
+                        "over": {
+                            "type": "string",
+                            "description": "For 'for' loops: path to array to iterate over (e.g., '{{steps.get_items.output.items}}')"
+                        },
+                        "variable": {
+                            "type": "string",
+                            "description": "Variable name for loop item (e.g., 'item', 'task')"
+                        },
+                        "condition": {
+                            "type": "string",
+                            "description": "For 'while' loops: condition to check before each iteration"
+                        },
+                        "max_iterations": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000,
+                            "default": 100,
+                            "description": "Maximum number of loop iterations to prevent infinite loops"
+                        },
+                        "steps": {
+                            "type": "array",
+                            "description": "Steps to execute in each loop iteration",
+                            "items": {
+                                "$ref": "#/definitions/step"
+                            }
+                        }
+                    },
+                    "required": ["type"]
+                },
+                "sub_workflow": {
+                    "type": "object",
+                    "description": "Sub-workflow configuration (required if step_type is 'sub_workflow')",
+                    "properties": {
+                        "workflow_id": {
+                            "type": "string",
+                            "description": "ID or slug of the workflow to execute"
+                        },
+                        "input_mapping": {
+                            "type": "object",
+                            "description": "Map parent workflow context to sub-workflow inputs",
+                            "additionalProperties": true
+                        },
+                        "output_mapping": {
+                            "type": "object",
+                            "description": "Map sub-workflow outputs back to parent workflow context",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": ["workflow_id"]
                 }
             }
         }

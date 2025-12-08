@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/v1/workflows/', include('apps.workflows.urls')),
     path('api/v1/projects/', include('apps.projects.urls')),
     path('api/v1/integrations/', include('apps.integrations.urls')),
+    path('api/v1/integrations-external/', include('apps.integrations_external.urls')),
     path('api/v1/results/', include('apps.results.urls')),
     path('api/v1/monitoring/', include('apps.monitoring.urls')),
     path('api/v1/chat/', include('apps.chat.urls')),  # Phase 13-14

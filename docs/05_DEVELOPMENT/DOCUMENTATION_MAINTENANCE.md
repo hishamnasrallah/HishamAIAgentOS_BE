@@ -152,7 +152,7 @@ changelog:
 
 ---
 
-## 1. Update Project Tracking Documents ⚠️ **NEW - REQUIRED**
+## 1. Update Project Tracking Documents ⚠️ **REQUIRED - ALWAYS UPDATE**
 
 **CRITICAL: These documents must be updated to stay on track!**
 
@@ -275,14 +275,16 @@ changelog:
 
 ---
 
-## 2. Create Manual Test Checklist ⚠️ **NEW - REQUIRED FOR PHASE COMPLETION**
+## 2. Create/Update Manual Test Checklist ⚠️ **REQUIRED - ALWAYS UPDATE**
 
-**File Location:** `docs/03_TESTING/manual_test_checklist/PHASE_{N}_TESTING.md`
+**File Location:** `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/PHASE_{N}_TESTING.md`
 
-**When to Create:**
+**When to Create/Update:**
+- ✅ After completing ANY feature implementation
 - ✅ After completing a phase implementation
 - ✅ After completing significant phase milestones (50%+, major features)
 - ✅ When phase status changes from "Not Implemented" to "Partially" or "Done"
+- ✅ **ALWAYS when adding new API endpoints or frontend components**
 
 **File Naming:**
 - Single phase: `PHASE_{N}_TESTING.md` (e.g., `PHASE_2_AUTHENTICATION_TESTING.md`)
@@ -400,26 +402,33 @@ changelog:
 **Steps:**
 
 1. Check if test checklist already exists for the phase
-2. If exists, update it with new features/endpoints
+2. **If exists, UPDATE it with new features/endpoints** ⚠️ **CRITICAL**
 3. If doesn't exist, create new file using template above
-4. Reference existing checklists for format:
-   - `docs/03_TESTING/manual_test_checklist/PHASE_1_DATABASE_MODELS_TESTING.md`
-   - `docs/03_TESTING/manual_test_checklist/PHASE_2_AUTHENTICATION_TESTING.md`
-5. Update `docs/03_TESTING/manual_test_checklist/README.md`:
+4. **Add test cases for ALL new features:**
+   - New API endpoints
+   - New frontend components
+   - New user workflows
+   - New error scenarios
+5. Reference existing checklists for format:
+   - `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/PHASE_1_DATABASE_MODELS_TESTING.md`
+   - `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/PHASE_2_AUTHENTICATION_TESTING.md`
+   - `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/PHASE_17_18_ADMIN_UI_COMPREHENSIVE_TESTING.md`
+6. Update `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/README.md` if new checklist created:
    - Mark checklist as complete in the index
    - Update test coverage status table
 
 **Reference Files:**
-- Format examples: `docs/03_TESTING/manual_test_checklist/PHASE_*.md`
-- Index: `docs/03_TESTING/manual_test_checklist/README.md`
-- Existing checklists in parent directory: `docs/03_TESTING/ADMIN_UI_MANUAL_TESTING_CHECKLIST.md`
+- Format examples: `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/PHASE_*.md`
+- Index: `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/README.md`
 
 **Important Notes:**
+- ⚠️ **Test checklists MUST be updated whenever new features are added**
 - Test checklists must be comprehensive and cover all features
 - Include both positive and negative test cases
-- Document all API endpoints
+- Document all API endpoints (including new ones)
 - Include security and error handling tests
 - Follow the same format as existing checklists
+- **Do not wait for phase completion - update incrementally**
 
 ---
 
@@ -453,16 +462,17 @@ changelog:
 
 ---
 
-## 4. Update Expected Output Files
+## 4. Create/Update Expected Output Files ⚠️ **REQUIRED - ALWAYS UPDATE**
 
 **Location:** `docs/07_TRACKING/expected_output/`
 
 ### When to Create/Update:
 
-- ✅ New API endpoints added
-- ✅ New features implemented
-- ✅ New components created
+- ✅ **New API endpoints added** ⚠️ **ALWAYS UPDATE**
+- ✅ **New features implemented** ⚠️ **ALWAYS UPDATE**
+- ✅ **New components created** ⚠️ **ALWAYS UPDATE**
 - ✅ Phase completion
+- ✅ **After ANY development work that adds functionality**
 
 ### File Naming:
 
@@ -513,9 +523,21 @@ curl ...
 ### Steps:
 
 1. Check if expected output file exists for your phase
-2. If exists, update it with new endpoints/features
+2. **If exists, UPDATE it with new endpoints/features** ⚠️ **CRITICAL**
 3. If doesn't exist, create it using the template
-4. Update `docs/07_TRACKING/expected_output/index.md` if new file created
+4. **Add ALL new endpoints to the API Endpoints table**
+5. **Add test scenarios for ALL new features**
+6. **Add error handling scenarios for new features**
+7. Update `docs/07_TRACKING/expected_output/index.md` if new file created
+
+**Important Notes:**
+- ⚠️ **CRITICAL:** Expected output files MUST be updated whenever new features are added
+- ⚠️ **CRITICAL:** If document exists, you MUST update it with new endpoints/scenarios, not create a new one
+- **Do not wait for phase completion - update incrementally**
+- Include ALL new API endpoints with expected responses
+- Include test scenarios for ALL new features
+- Include error handling scenarios for ALL new features
+- Include request/response examples for ALL new endpoints
 
 ---
 
@@ -716,9 +738,9 @@ celery -A core worker -l info
 Before saying "done", verify:
 
 1. **Project Tracking Documents** ⚠️ **NEW - REQUIRED**
-   - [ ] `docs/07_TRACKING/PHASE_STATUS_SUMMARY.md` - Phase/feature status updated
-   - [ ] `docs/07_TRACKING/PROJECT_ROADMAP.md` - Roadmap tasks marked complete
-   - [ ] `docs/07_TRACKING/IMMEDIATE_NEXT_STEPS.md` - Next steps updated
+   - [ ] `docs/07_TRACKING/STATUS/PHASE_STATUS_SUMMARY.md` - Phase/feature status updated
+   - [ ] `docs/07_TRACKING/STATUS/PROJECT_ROADMAP.md` - Roadmap tasks marked complete
+   - [ ] `docs/07_TRACKING/STATUS/IMMEDIATE_NEXT_STEPS.md` - Next steps updated
    - [ ] Statistics and completion percentages recalculated
 
 2. **Task Status**
@@ -727,16 +749,22 @@ Before saying "done", verify:
    - [ ] Files listed
    - [ ] Notes added
 
-3. **Manual Test Checklist** ⚠️ **NEW - REQUIRED FOR PHASE COMPLETION**
-   - [ ] Test checklist created/updated in `docs/03_TESTING/manual_test_checklist/`
+3. **Manual Test Checklist** ⚠️ **REQUIRED - ALWAYS UPDATE**
+   - [ ] Test checklist created/updated in `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/`
+   - [ ] **ALL new API endpoints added to checklist** ⚠️ **CRITICAL**
+   - [ ] **ALL new frontend components added to checklist** ⚠️ **CRITICAL**
+   - [ ] **ALL new features have test cases** ⚠️ **CRITICAL**
    - [ ] All required sections included
    - [ ] Format matches existing checklists
-   - [ ] README index updated
+   - [ ] README index updated (if new checklist created)
 
-4. **Expected Output**
+4. **Expected Output Document** ⚠️ **REQUIRED - ALWAYS UPDATE**
    - [ ] Expected output file exists (if applicable)
-   - [ ] Expected output file is complete
-   - [ ] Index updated (if new file)
+   - [ ] **ALL new API endpoints added to API Endpoints table** ⚠️ **CRITICAL**
+   - [ ] **ALL new features have test scenarios** ⚠️ **CRITICAL**
+   - [ ] **ALL new features have error handling scenarios** ⚠️ **CRITICAL**
+   - [ ] Expected output file is complete and up-to-date
+   - [ ] Index updated (if new file created)
 
 5. **Comprehensive Audit**
    - [ ] Phase section updated
@@ -888,13 +916,13 @@ While documentation must be updated manually, you can:
 - Use the checklist to ensure nothing is missed
 
 **Critical Files to Always Update:**
-1. `docs/07_TRACKING/PHASE_STATUS_SUMMARY.md` - Phase/feature status ⚠️ **NEW**
-2. `docs/07_TRACKING/PROJECT_ROADMAP.md` - Roadmap progress ⚠️ **NEW**
-3. `docs/07_TRACKING/IMMEDIATE_NEXT_STEPS.md` - Next steps ⚠️ **NEW**
-4. `docs/07_TRACKING/tasks.md` - Task status
-5. `docs/03_TESTING/manual_test_checklist/PHASE_{N}_TESTING.md` - Manual test checklist (if phase completion) ⚠️ **NEW**
-6. `docs/07_TRACKING/COMPREHENSIVE_AUDIT.md` - Implementation audit
-7. Expected output files (if applicable)
+1. `docs/07_TRACKING/STATUS/PHASE_STATUS_SUMMARY.md` - Phase/feature status ⚠️ **REQUIRED**
+2. `docs/07_TRACKING/STATUS/PROJECT_ROADMAP.md` - Roadmap progress ⚠️ **REQUIRED**
+3. `docs/07_TRACKING/STATUS/IMMEDIATE_NEXT_STEPS.md` - Next steps ⚠️ **REQUIRED**
+4. `docs/07_TRACKING/tasks.md` - Task status ⚠️ **REQUIRED**
+5. `docs/03_TESTING/MANUAL_TEST_CHECKLISTS/PHASE_{N}_TESTING.md` - Manual test checklist ⚠️ **ALWAYS REQUIRED - MUST UPDATE WITH NEW FEATURES**
+6. `docs/07_TRACKING/expected_output/phase_{N}_expected.md` - Expected output document ⚠️ **ALWAYS REQUIRED - MUST UPDATE WITH NEW FEATURES**
+7. `docs/07_TRACKING/COMPREHENSIVE_AUDIT.md` - Implementation audit ⚠️ **REQUIRED**
 8. `docs/07_TRACKING/BLOCKERS.md` (if blockers resolved)
 
 ---

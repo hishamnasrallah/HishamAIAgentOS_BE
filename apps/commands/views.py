@@ -7,6 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 from asgiref.sync import async_to_sync
+from django.core.cache import cache
+from django.conf import settings
 import asyncio
 import logging
 
@@ -34,6 +36,18 @@ class CommandCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CommandCategorySerializer
     search_fields = ['name', 'description']
     ordering_fields = ['order', 'name', 'created_at']
+    
+    def list(self, request, *args, **kwargs):
+        """List categories with caching."""
+        cache_key = 'command_categories_list'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is None:
+            response = super().list(request, *args, **kwargs)
+            cache.set(cache_key, response.data, settings.CACHE_TIMEOUT_MEDIUM)
+            return response
+        
+        return Response(cached_data)
 
 
 class CommandTemplateViewSet(viewsets.ModelViewSet):
@@ -44,7 +58,8 @@ class CommandTemplateViewSet(viewsets.ModelViewSet):
     filterset_fields = ['category', 'is_active']
     search_fields = ['name', 'description', 'tags']
     ordering_fields = ['created_at', 'usage_count', 'name', 'success_rate', 'estimated_cost']
-    pagination_class = None  # Disable pagination - return all commands at once
+    # Enable pagination for better performance
+    # pagination_class = None  # Disable pagination - return all commands at once
     
     def get_serializer_class(self):
         if self.action == 'list':
@@ -56,7 +71,28 @@ class CommandTemplateViewSet(viewsets.ModelViewSet):
         return CommandTemplateSerializer
     
     def get_queryset(self):
-        return CommandTemplate.objects.select_related('category', 'recommended_agent')
+        """Optimized queryset with select_related and prefetch_related."""
+        return CommandTemplate.objects.select_related(
+            'category', 'recommended_agent'
+        ).only(
+            'id', 'name', 'slug', 'description', 'category', 'recommended_agent',
+            'is_active', 'usage_count', 'success_rate', 'estimated_cost',
+            'tags', 'version'
+        )
+    
+    def list(self, request, *args, **kwargs):
+        """List commands with caching and pagination."""
+        # Check cache for command list
+        cache_key = f'command_templates_list_{request.query_params.get("category", "all")}'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is None:
+            response = super().list(request, *args, **kwargs)
+            # Cache for 5 minutes
+            cache.set(cache_key, response.data, settings.CACHE_TIMEOUT_MEDIUM)
+            return response
+        
+        return Response(cached_data)
     
     @extend_schema(
         request=CommandExecutionRequestSerializer,
@@ -130,10 +166,27 @@ class CommandTemplateViewSet(viewsets.ModelViewSet):
                 'error': result.error
             }
             
+            # Trigger external integration notifications
+            if request.user.is_authenticated:
+                try:
+                    from apps.integrations_external.signals import trigger_command_execution_notifications
+                    trigger_command_execution_notifications(
+                        command_id=str(command.id),
+                        command_name=command.name,
+                        status='success' if result.success else 'failed',
+                        user=request.user,
+                        result_summary=result.output[:200] if result.output else None,
+                        execution_time=result.execution_time,
+                        cost=float(result.cost) if result.cost else 0.0,
+                        error=result.error
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to trigger command execution notifications: {e}")
+            
             return Response(response_data, status=status.HTTP_200_OK)
             
         except Exception as e:
-            return Response({
+            error_response = {
                 'success': False,
                 'output': '',
                 'execution_time': 0,
@@ -141,7 +194,26 @@ class CommandTemplateViewSet(viewsets.ModelViewSet):
                 'token_usage': {},
                 'agent_used': '',
                 'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            }
+            
+            # Trigger external integration notifications for error case
+            if request.user.is_authenticated:
+                try:
+                    from apps.integrations_external.signals import trigger_command_execution_notifications
+                    trigger_command_execution_notifications(
+                        command_id=str(command.id),
+                        command_name=command.name,
+                        status='failed',
+                        user=request.user,
+                        result_summary=None,
+                        execution_time=0,
+                        cost=0,
+                        error=str(e)
+                    )
+                except Exception as notification_error:
+                    logger.error(f"Failed to trigger command execution notifications: {notification_error}")
+            
+            return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @extend_schema(
         request=CommandPreviewRequestSerializer,

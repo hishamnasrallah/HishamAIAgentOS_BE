@@ -2160,6 +2160,342 @@ Create comprehensive change request including:
             'tags': ['change-request', 'scope', 'management'],
             'recommended_agent': pm_agent,
             'required_capabilities': ['PROJECT_MANAGEMENT']
+        },
+        {
+            'category': category,
+            'name': 'Create Project Charter',
+            'slug': 'create-project-charter',
+            'description': 'Generate comprehensive project charter document',
+            'template': '''Create project charter.
+
+**Project Name:** {{project_name}}
+**Project Sponsor:** {{project_sponsor}}
+**Project Manager:** {{project_manager}}
+**Business Case:** {{business_case}}
+
+**Project Objectives:**
+{{objectives}}
+
+{{#if success_criteria}}
+**Success Criteria:**
+{{success_criteria}}
+{{/if}}
+
+Create comprehensive project charter including:
+1. Project overview and purpose
+2. Business case and justification
+3. Project objectives and goals
+4. Scope definition (in-scope and out-of-scope)
+5. Key stakeholders and roles
+6. High-level timeline and milestones
+7. Budget and resource requirements
+8. Assumptions and constraints
+9. Risks and mitigation strategies
+10. Success criteria and KPIs
+11. Approval and sign-off''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'E-commerce Platform'},
+                {'name': 'project_sponsor', 'type': 'text', 'required': True, 'description': 'Project sponsor', 'example': 'CEO'},
+                {'name': 'project_manager', 'type': 'text', 'required': True, 'description': 'Project manager', 'example': 'John Doe'},
+                {'name': 'business_case', 'type': 'long_text', 'required': True, 'description': 'Business case', 'example': 'Expand market reach, increase revenue...'},
+                {'name': 'objectives', 'type': 'long_text', 'required': True, 'description': 'Project objectives', 'example': 'Launch MVP, Acquire 1000 users...'},
+                {'name': 'success_criteria', 'type': 'text', 'required': False, 'description': 'Success criteria', 'default': ''}
+            ],
+            'tags': ['project-charter', 'initiation', 'planning'],
+            'recommended_agent': pm_agent,
+            'required_capabilities': ['PROJECT_MANAGEMENT']
+        },
+        {
+            'category': category,
+            'name': 'Generate Quality Assurance Plan',
+            'slug': 'generate-qa-plan',
+            'description': 'Create quality assurance and testing plan',
+            'template': '''Generate quality assurance plan.
+
+**Project:** {{project_name}}
+**Quality Standards:** {{quality_standards}}
+**Testing Scope:**
+{{testing_scope}}
+
+{{#if quality_metrics}}
+**Quality Metrics:**
+{{quality_metrics}}
+{{/if}}
+
+Create comprehensive QA plan including:
+1. Quality objectives and standards
+2. Testing strategy and approach
+3. Test types (unit, integration, system, UAT)
+4. Test environment requirements
+5. Test data management
+6. Defect management process
+7. Quality metrics and KPIs
+8. Risk-based testing approach
+9. Test schedule and milestones
+10. Resource requirements
+11. Tools and automation strategy''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'E-commerce Platform'},
+                {'name': 'quality_standards', 'type': 'text', 'required': True, 'description': 'Quality standards', 'example': 'ISO 9001, CMMI Level 3'},
+                {'name': 'testing_scope', 'type': 'long_text', 'required': True, 'description': 'Testing scope', 'example': 'All features, API endpoints, UI components...'},
+                {'name': 'quality_metrics', 'type': 'text', 'required': False, 'description': 'Quality metrics', 'default': 'Defect density, Test coverage, Pass rate'}
+            ],
+            'tags': ['qa', 'quality', 'testing', 'planning'],
+            'recommended_agent': pm_agent,
+            'required_capabilities': ['PROJECT_MANAGEMENT']
+        },
+        {
+            'category': category,
+            'name': 'Create Lessons Learned Document',
+            'slug': 'create-lessons-learned',
+            'description': 'Document project lessons learned and best practices',
+            'template': '''Create lessons learned document.
+
+**Project:** {{project_name}}
+**Project Duration:** {{project_duration}}
+**Project Status:** {{project_status}}
+
+**What Went Well:**
+{{what_went_well}}
+
+**What Could Be Improved:**
+{{what_could_improve}}
+
+**Challenges Faced:**
+{{challenges}}
+
+{{#if recommendations}}
+**Recommendations:**
+{{recommendations}}
+{{/if}}
+
+Create comprehensive lessons learned including:
+1. Project summary
+2. What went well (successes)
+3. What could be improved (challenges)
+4. Key learnings and insights
+5. Process improvements
+6. Tool and technology recommendations
+7. Team dynamics and collaboration
+8. Risk management lessons
+9. Best practices identified
+10. Recommendations for future projects''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'E-commerce Platform'},
+                {'name': 'project_duration', 'type': 'text', 'required': True, 'description': 'Project duration', 'example': '6 months'},
+                {'name': 'project_status', 'type': 'string', 'required': True, 'description': 'Project status', 'allowed_values': ['Completed', 'Cancelled', 'On Hold'], 'example': 'Completed'},
+                {'name': 'what_went_well', 'type': 'long_text', 'required': True, 'description': 'What went well', 'example': 'Good team collaboration, Clear requirements...'},
+                {'name': 'what_could_improve', 'type': 'long_text', 'required': True, 'description': 'What could be improved', 'example': 'Better estimation, More testing...'},
+                {'name': 'challenges', 'type': 'long_text', 'required': True, 'description': 'Challenges faced', 'example': 'Scope creep, Resource constraints...'},
+                {'name': 'recommendations', 'type': 'text', 'required': False, 'description': 'Recommendations', 'default': ''}
+            ],
+            'tags': ['lessons-learned', 'knowledge-management', 'improvement'],
+            'recommended_agent': pm_agent,
+            'required_capabilities': ['PROJECT_MANAGEMENT']
+        },
+        {
+            'category': category,
+            'name': 'Generate Project Closure Report',
+            'slug': 'generate-project-closure-report',
+            'description': 'Create project closure and handover report',
+            'template': '''Generate project closure report.
+
+**Project:** {{project_name}}
+**Project End Date:** {{end_date}}
+**Final Status:** {{final_status}}
+
+**Deliverables:**
+{{deliverables}}
+
+**Final Metrics:**
+{{final_metrics}}
+
+{{#if handover_items}}
+**Handover Items:**
+{{handover_items}}
+{{/if}}
+
+Create comprehensive closure report including:
+1. Executive summary
+2. Project objectives achievement
+3. Deliverables summary
+4. Final budget and timeline
+5. Final metrics and KPIs
+6. Lessons learned summary
+7. Outstanding issues and risks
+8. Handover documentation
+9. Support and maintenance plan
+10. Sign-off and approvals''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'E-commerce Platform'},
+                {'name': 'end_date', 'type': 'date', 'required': True, 'description': 'Project end date', 'example': '2024-06-30'},
+                {'name': 'final_status', 'type': 'string', 'required': True, 'description': 'Final status', 'allowed_values': ['Completed', 'Cancelled', 'On Hold'], 'example': 'Completed'},
+                {'name': 'deliverables', 'type': 'long_text', 'required': True, 'description': 'Project deliverables', 'example': 'MVP launched, Documentation complete...'},
+                {'name': 'final_metrics', 'type': 'long_text', 'required': True, 'description': 'Final metrics', 'example': 'Budget: $100k, Timeline: 6 months, Quality: 95%...'},
+                {'name': 'handover_items', 'type': 'text', 'required': False, 'description': 'Handover items', 'default': ''}
+            ],
+            'tags': ['project-closure', 'handover', 'reporting'],
+            'recommended_agent': pm_agent,
+            'required_capabilities': ['PROJECT_MANAGEMENT']
+        },
+        {
+            'category': category,
+            'name': 'Create Dependency Management Plan',
+            'slug': 'create-dependency-management',
+            'description': 'Plan and manage project dependencies',
+            'template': '''Create dependency management plan.
+
+**Project:** {{project_name}}
+**Dependencies:**
+{{dependencies}}
+
+{{#if external_dependencies}}
+**External Dependencies:**
+{{external_dependencies}}
+{{/if}}
+
+Create comprehensive dependency plan including:
+1. Dependency identification
+2. Dependency types (internal, external, technical, business)
+3. Dependency mapping and relationships
+4. Critical path analysis
+5. Risk assessment for each dependency
+6. Mitigation strategies
+7. Contingency plans
+8. Monitoring and tracking approach
+9. Escalation procedures
+10. Communication plan''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'E-commerce Platform'},
+                {'name': 'dependencies', 'type': 'long_text', 'required': True, 'description': 'Project dependencies', 'example': 'API integration, Payment gateway, Design system...'},
+                {'name': 'external_dependencies', 'type': 'text', 'required': False, 'description': 'External dependencies', 'default': ''}
+            ],
+            'tags': ['dependencies', 'planning', 'risk-management'],
+            'recommended_agent': pm_agent,
+            'required_capabilities': ['PROJECT_MANAGEMENT']
+        },
+        {
+            'category': category,
+            'name': 'Generate Team Performance Report',
+            'slug': 'generate-team-performance-report',
+            'description': 'Analyze and report on team performance',
+            'template': '''Generate team performance report.
+
+**Team:** {{team_name}}
+**Reporting Period:** {{reporting_period}}
+**Team Members:**
+{{team_members}}
+
+**Performance Metrics:**
+{{performance_metrics}}
+
+{{#if achievements}}
+**Achievements:**
+{{achievements}}
+{{/if}}
+
+Create comprehensive performance report including:
+1. Team overview
+2. Performance metrics (velocity, quality, delivery)
+3. Individual contributions
+4. Team achievements
+5. Areas for improvement
+6. Skill development needs
+7. Team dynamics assessment
+8. Recommendations
+9. Recognition and rewards
+10. Action items''',
+            'parameters': [
+                {'name': 'team_name', 'type': 'text', 'required': True, 'description': 'Team name', 'example': 'Frontend Team'},
+                {'name': 'reporting_period', 'type': 'text', 'required': True, 'description': 'Reporting period', 'example': 'Q1 2024'},
+                {'name': 'team_members', 'type': 'long_text', 'required': True, 'description': 'Team members', 'example': 'John, Jane, Bob...'},
+                {'name': 'performance_metrics', 'type': 'long_text', 'required': True, 'description': 'Performance metrics', 'example': 'Velocity: 40 SP, Quality: 95%, On-time: 90%...'},
+                {'name': 'achievements', 'type': 'text', 'required': False, 'description': 'Key achievements', 'default': ''}
+            ],
+            'tags': ['team-performance', 'metrics', 'reporting'],
+            'recommended_agent': pm_agent,
+            'required_capabilities': ['PROJECT_MANAGEMENT']
+        },
+        {
+            'category': category,
+            'name': 'Create Project Budget Plan',
+            'slug': 'create-project-budget-plan',
+            'description': 'Develop comprehensive project budget',
+            'template': '''Create project budget plan.
+
+**Project:** {{project_name}}
+**Budget Period:** {{budget_period}}
+**Total Budget:** {{total_budget}}
+
+**Budget Categories:**
+{{budget_categories}}
+
+{{#if assumptions}}
+**Assumptions:**
+{{assumptions}}
+{{/if}}
+
+Create comprehensive budget plan including:
+1. Budget overview and summary
+2. Budget breakdown by category (personnel, infrastructure, tools, etc.)
+3. Cost estimates and rationale
+4. Contingency allocation
+5. Budget timeline and phasing
+6. Cost tracking approach
+7. Variance management
+8. Approval requirements
+9. Budget controls and limits
+10. Reporting schedule''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'E-commerce Platform'},
+                {'name': 'budget_period', 'type': 'text', 'required': True, 'description': 'Budget period', 'example': '6 months'},
+                {'name': 'total_budget', 'type': 'text', 'required': True, 'description': 'Total budget', 'example': '$500,000'},
+                {'name': 'budget_categories', 'type': 'long_text', 'required': True, 'description': 'Budget categories', 'example': 'Personnel: $300k, Infrastructure: $100k, Tools: $50k...'},
+                {'name': 'assumptions', 'type': 'text', 'required': False, 'description': 'Budget assumptions', 'default': ''}
+            ],
+            'tags': ['budget', 'financial', 'planning'],
+            'recommended_agent': pm_agent,
+            'required_capabilities': ['PROJECT_MANAGEMENT']
+        },
+        {
+            'category': category,
+            'name': 'Generate Stakeholder Engagement Plan',
+            'slug': 'generate-stakeholder-engagement-plan',
+            'description': 'Plan stakeholder engagement and communication',
+            'template': '''Generate stakeholder engagement plan.
+
+**Project:** {{project_name}}
+**Stakeholders:**
+{{stakeholders}}
+
+**Engagement Objectives:**
+{{engagement_objectives}}
+
+{{#if communication_preferences}}
+**Communication Preferences:**
+{{communication_preferences}}
+{{/if}}
+
+Create comprehensive engagement plan including:
+1. Stakeholder analysis and mapping
+2. Engagement objectives
+3. Communication strategy
+4. Engagement activities and frequency
+5. Communication channels and methods
+6. Meeting schedules
+7. Reporting structure
+8. Feedback mechanisms
+9. Conflict resolution approach
+10. Success metrics''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'E-commerce Platform'},
+                {'name': 'stakeholders', 'type': 'long_text', 'required': True, 'description': 'Stakeholders', 'example': 'CEO, CTO, Product Manager, End Users...'},
+                {'name': 'engagement_objectives', 'type': 'long_text', 'required': True, 'description': 'Engagement objectives', 'example': 'Keep informed, Get approvals, Gather feedback...'},
+                {'name': 'communication_preferences', 'type': 'text', 'required': False, 'description': 'Communication preferences', 'default': ''}
+            ],
+            'tags': ['stakeholder-engagement', 'communication', 'planning'],
+            'recommended_agent': pm_agent,
+            'required_capabilities': ['PROJECT_MANAGEMENT']
         }
     ]
     
@@ -3695,6 +4031,206 @@ Create comprehensive prioritization including:
             'tags': ['prioritization', 'requirements', 'planning'],
             'recommended_agent': ba_agent,
             'required_capabilities': ['REQUIREMENTS_ANALYSIS']
+        },
+        {
+            'category': category,
+            'name': 'Create Data Flow Diagram',
+            'slug': 'create-data-flow-diagram',
+            'description': 'Generate data flow diagram for system analysis',
+            'template': '''Create data flow diagram.
+
+**System:** {{system_name}}
+**Processes:**
+{{processes}}
+
+**Data Stores:**
+{{data_stores}}
+
+**External Entities:**
+{{external_entities}}
+
+{{#if data_flows}}
+**Data Flows:**
+{{data_flows}}
+{{/if}}
+
+Create comprehensive DFD including:
+1. Context diagram (Level 0)
+2. Level 1 decomposition
+3. Process specifications
+4. Data store definitions
+5. External entity descriptions
+6. Data flow definitions
+7. Data dictionary
+8. Process logic descriptions
+9. Error handling flows
+10. Security considerations''',
+            'parameters': [
+                {'name': 'system_name', 'type': 'text', 'required': True, 'description': 'System name', 'example': 'Order Management System'},
+                {'name': 'processes', 'type': 'long_text', 'required': True, 'description': 'System processes', 'example': 'Process Order, Validate Payment, Update Inventory...'},
+                {'name': 'data_stores', 'type': 'text', 'required': True, 'description': 'Data stores', 'example': 'Orders DB, Customer DB, Inventory DB'},
+                {'name': 'external_entities', 'type': 'text', 'required': True, 'description': 'External entities', 'example': 'Customer, Payment Gateway, Warehouse'},
+                {'name': 'data_flows', 'type': 'text', 'required': False, 'description': 'Data flows', 'default': ''}
+            ],
+            'tags': ['data-flow', 'diagram', 'analysis'],
+            'recommended_agent': ba_agent,
+            'required_capabilities': ['REQUIREMENTS_ANALYSIS']
+        },
+        {
+            'category': category,
+            'name': 'Perform Feasibility Study',
+            'slug': 'perform-feasibility-study',
+            'description': 'Conduct feasibility study for project or initiative',
+            'template': '''Perform feasibility study.
+
+**Project/Initiative:** {{project_name}}
+**Study Scope:** {{study_scope}}
+
+**Business Requirements:**
+{{business_requirements}}
+
+{{#if constraints}}
+**Constraints:**
+{{constraints}}
+{{/if}}
+
+Create comprehensive feasibility study including:
+1. Technical feasibility (technology, resources, skills)
+2. Economic feasibility (costs, benefits, ROI)
+3. Operational feasibility (processes, change management)
+4. Schedule feasibility (timeline, resources)
+5. Legal and regulatory feasibility
+6. Risk assessment
+7. Alternative solutions
+8. Recommendations
+9. Go/No-go decision criteria
+10. Implementation considerations''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'AI Automation System'},
+                {'name': 'study_scope', 'type': 'text', 'required': True, 'description': 'Study scope', 'example': 'Technical, Economic, Operational'},
+                {'name': 'business_requirements', 'type': 'long_text', 'required': True, 'description': 'Business requirements', 'example': 'Automate workflows, Reduce costs by 30%...'},
+                {'name': 'constraints', 'type': 'text', 'required': False, 'description': 'Constraints', 'default': ''}
+            ],
+            'tags': ['feasibility', 'study', 'analysis'],
+            'recommended_agent': ba_agent,
+            'required_capabilities': ['REQUIREMENTS_ANALYSIS']
+        },
+        {
+            'category': category,
+            'name': 'Create Business Rules Document',
+            'slug': 'create-business-rules-document',
+            'description': 'Document business rules and logic',
+            'template': '''Create business rules document.
+
+**Domain:** {{domain}}
+**Business Rules:**
+{{business_rules}}
+
+{{#if rule_categories}}
+**Rule Categories:**
+{{rule_categories}}
+{{/if}}
+
+Create comprehensive business rules document including:
+1. Rule identification and numbering
+2. Rule categories (validation, calculation, workflow)
+3. Rule descriptions and logic
+4. Conditions and triggers
+5. Actions and outcomes
+6. Priority and importance
+7. Dependencies between rules
+8. Exception handling
+9. Rule versioning
+10. Implementation notes''',
+            'parameters': [
+                {'name': 'domain', 'type': 'text', 'required': True, 'description': 'Business domain', 'example': 'E-commerce, Banking, Healthcare'},
+                {'name': 'business_rules', 'type': 'long_text', 'required': True, 'description': 'Business rules', 'example': 'Order must have valid payment, Discount applies if order > $100...'},
+                {'name': 'rule_categories', 'type': 'text', 'required': False, 'description': 'Rule categories', 'default': ''}
+            ],
+            'tags': ['business-rules', 'documentation', 'logic'],
+            'recommended_agent': ba_agent,
+            'required_capabilities': ['REQUIREMENTS_ANALYSIS']
+        },
+        {
+            'category': category,
+            'name': 'Generate Requirements Traceability Matrix',
+            'slug': 'generate-requirements-traceability-matrix',
+            'description': 'Create requirements traceability matrix',
+            'template': '''Generate requirements traceability matrix.
+
+**Project:** {{project_name}}
+**Requirements:**
+{{requirements}}
+
+**Design Components:**
+{{design_components}}
+
+{{#if test_cases}}
+**Test Cases:**
+{{test_cases}}
+{{/if}}
+
+Create comprehensive traceability matrix including:
+1. Requirements list with IDs
+2. Business objectives mapping
+3. Design components mapping
+4. Test cases mapping
+5. Code modules mapping
+6. User stories mapping
+7. Change request tracking
+8. Coverage analysis
+9. Gaps identification
+10. Compliance verification''',
+            'parameters': [
+                {'name': 'project_name', 'type': 'text', 'required': True, 'description': 'Project name', 'example': 'E-commerce Platform'},
+                {'name': 'requirements', 'type': 'long_text', 'required': True, 'description': 'Requirements list', 'example': 'REQ-001: User login, REQ-002: Product search...'},
+                {'name': 'design_components', 'type': 'long_text', 'required': True, 'description': 'Design components', 'example': 'AuthService, ProductService, SearchService...'},
+                {'name': 'test_cases', 'type': 'text', 'required': False, 'description': 'Test cases', 'default': ''}
+            ],
+            'tags': ['traceability', 'requirements', 'matrix'],
+            'recommended_agent': ba_agent,
+            'required_capabilities': ['REQUIREMENTS_ANALYSIS']
+        },
+        {
+            'category': category,
+            'name': 'Perform Root Cause Analysis',
+            'slug': 'perform-root-cause-analysis',
+            'description': 'Analyze root causes of problems or issues',
+            'template': '''Perform root cause analysis.
+
+**Problem/Issue:** {{problem_description}}
+**Impact:** {{impact}}
+**When Occurred:** {{when_occurred}}
+
+**Symptoms:**
+{{symptoms}}
+
+{{#if initial_hypotheses}}
+**Initial Hypotheses:**
+{{initial_hypotheses}}
+{{/if}}
+
+Create comprehensive RCA including:
+1. Problem statement
+2. Impact assessment
+3. Timeline of events
+4. Data collection
+5. Cause identification (5 Whys, Fishbone diagram)
+6. Root cause validation
+7. Contributing factors
+8. Solution recommendations
+9. Preventive measures
+10. Action plan''',
+            'parameters': [
+                {'name': 'problem_description', 'type': 'long_text', 'required': True, 'description': 'Problem description', 'example': 'System crashes during peak hours'},
+                {'name': 'impact', 'type': 'text', 'required': True, 'description': 'Impact', 'example': 'High - Affects 50% of users'},
+                {'name': 'when_occurred', 'type': 'text', 'required': True, 'description': 'When occurred', 'example': 'Last 2 weeks, Daily at 2 PM'},
+                {'name': 'symptoms', 'type': 'long_text', 'required': True, 'description': 'Symptoms', 'example': 'Slow response, Error messages, Timeouts...'},
+                {'name': 'initial_hypotheses', 'type': 'text', 'required': False, 'description': 'Initial hypotheses', 'default': ''}
+            ],
+            'tags': ['root-cause', 'analysis', 'problem-solving'],
+            'recommended_agent': ba_agent,
+            'required_capabilities': ['REQUIREMENTS_ANALYSIS']
         }
     ]
     
@@ -4067,6 +4603,213 @@ Create comprehensive evaluation including:
                 {'name': 'requirements', 'type': 'text', 'required': False, 'description': 'Specific requirements', 'default': ''}
             ],
             'tags': ['vendor-evaluation', 'comparison', 'selection'],
+            'recommended_agent': research_agent,
+            'required_capabilities': ['RESEARCH']
+        },
+        {
+            'category': category,
+            'name': 'Create Research Methodology Plan',
+            'slug': 'create-research-methodology-plan',
+            'description': 'Plan research methodology and approach',
+            'template': '''Create research methodology plan.
+
+**Research Topic:** {{research_topic}}
+**Research Objectives:**
+{{research_objectives}}
+
+**Research Questions:**
+{{research_questions}}
+
+{{#if constraints}}
+**Constraints:**
+{{constraints}}
+{{/if}}
+
+Create comprehensive methodology plan including:
+1. Research objectives
+2. Research questions and hypotheses
+3. Research design (qualitative, quantitative, mixed)
+4. Data collection methods
+5. Sampling strategy
+6. Data analysis approach
+7. Ethical considerations
+8. Timeline and milestones
+9. Resource requirements
+10. Success criteria''',
+            'parameters': [
+                {'name': 'research_topic', 'type': 'text', 'required': True, 'description': 'Research topic', 'example': 'User Adoption of AI Tools'},
+                {'name': 'research_objectives', 'type': 'long_text', 'required': True, 'description': 'Research objectives', 'example': 'Understand user behavior, Identify barriers...'},
+                {'name': 'research_questions', 'type': 'long_text', 'required': True, 'description': 'Research questions', 'example': 'What factors influence adoption? How do users perceive AI?...'},
+                {'name': 'constraints', 'type': 'text', 'required': False, 'description': 'Constraints', 'default': ''}
+            ],
+            'tags': ['research-methodology', 'planning', 'analysis'],
+            'recommended_agent': research_agent,
+            'required_capabilities': ['RESEARCH']
+        },
+        {
+            'category': category,
+            'name': 'Generate Literature Review',
+            'slug': 'generate-literature-review',
+            'description': 'Create comprehensive literature review',
+            'template': '''Generate literature review.
+
+**Topic:** {{topic}}
+**Research Scope:** {{research_scope}}
+
+**Key Themes:**
+{{key_themes}}
+
+{{#if research_questions}}
+**Research Questions:**
+{{research_questions}}
+{{/if}}
+
+Create comprehensive literature review including:
+1. Introduction and scope
+2. Search strategy and sources
+3. Key themes and topics
+4. Theoretical frameworks
+5. Empirical findings
+6. Methodological approaches
+7. Gaps in existing research
+8. Synthesis and analysis
+9. Implications
+10. Future research directions''',
+            'parameters': [
+                {'name': 'topic', 'type': 'text', 'required': True, 'description': 'Review topic', 'example': 'AI in Software Development'},
+                {'name': 'research_scope', 'type': 'text', 'required': True, 'description': 'Research scope', 'example': '2019-2024, Academic and industry sources'},
+                {'name': 'key_themes', 'type': 'long_text', 'required': True, 'description': 'Key themes', 'example': 'Code generation, Testing automation, Project management...'},
+                {'name': 'research_questions', 'type': 'text', 'required': False, 'description': 'Research questions', 'default': ''}
+            ],
+            'tags': ['literature-review', 'research', 'academic'],
+            'recommended_agent': research_agent,
+            'required_capabilities': ['RESEARCH']
+        },
+        {
+            'category': category,
+            'name': 'Perform Data Analysis Report',
+            'slug': 'perform-data-analysis-report',
+            'description': 'Analyze data and generate insights report',
+            'template': '''Perform data analysis report.
+
+**Dataset:** {{dataset_name}}
+**Analysis Objective:** {{analysis_objective}}
+**Data Period:** {{data_period}}
+
+**Data Overview:**
+{{data_overview}}
+
+{{#if key_metrics}}
+**Key Metrics:**
+{{key_metrics}}
+{{/if}}
+
+Create comprehensive analysis report including:
+1. Executive summary
+2. Data overview and quality
+3. Descriptive statistics
+4. Trend analysis
+5. Pattern identification
+6. Correlation analysis
+7. Statistical tests
+8. Visualizations and charts
+9. Key insights and findings
+10. Recommendations
+11. Limitations
+12. Next steps''',
+            'parameters': [
+                {'name': 'dataset_name', 'type': 'text', 'required': True, 'description': 'Dataset name', 'example': 'User Engagement Data'},
+                {'name': 'analysis_objective', 'type': 'text', 'required': True, 'description': 'Analysis objective', 'example': 'Understand user behavior patterns'},
+                {'name': 'data_period', 'type': 'text', 'required': True, 'description': 'Data period', 'example': 'January - March 2024'},
+                {'name': 'data_overview', 'type': 'long_text', 'required': True, 'description': 'Data overview', 'example': '10,000 records, 5 variables, Daily frequency...'},
+                {'name': 'key_metrics', 'type': 'text', 'required': False, 'description': 'Key metrics', 'default': ''}
+            ],
+            'tags': ['data-analysis', 'statistics', 'insights'],
+            'recommended_agent': research_agent,
+            'required_capabilities': ['RESEARCH']
+        },
+        {
+            'category': category,
+            'name': 'Create Benchmarking Study',
+            'slug': 'create-benchmarking-study',
+            'description': 'Conduct benchmarking study against industry standards',
+            'template': '''Create benchmarking study.
+
+**Subject:** {{subject}}
+**Benchmarking Scope:** {{benchmarking_scope}}
+**Comparison Targets:**
+{{comparison_targets}}
+
+**Metrics to Benchmark:**
+{{metrics}}
+
+{{#if current_performance}}
+**Current Performance:**
+{{current_performance}}
+{{/if}}
+
+Create comprehensive benchmarking study including:
+1. Benchmarking objectives
+2. Scope and methodology
+3. Comparison targets (industry leaders, competitors)
+4. Metrics definition
+5. Data collection approach
+6. Current state assessment
+7. Gap analysis
+8. Best practices identification
+9. Improvement opportunities
+10. Action plan
+11. Success metrics''',
+            'parameters': [
+                {'name': 'subject', 'type': 'text', 'required': True, 'description': 'Subject', 'example': 'API Performance, Customer Support, Development Velocity'},
+                {'name': 'benchmarking_scope', 'type': 'text', 'required': True, 'description': 'Benchmarking scope', 'example': 'Industry-wide, Competitor analysis'},
+                {'name': 'comparison_targets', 'type': 'long_text', 'required': True, 'description': 'Comparison targets', 'example': 'Google, Amazon, Microsoft...'},
+                {'name': 'metrics', 'type': 'long_text', 'required': True, 'description': 'Metrics to benchmark', 'example': 'Response time, Throughput, Error rate...'},
+                {'name': 'current_performance', 'type': 'text', 'required': False, 'description': 'Current performance', 'default': ''}
+            ],
+            'tags': ['benchmarking', 'comparison', 'analysis'],
+            'recommended_agent': research_agent,
+            'required_capabilities': ['RESEARCH']
+        },
+        {
+            'category': category,
+            'name': 'Generate Market Research Report',
+            'slug': 'generate-market-research-report',
+            'description': 'Create comprehensive market research report',
+            'template': '''Generate market research report.
+
+**Market:** {{market_name}}
+**Research Objective:** {{research_objective}}
+**Target Audience:** {{target_audience}}
+
+**Research Questions:**
+{{research_questions}}
+
+{{#if data_sources}}
+**Data Sources:**
+{{data_sources}}
+{{/if}}
+
+Create comprehensive market research including:
+1. Executive summary
+2. Market overview and size
+3. Market segmentation
+4. Target customer analysis
+5. Competitive landscape
+6. Market trends and drivers
+7. Opportunities and threats
+8. Pricing analysis
+9. Distribution channels
+10. Recommendations
+11. Market entry strategy''',
+            'parameters': [
+                {'name': 'market_name', 'type': 'text', 'required': True, 'description': 'Market name', 'example': 'AI Project Management Tools'},
+                {'name': 'research_objective', 'type': 'text', 'required': True, 'description': 'Research objective', 'example': 'Assess market opportunity'},
+                {'name': 'target_audience', 'type': 'text', 'required': True, 'description': 'Target audience', 'example': 'SMB software development teams'},
+                {'name': 'research_questions', 'type': 'long_text', 'required': True, 'description': 'Research questions', 'example': 'What is market size? Who are competitors?...'},
+                {'name': 'data_sources', 'type': 'text', 'required': False, 'description': 'Data sources', 'default': ''}
+            ],
+            'tags': ['market-research', 'analysis', 'strategy'],
             'recommended_agent': research_agent,
             'required_capabilities': ['RESEARCH']
         }
@@ -4574,6 +5317,127 @@ Create comprehensive microinteractions guide including:
                 {'name': 'design_philosophy', 'type': 'text', 'required': False, 'description': 'Design philosophy', 'default': 'Delightful, Subtle, Purposeful'}
             ],
             'tags': ['microinteractions', 'animation', 'ux'],
+            'recommended_agent': coding_agent,
+            'required_capabilities': ['UX_DESIGN']
+        },
+        {
+            'category': category,
+            'name': 'Create Information Architecture',
+            'slug': 'create-information-architecture',
+            'description': 'Design information architecture for product or system',
+            'template': '''Create information architecture.
+
+**Product/System:** {{product_name}}
+**Content Types:**
+{{content_types}}
+
+**User Goals:**
+{{user_goals}}
+
+{{#if existing_structure}}
+**Existing Structure:**
+{{existing_structure}}
+{{/if}}
+
+Create comprehensive IA including:
+1. Content inventory
+2. Content categorization
+3. Hierarchical structure
+4. Navigation design
+5. Labeling system
+6. Search strategy
+7. User flows
+8. Wireframe structure
+9. Metadata schema
+10. Accessibility considerations''',
+            'parameters': [
+                {'name': 'product_name', 'type': 'text', 'required': True, 'description': 'Product name', 'example': 'Admin Dashboard'},
+                {'name': 'content_types', 'type': 'long_text', 'required': True, 'description': 'Content types', 'example': 'Pages, Documents, Settings, Reports...'},
+                {'name': 'user_goals', 'type': 'long_text', 'required': True, 'description': 'User goals', 'example': 'Manage users, View analytics, Configure settings...'},
+                {'name': 'existing_structure', 'type': 'text', 'required': False, 'description': 'Existing structure', 'default': ''}
+            ],
+            'tags': ['information-architecture', 'ia', 'structure'],
+            'recommended_agent': coding_agent,
+            'required_capabilities': ['UX_DESIGN']
+        },
+        {
+            'category': category,
+            'name': 'Perform User Testing Plan',
+            'slug': 'perform-user-testing-plan',
+            'description': 'Create user testing plan and methodology',
+            'template': '''Perform user testing plan.
+
+**Product/Feature:** {{product_name}}
+**Testing Objective:** {{testing_objective}}
+**Target Users:** {{target_users}}
+
+**Test Scenarios:**
+{{test_scenarios}}
+
+{{#if success_criteria}}
+**Success Criteria:**
+{{success_criteria}}
+{{/if}}
+
+Create comprehensive testing plan including:
+1. Testing objectives
+2. Research questions
+3. Participant recruitment
+4. Test scenarios and tasks
+5. Testing methodology (moderated, unmoderated)
+6. Metrics and measurements
+7. Data collection approach
+8. Analysis framework
+9. Reporting structure
+10. Action items template''',
+            'parameters': [
+                {'name': 'product_name', 'type': 'text', 'required': True, 'description': 'Product name', 'example': 'Checkout Flow'},
+                {'name': 'testing_objective', 'type': 'text', 'required': True, 'description': 'Testing objective', 'example': 'Evaluate checkout usability'},
+                {'name': 'target_users', 'type': 'text', 'required': True, 'description': 'Target users', 'example': 'First-time buyers, Returning customers'},
+                {'name': 'test_scenarios', 'type': 'long_text', 'required': True, 'description': 'Test scenarios', 'example': 'Complete purchase, Apply discount code, Change shipping...'},
+                {'name': 'success_criteria', 'type': 'text', 'required': False, 'description': 'Success criteria', 'default': ''}
+            ],
+            'tags': ['user-testing', 'usability', 'research'],
+            'recommended_agent': coding_agent,
+            'required_capabilities': ['UX_DESIGN']
+        },
+        {
+            'category': category,
+            'name': 'Create Responsive Design Guidelines',
+            'slug': 'create-responsive-design-guidelines',
+            'description': 'Generate responsive design guidelines and breakpoints',
+            'template': '''Create responsive design guidelines.
+
+**Product:** {{product_name}}
+**Target Devices:**
+{{target_devices}}
+
+**Content Types:**
+{{content_types}}
+
+{{#if design_constraints}}
+**Design Constraints:**
+{{design_constraints}}
+{{/if}}
+
+Create comprehensive responsive guidelines including:
+1. Breakpoint strategy (mobile, tablet, desktop)
+2. Grid system and layout rules
+3. Typography scaling
+4. Image and media handling
+5. Navigation patterns
+6. Touch target sizes
+7. Performance considerations
+8. Testing approach
+9. Implementation guidelines
+10. Best practices''',
+            'parameters': [
+                {'name': 'product_name', 'type': 'text', 'required': True, 'description': 'Product name', 'example': 'E-commerce Platform'},
+                {'name': 'target_devices', 'type': 'text', 'required': True, 'description': 'Target devices', 'example': 'Mobile (320px+), Tablet (768px+), Desktop (1024px+)'},
+                {'name': 'content_types', 'type': 'long_text', 'required': True, 'description': 'Content types', 'example': 'Product cards, Forms, Navigation, Charts...'},
+                {'name': 'design_constraints', 'type': 'text', 'required': False, 'description': 'Design constraints', 'default': ''}
+            ],
+            'tags': ['responsive', 'design', 'mobile'],
             'recommended_agent': coding_agent,
             'required_capabilities': ['UX_DESIGN']
         }

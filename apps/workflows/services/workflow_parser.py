@@ -9,7 +9,7 @@ import json
 import jsonschema
 from pathlib import Path
 from typing import Dict, List, Set, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -25,6 +25,14 @@ class ParsedStep:
     max_retries: int
     timeout_seconds: int
     skip_if: Optional[str]
+    parallel: bool = False
+    parallel_group: Optional[str] = None
+    depends_on: List[str] = field(default_factory=list)
+    step_type: str = "agent"  # agent, merge, loop, sub_workflow
+    branch_group: Optional[str] = None
+    merge_after: Optional[str] = None
+    loop: Optional[Dict] = None  # Loop configuration
+    sub_workflow: Optional[Dict] = None  # Sub-workflow configuration
 
 
 @dataclass
@@ -85,17 +93,33 @@ class WorkflowParser:
         step_map = {}
         
         for step_def in definition['steps']:
+            # Determine step type
+            step_type = step_def.get('step_type', 'agent')
+            
+            # For non-agent steps, agent field is optional
+            agent = step_def.get('agent', '')
+            if step_type == 'agent' and not agent:
+                raise WorkflowParseError(f"Step '{step_def['id']}' of type 'agent' must have an 'agent' field")
+            
             step = ParsedStep(
                 id=step_def['id'],
                 name=step_def.get('name'),
-                agent=step_def['agent'],
+                agent=agent,
                 inputs=step_def.get('inputs', {}),
                 condition=step_def.get('condition'),
                 on_success=step_def.get('on_success'),
                 on_failure=step_def.get('on_failure'),
                 max_retries=step_def.get('max_retries', 3),
                 timeout_seconds=step_def.get('timeout_seconds', 300),
-                skip_if=step_def.get('skip_if')
+                skip_if=step_def.get('skip_if'),
+                parallel=step_def.get('parallel', False),
+                parallel_group=step_def.get('parallel_group'),
+                depends_on=step_def.get('depends_on', []) if step_def.get('depends_on') else [],
+                step_type=step_type,
+                branch_group=step_def.get('branch_group'),
+                merge_after=step_def.get('merge_after'),
+                loop=step_def.get('loop'),
+                sub_workflow=step_def.get('sub_workflow')
             )
             
             # Check for duplicate step IDs

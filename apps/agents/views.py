@@ -7,6 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import models
+from django.core.cache import cache
+from django.conf import settings
 from asgiref.sync import async_to_sync
 import logging
 from .models import Agent, AgentExecution
@@ -35,7 +37,23 @@ class AgentViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """All authenticated users can view agents."""
-        return Agent.objects.all()
+        return Agent.objects.all().only(
+            'id', 'agent_id', 'name', 'description', 'status',
+            'preferred_platform', 'capabilities', 'total_invocations',
+            'success_rate', 'created_at'
+        )
+    
+    def list(self, request, *args, **kwargs):
+        """List agents with caching."""
+        cache_key = 'agents_list'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is None:
+            response = super().list(request, *args, **kwargs)
+            cache.set(cache_key, response.data, settings.CACHE_TIMEOUT_MEDIUM)
+            return response
+        
+        return Response(cached_data)
     
     def get_serializer_class(self):
         if self.action == 'list':
