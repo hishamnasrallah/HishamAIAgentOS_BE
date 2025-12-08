@@ -35,6 +35,7 @@ class CommandExecutionResult:
     execution_time: float = 0.0
     cost: float = 0.0
     tokens_used: int = 0
+    execution_id: Optional[str] = None  # CommandExecution record ID
     
     # Validation info
     validation_result: Optional[ValidationResult] = None
@@ -124,12 +125,34 @@ class CommandExecutor:
                 context=context or {}
             )
             
-            # Step 6: Update command metrics
+            # Step 6: Create execution record and update command metrics
             execution_time = time.time() - start_time
+            execution_time_ms = int(execution_time * 1000)
+            
+            # Create CommandExecution record
+            from apps.commands.models import CommandExecution
+            from django.utils import timezone
+            
+            command_execution = await sync_to_async(CommandExecution.objects.create)(
+                command=command,
+                user=user,
+                input_parameters=complete_parameters,
+                rendered_template=rendered_prompt,
+                output=execution_result.output if execution_result.success else '',
+                status='completed' if execution_result.success else 'failed',
+                error_message=execution_result.error or '',
+                execution_time_ms=execution_time_ms,
+                tokens_used=execution_result.tokens_used or 0,
+                cost=execution_result.cost or 0.0,
+                agent_execution=execution_result.agent_execution if hasattr(execution_result, 'agent_execution') else None,
+                completed_at=timezone.now()
+            )
+            
+            # Update command metrics
             await sync_to_async(command.update_metrics)(
                 success=execution_result.success,
                 execution_time=execution_time,
-                cost=execution_result.cost
+                cost=execution_result.cost or 0.0
             )
             
             # Step 7: Return result
@@ -142,22 +165,44 @@ class CommandExecutor:
                 execution_time=execution_time,
                 cost=execution_result.cost,
                 tokens_used=execution_result.tokens_used,
-                validation_result=validation_result
+                validation_result=validation_result,
+                execution_id=str(command_execution.id)
             )
             
         except Exception as e:
             logger.error(f"Command execution failed: {str(e)}", exc_info=True)
             
-            # Update failure metrics
+            # Update failure metrics and create execution record
             execution_time = time.time() - start_time
+            execution_time_ms = int(execution_time * 1000)
+            
             try:
+                # Create CommandExecution record for failure
+                from apps.commands.models import CommandExecution
+                from django.utils import timezone
+                
+                command_execution = await sync_to_async(CommandExecution.objects.create)(
+                    command=command,
+                    user=user,
+                    input_parameters=parameters if 'parameters' in locals() else {},
+                    rendered_template='',
+                    output='',
+                    status='failed',
+                    error_message=str(e),
+                    execution_time_ms=execution_time_ms,
+                    tokens_used=0,
+                    cost=0.0,
+                    completed_at=timezone.now()
+                )
+                
+                # Update command metrics
                 await sync_to_async(command.update_metrics)(
                     success=False,
                     execution_time=execution_time,
                     cost=0.0
                 )
             except Exception as metric_error:
-                logger.error(f"Failed to update metrics: {str(metric_error)}")
+                logger.error(f"Failed to create execution record or update metrics: {str(metric_error)}")
             
             return CommandExecutionResult(
                 success=False,

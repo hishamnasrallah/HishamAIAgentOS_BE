@@ -1,9 +1,71 @@
 """
-Core system models for HishamOS.
+Core base models and mixins for HishamOS.
 """
 
 from django.db import models
+from django.utils import timezone
+from django.contrib.auth import get_user_model
 import uuid
+
+User = get_user_model()
+
+
+class TimestampedModel(models.Model):
+    """
+    Abstract base model with created_at and updated_at timestamps.
+    """
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
+    class Meta:
+        abstract = True
+
+
+class TrackedModel(TimestampedModel):
+    """
+    Abstract base model with created_by, updated_by, created_at, and updated_at.
+    Automatically tracks who created and updated records.
+    """
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='%(class)s_created',
+        verbose_name='Created By',
+        help_text='User who created this record'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='%(class)s_updated',
+        verbose_name='Updated By',
+        help_text='User who last updated this record'
+    )
+    
+    class Meta:
+        abstract = True
+
+
+class UUIDModel(models.Model):
+    """
+    Abstract base model with UUID primary key.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    class Meta:
+        abstract = True
+
+
+class BaseModel(UUIDModel, TrackedModel):
+    """
+    Complete base model with UUID, timestamps, and user tracking.
+    Use this for all new models that need full tracking.
+    """
+    class Meta:
+        abstract = True
 
 
 class SystemSettings(models.Model):
@@ -142,4 +204,3 @@ class FeatureFlag(models.Model):
                 return False
         
         return True
-

@@ -157,11 +157,31 @@ class ExecutionEngine:
             
             # Complete execution
             full_output = ''.join(collected_output)
+            
+            # Estimate tokens and cost for streaming response
+            from apps.agents.utils.token_estimator import estimate_tokens, estimate_cost
+            
+            # Estimate output tokens
+            output_tokens = estimate_tokens(full_output, agent.model_name)
+            
+            # Estimate input tokens (from input_data)
+            input_text = str(input_data.get('prompt', ''))
+            input_tokens = estimate_tokens(input_text, agent.model_name)
+            
+            # Calculate total tokens and cost
+            total_tokens = input_tokens + output_tokens
+            estimated_cost = estimate_cost(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                model=agent.model_name,
+                platform=agent.preferred_platform
+            )
+            
             await state_manager.complete_execution(
                 execution=execution,
                 output_data=full_output,
-                tokens_used=0,  # TODO: estimate tokens
-                cost=0.0,  # TODO: calculate cost
+                tokens_used=total_tokens,
+                cost=estimated_cost,
                 platform_used=agent.preferred_platform,
                 model_used=agent.model_name
             )

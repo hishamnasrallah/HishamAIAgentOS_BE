@@ -6,6 +6,9 @@ from .base import *
 
 DEBUG = False
 
+# Enable JSON logging in production
+USE_JSON_LOGGING = True
+
 # ALLOWED_HOSTS - Accept all hosts by default for flexibility
 # Can be restricted via DJANGO_ALLOWED_HOSTS environment variable
 _allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS')

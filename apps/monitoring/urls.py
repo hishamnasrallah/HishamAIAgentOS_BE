@@ -4,15 +4,22 @@ URL configuration for monitoring app.
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import SystemMetricViewSet, HealthCheckViewSet, AuditLogViewSet
+from .views import (
+    SystemMetricViewSet, 
+    HealthCheckViewSet, 
+    AuditLogViewSet,
+    AuditConfigurationViewSet
+)
 from .analytics_views import AnalyticsViewSet
 from .dashboard_views import dashboard_stats, agent_status_list, recent_workflows, system_health
 from .admin_views import admin_stats, admin_recent_activity
+from .prometheus_metrics import metrics_view
 
 router = DefaultRouter()
 router.register(r'metrics', SystemMetricViewSet, basename='systemmetric')
 router.register(r'health', HealthCheckViewSet, basename='healthcheck')
 router.register(r'audit', AuditLogViewSet, basename='auditlog')
+router.register(r'audit-configurations', AuditConfigurationViewSet, basename='auditconfiguration')
 router.register(r'analytics', AnalyticsViewSet, basename='analytics')
 
 urlpatterns = [
@@ -28,4 +35,7 @@ urlpatterns = [
     
     # Router URLs
     path('', include(router.urls)),
+    
+    # Prometheus metrics endpoint
+    path('prometheus/metrics/', metrics_view, name='prometheus_metrics'),
 ]

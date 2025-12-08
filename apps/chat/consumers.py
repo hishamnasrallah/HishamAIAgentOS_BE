@@ -134,16 +134,53 @@ class ChatConsumer(AsyncWebsocketConsumer):
         
         # Generate agent response (streaming)
         try:
-            # For now, we'll create a simple response
-            # TODO: Integrate actual streaming from ConversationalAgent
-            agent_response = await self.generate_agent_response(
-                agent_model,
-                content,
-                context
-            )
+            # Use streaming execution if available
+            from apps.agents.services import execution_engine
             
-            # Stream response in chunks
-            await self.stream_response(agent_response)
+            # Try streaming first
+            try:
+                full_response = ""
+                context_dict = {}
+                if hasattr(context, 'metadata'):
+                    context_dict = context.metadata
+                elif isinstance(context, dict):
+                    context_dict = context
+                
+                async for chunk in execution_engine.execute_streaming(
+                    agent=agent_model,
+                    input_data={'prompt': content, 'message': content},
+                    user=self.scope['user'],
+                    context=context_dict
+                ):
+                    if chunk:
+                        full_response += chunk
+                        # Send chunk immediately
+                        chunk_data = {
+                            'type': 'message_chunk',
+                            'content': chunk
+                        }
+                        await self.send(text_data=json.dumps(chunk_data))
+                        # Broadcast to group
+                        await self.channel_layer.group_send(
+                            self.conversation_group,
+                            {
+                                'type': 'message_chunk',
+                                'data': chunk_data
+                            }
+                        )
+                
+                agent_response = full_response
+            except Exception as stream_error:
+                # Fallback to non-streaming
+                logger.warning(f"Streaming failed, using non-streaming: {stream_error}")
+                agent_response = await self.generate_agent_response(
+                    agent_model,
+                    content,
+                    context
+                )
+                
+                # Stream response in chunks
+                await self.stream_response(agent_response)
             
             # Save assistant message
             assistant_message = await self.save_message('assistant', agent_response)
@@ -211,13 +248,28 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     async def generate_agent_response(self, agent_model, user_input, context):
         """
-        Generate agent response.
+        Generate agent response using execution engine.
         
-        TODO: Integrate with actual ConversationalAgent streaming
-        For now, returns a simple response.
+        This is a fallback method when streaming fails.
         """
-        # Placeholder response
-        return f"I received your message: '{user_input}'. This is a placeholder response from {agent_model.name}. Full integration with ConversationalAgent will be added in the next iteration."
+        try:
+            from apps.agents.services import execution_engine
+            
+            # Execute agent synchronously
+            result = await execution_engine.execute_agent(
+                agent=agent_model,
+                input_data={'prompt': user_input, 'message': user_input},
+                user=self.scope['user'],
+                context=context.metadata if hasattr(context, 'metadata') else (context if isinstance(context, dict) else {})
+            )
+            
+            if result.success and result.output:
+                return result.output
+            else:
+                return f"Sorry, I encountered an error: {result.error or 'Unknown error'}"
+        except Exception as e:
+            logger.error(f"Error generating agent response: {str(e)}", exc_info=True)
+            return f"Sorry, I encountered an error while processing your request: {str(e)}"
     
     async def send_error(self, message):
         """Send error message to client."""

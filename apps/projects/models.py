@@ -41,8 +41,26 @@ class Project(models.Model):
         blank=True
     )
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_projects',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_projects',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'projects'
@@ -82,8 +100,26 @@ class Sprint(models.Model):
     total_story_points = models.IntegerField(default=0)
     completed_story_points = models.IntegerField(default=0)
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_sprints',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_sprints',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'sprints'
@@ -117,8 +153,26 @@ class Epic(models.Model):
     start_date = models.DateField(null=True, blank=True)
     target_date = models.DateField(null=True, blank=True)
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_epics',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_epics',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'epics'
@@ -197,11 +251,21 @@ class UserStory(models.Model):
         'authentication.User',
         on_delete=models.SET_NULL,
         null=True,
-        related_name='created_stories'
+        blank=True,
+        related_name='created_stories',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_stories',
+        verbose_name='Updated By'
     )
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'user_stories'
@@ -252,8 +316,26 @@ class Task(models.Model):
         blank=True
     )
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_tasks',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_tasks',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'tasks'

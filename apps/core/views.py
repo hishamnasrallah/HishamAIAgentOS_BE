@@ -114,4 +114,3 @@ class FeatureFlagViewSet(viewsets.ModelViewSet):
         queryset = FeatureFlag.objects.filter(is_enabled=True)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
-

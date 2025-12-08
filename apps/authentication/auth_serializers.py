@@ -69,6 +69,23 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'two_factor_enabled': user.two_factor_enabled,
         }
         
+        # Audit successful login
+        try:
+            from apps.monitoring.audit import audit_logger
+            # Get request from context if available
+            request = self.context.get('request') if hasattr(self, 'context') else None
+            audit_logger.log_authentication(
+                action='login',
+                user=user,
+                request=request,
+                success=True,
+            )
+        except Exception as e:
+            # Don't break login if audit logging fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to audit login: {e}", exc_info=True)
+        
         return data
 
 

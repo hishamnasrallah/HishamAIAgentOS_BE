@@ -72,7 +72,26 @@ class Message(models.Model):
         blank=True,
         help_text="List of file references/URLs"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_messages',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_messages',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     tokens_used = models.IntegerField(
         null=True,
         blank=True,

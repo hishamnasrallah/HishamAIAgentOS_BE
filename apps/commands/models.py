@@ -3,7 +3,10 @@ Command library models for HishamOS.
 """
 
 from django.db import models
+from django.contrib.auth import get_user_model
 import uuid
+
+User = get_user_model()
 
 
 class CommandCategory(models.Model):
@@ -16,8 +19,26 @@ class CommandCategory(models.Model):
     icon = models.CharField(max_length=50, blank=True)
     order = models.IntegerField(default=0)
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_command_categories',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_command_categories',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'command_categories'
@@ -76,37 +97,35 @@ class CommandTemplate(models.Model):
     )
     
     # Performance metrics
-    estimated_cost = models.DecimalField(
-        max_digits=10,
-        decimal_places=6,
-        default=0.0,
-        help_text="Estimated cost in USD to execute this command"
-    )
-    
-    avg_execution_time = models.FloatField(
-        default=0.0,
-        help_text="Average execution time in seconds"
-    )
-    
-    success_rate = models.FloatField(
-        default=100.0,
-        help_text="Percentage of successful executions (0-100)"
-    )
+    estimated_cost = models.FloatField(default=0.0, help_text="Estimated cost per execution")
+    estimated_duration = models.IntegerField(default=0, help_text="Estimated duration in seconds")
     
     # Metadata
     tags = models.JSONField(default=list, blank=True)
     version = models.CharField(max_length=20, default='1.0.0')
-    
-    # Usage tracking
     usage_count = models.IntegerField(default=0)
-    total_successes = models.IntegerField(default=0)
-    total_failures = models.IntegerField(default=0)
-    
-    # Status
     is_active = models.BooleanField(default=True)
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_command_templates',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_command_templates',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'command_templates'
@@ -115,37 +134,94 @@ class CommandTemplate(models.Model):
         indexes = [
             models.Index(fields=['slug']),
             models.Index(fields=['category', '-usage_count']),
-            models.Index(fields=['-success_rate', '-usage_count']),
-            models.Index(fields=['is_active', 'category']),
         ]
+        ordering = ['category', 'name']
     
     def __str__(self):
         return self.name
+
+
+class CommandExecution(models.Model):
+    """Track command template executions."""
     
-    def update_metrics(self, success: bool, execution_time: float, cost: float):
-        """Update command metrics after execution."""
-        self.usage_count += 1
-        if success:
-            self.total_successes += 1
-        else:
-            self.total_failures += 1
-        
-        # Update success rate
-        total_executions = self.total_successes + self.total_failures
-        if total_executions > 0:
-            self.success_rate = (self.total_successes / total_executions) * 100
-        
-        # Update average execution time (exponential moving average)
-        if self.avg_execution_time == 0:
-            self.avg_execution_time = execution_time
-        else:
-            alpha = 0.2  # Weight for new value
-            self.avg_execution_time = (alpha * execution_time) + ((1 - alpha) * self.avg_execution_time)
-        
-        # Update estimated cost (exponential moving average)
-        if self.estimated_cost == 0:
-            self.estimated_cost = cost
-        else:
-            self.estimated_cost = (alpha * cost) + ((1 - alpha) * float(self.estimated_cost))
-        
-        self.save()
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    command = models.ForeignKey(
+        CommandTemplate,
+        on_delete=models.CASCADE,
+        related_name='executions'
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='command_executions'
+    )
+    
+    # Execution details
+    input_parameters = models.JSONField(default=dict, help_text="Input parameters used")
+    rendered_template = models.TextField(blank=True, help_text="Rendered command template")
+    output = models.TextField(blank=True, help_text="Command output/result")
+    
+    # Status tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    error_message = models.TextField(blank=True)
+    
+    # Performance metrics
+    execution_time_ms = models.IntegerField(default=0, help_text="Execution time in milliseconds")
+    tokens_used = models.IntegerField(default=0)
+    cost = models.FloatField(default=0.0)
+    
+    # Agent execution link (if executed via agent)
+    agent_execution = models.ForeignKey(
+        'agents.AgentExecution',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='command_executions'
+    )
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_command_executions',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_command_executions',
+        verbose_name='Updated By'
+    )
+    
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'command_executions'
+        verbose_name = 'Command Execution'
+        verbose_name_plural = 'Command Executions'
+        indexes = [
+            models.Index(fields=['command', '-started_at']),
+            models.Index(fields=['user', '-started_at']),
+            models.Index(fields=['status', '-started_at']),
+            models.Index(fields=['started_at']),
+        ]
+        ordering = ['-started_at']
+    
+    def __str__(self):
+        return f"{self.command.name} - {self.status}"

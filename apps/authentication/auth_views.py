@@ -138,14 +138,85 @@ def password_reset_request(request):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         
-        # TODO: Send email with reset link
-        # For now, just return the token (in production, send via email)
-        reset_link = f"http://localhost:3000/reset-password?uid={uid}&token={token}"
+        # Build reset link
+        from django.conf import settings
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+        reset_link = f"{frontend_url}/reset-password?uid={uid}&token={token}"
         
-        return Response({
-            "message": "Password reset instructions sent to email.",
-            "reset_link": reset_link  # Remove this in production
-        }, status=status.HTTP_200_OK)
+        # Send email with reset link
+        try:
+            from django.core.mail import send_mail
+            from django.template.loader import render_to_string
+            from django.utils.html import strip_tags
+            
+            subject = 'Password Reset Request - HishamOS'
+            
+            # Create email content
+            html_message = f"""
+            <html>
+            <body>
+                <h2>Password Reset Request</h2>
+                <p>Hello {user.get_full_name() or user.email},</p>
+                <p>You requested to reset your password for your HishamOS account.</p>
+                <p>Click the link below to reset your password:</p>
+                <p><a href="{reset_link}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a></p>
+                <p>Or copy and paste this link into your browser:</p>
+                <p>{reset_link}</p>
+                <p>This link will expire in 24 hours.</p>
+                <p>If you didn't request this password reset, please ignore this email.</p>
+                <p>Best regards,<br>The HishamOS Team</p>
+            </body>
+            </html>
+            """
+            
+            plain_message = f"""
+            Password Reset Request
+            
+            Hello {user.get_full_name() or user.email},
+            
+            You requested to reset your password for your HishamOS account.
+            
+            Click the link below to reset your password:
+            {reset_link}
+            
+            This link will expire in 24 hours.
+            
+            If you didn't request this password reset, please ignore this email.
+            
+            Best regards,
+            The HishamOS Team
+            """
+            
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@hishamos.com')
+            send_mail(
+                subject=subject,
+                message=plain_message,
+                from_email=from_email,
+                recipient_list=[user.email],
+                html_message=html_message,
+                fail_silently=False
+            )
+            
+            return Response({
+                "message": "Password reset instructions have been sent to your email."
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            # Log error but don't expose it to user (security best practice)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to send password reset email: {str(e)}")
+            
+            # In development, return the link for debugging
+            if settings.DEBUG:
+                return Response({
+                    "message": "Password reset email failed to send. (Debug mode - link provided)",
+                    "reset_link": reset_link
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "message": "Password reset instructions have been sent to your email."
+                }, status=status.HTTP_200_OK)
         
     except User.DoesNotExist:
         # Don't reveal if user exists or not
@@ -207,6 +278,21 @@ def password_reset_confirm(request):
 @permission_classes([IsAuthenticated])
 def logout(request):
     """Logout user."""
+    
+    # Audit logout before processing
+    try:
+        from apps.monitoring.audit import audit_logger
+        audit_logger.log_authentication(
+            action='logout',
+            user=request.user if request.user.is_authenticated else None,
+            request=request,
+            success=True,
+        )
+    except Exception as e:
+        # Don't break logout if audit logging fails
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to audit logout: {e}", exc_info=True)
     
     # In JWT, logout is typically handled client-side by removing tokens
     # For additional security, you could implement token blacklisting

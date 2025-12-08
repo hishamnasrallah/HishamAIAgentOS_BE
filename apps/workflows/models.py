@@ -35,11 +35,21 @@ class Workflow(models.Model):
         'authentication.User',
         on_delete=models.SET_NULL,
         null=True,
-        related_name='created_workflows'
+        blank=True,
+        related_name='created_workflows',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_workflows',
+        verbose_name='Updated By'
     )
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'workflows'
@@ -90,8 +100,27 @@ class WorkflowExecution(models.Model):
     error_message = models.TextField(blank=True)
     retry_count = models.IntegerField(default=0)
     
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_workflow_executions',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_workflow_executions',
+        verbose_name='Updated By'
+    )
+    
     # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     
@@ -142,8 +171,27 @@ class WorkflowStep(models.Model):
     output_data = models.JSONField(null=True, blank=True)
     error_message = models.TextField(blank=True)
     
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_workflow_steps',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_workflow_steps',
+        verbose_name='Updated By'
+    )
+    
     # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     

@@ -23,6 +23,12 @@ from .two_factor_views import (
     two_factor_backup_codes,
     two_factor_verify_login
 )
+from .gdpr_views import (
+    export_user_data,
+    export_user_data_json_file,
+    delete_user_data,
+    data_retention_policy
+)
 
 router = DefaultRouter()
 router.register(r'users', UserViewSet, basename='user')
@@ -51,6 +57,12 @@ urlpatterns = [
     path('2fa/disable/', two_factor_disable, name='two_factor_disable'),
     path('2fa/backup-codes/', two_factor_backup_codes, name='two_factor_backup_codes'),
     path('2fa/verify-login/', two_factor_verify_login, name='two_factor_verify_login'),
+    
+    # GDPR Compliance
+    path('gdpr/export/', export_user_data, name='gdpr_export'),
+    path('gdpr/export-file/', export_user_data_json_file, name='gdpr_export_file'),
+    path('gdpr/delete/', delete_user_data, name='gdpr_delete'),
+    path('gdpr/retention-policy/', data_retention_policy, name='gdpr_retention_policy'),
     
     # User and APIKey management
     path('', include(router.urls)),

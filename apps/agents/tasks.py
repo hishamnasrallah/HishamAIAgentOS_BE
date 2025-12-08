@@ -73,11 +73,41 @@ async def execute_agent_task(
         }
 
 
-# TODO: When Celery is configured, uncomment this:
-# @shared_task(bind=True, max_retries=3)
-# def execute_agent_task_sync(self, agent_id, input_data, user_id, context=None):
-#     """Celery task wrapper for agent execution."""
-#     import asyncio
-#     return asyncio.run(
-#         execute_agent_task(agent_id, input_data, user_id, context)
-#     )
+# Celery task for agent execution
+try:
+    from celery import shared_task
+    from asgiref.sync import sync_to_async
+    from apps.agents.models import Agent
+    from apps.authentication.models import User
+    from apps.agents.services import execution_engine
+    
+    @shared_task(bind=True, max_retries=3)
+    def execute_agent_task_sync(self, agent_id, input_data, user_id, context=None):
+        """
+        Celery task wrapper for agent execution.
+        
+        This runs the async agent execution in a sync context.
+        """
+        import asyncio
+        
+        try:
+            # Run async execution
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            result = loop.run_until_complete(
+                execute_agent_task(agent_id, input_data, user_id, context)
+            )
+            
+            loop.close()
+            return result
+        except Exception as e:
+            logger.error(f"Celery task execution failed: {str(e)}", exc_info=True)
+            # Retry on failure
+            if self.request.retries < self.max_retries:
+                raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
+            raise
+except ImportError:
+    # Celery not installed or not configured
+    logger.warning("Celery not available. Tasks will run synchronously.")
+    execute_agent_task_sync = None

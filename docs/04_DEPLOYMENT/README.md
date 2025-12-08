@@ -4,8 +4,10 @@
 
 ## الملفات
 
-- **[PRODUCTION_DEPLOYMENT_GUIDE.md](04_DEPLOYMENT/PRODUCTION_DEPLOYMENT_GUIDE.md)** - دليل النشر للإنتاج
-- **[DEPLOYMENT_INFRASTRUCTURE_SUMMARY.md](./DEPLOYMENT_INFRASTRUCTURE_SUMMARY.md)** - ملخص البنية التحتية
+- **[PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md)** - دليل النشر للإنتاج
+- **[MONITORING_GUIDE.md](MONITORING_GUIDE.md)** - دليل شامل للمراقبة والمراقبة (جديد)
+- **[OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md)** - دليل العمليات اليومية
+- **[DEPLOYMENT_INFRASTRUCTURE_SUMMARY.md](DEPLOYMENT_INFRASTRUCTURE_SUMMARY.md)** - ملخص البنية التحتية
 
 ## الجمهور المستهدف
 

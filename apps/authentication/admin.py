@@ -4,6 +4,7 @@ Django admin configuration for authentication app.
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.utils.html import format_html
 from .models import User, APIKey
 
 
@@ -41,6 +42,30 @@ class UserAdmin(BaseUserAdmin):
             'fields': ('email', 'username', 'password1', 'password2', 'role'),
         }),
     )
+    
+    def save_model(self, request, obj, form, change):
+        """Store user in thread-local for signals to use."""
+        # Store user in thread-local for signals (signals will handle audit logging)
+        try:
+            from apps.monitoring.middleware import _thread_locals
+            _thread_locals.user = request.user if request.user.is_authenticated else None
+        except Exception:
+            pass
+        
+        # Let signals handle audit logging
+        super().save_model(request, obj, form, change)
+    
+    def delete_model(self, request, obj):
+        """Store user in thread-local for signals to use."""
+        # Store user in thread-local for signals (signals will handle audit logging)
+        try:
+            from apps.monitoring.middleware import _thread_locals
+            _thread_locals.user = request.user if request.user.is_authenticated else None
+        except Exception:
+            pass
+        
+        # Let signals handle audit logging
+        super().delete_model(request, obj)
 
 
 @admin.register(APIKey)

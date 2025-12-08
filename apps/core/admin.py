@@ -5,7 +5,6 @@ Django admin configuration for core app.
 from django.contrib import admin
 from .models import SystemSettings, FeatureFlag
 
-
 @admin.register(SystemSettings)
 class SystemSettingsAdmin(admin.ModelAdmin):
     """Admin interface for system settings."""
@@ -48,4 +47,3 @@ class FeatureFlagAdmin(admin.ModelAdmin):
             'fields': ('id', 'created_at', 'updated_at', 'updated_by')
         }),
     )
-

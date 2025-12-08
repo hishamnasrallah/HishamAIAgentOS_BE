@@ -81,9 +81,46 @@ class ConversationViewSet(viewsets.ModelViewSet):
             attachments=serializer.validated_data.get('attachments', [])
         )
         
-        # TODO: Trigger agent response asynchronously
-        # For now, just return the user message
-        # In Phase 13.5, we'll integrate with ConversationalAgent
+        # Trigger agent response asynchronously
+        # Use Celery if available, otherwise use asyncio
+        try:
+            from apps.agents.tasks import execute_agent_task_sync
+            if execute_agent_task_sync:
+                # Trigger async agent response via Celery
+                execute_agent_task_sync.delay(
+                    agent_id=str(conversation.agent.agent_id),
+                    input_data={'prompt': serializer.validated_data['content'], 'message': serializer.validated_data['content']},
+                    user_id=request.user.id,
+                    context={'conversation_id': str(conversation.id), 'message_id': str(user_message.id)}
+                )
+        except (ImportError, AttributeError):
+            # Fallback: Trigger agent response in background thread
+            import threading
+            from apps.agents.services import execution_engine
+            import asyncio
+            
+            def trigger_agent_response():
+                """Trigger agent response in background."""
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(
+                        execution_engine.execute_agent(
+                            agent=conversation.agent,
+                            input_data={'prompt': serializer.validated_data['content'], 'message': serializer.validated_data['content']},
+                            user=request.user,
+                            context={'conversation_id': str(conversation.id), 'message_id': str(user_message.id)}
+                        )
+                    )
+                    loop.close()
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to trigger agent response: {str(e)}", exc_info=True)
+            
+            # Start background thread
+            thread = threading.Thread(target=trigger_agent_response, daemon=True)
+            thread.start()
         
         return Response(
             MessageSerializer(user_message).data,

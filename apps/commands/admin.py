@@ -69,11 +69,11 @@ class CommandTemplateAdmin(admin.ModelAdmin):
     filter_horizontal = ()
     readonly_fields = (
         'usage_count',
-        'total_successes',
-        'total_failures',
-        'success_rate',
+        'total_successes_display',
+        'total_failures_display',
+        'success_rate_display',
         'estimated_cost',
-        'avg_execution_time',
+        'avg_execution_time_display',
         'created_at',
         'updated_at'
     )
@@ -101,11 +101,11 @@ class CommandTemplateAdmin(admin.ModelAdmin):
         ('Performance Metrics', {
             'fields': (
                 'usage_count',
-                'total_successes',
-                'total_failures',
-                'success_rate',
+                'total_successes_display',
+                'total_failures_display',
+                'success_rate_display',
                 'estimated_cost',
-                'avg_execution_time'
+                'avg_execution_time_display'
             ),
             'classes': ('collapse',)
         }),
@@ -120,9 +120,27 @@ class CommandTemplateAdmin(admin.ModelAdmin):
     
     actions = ['activate_commands', 'deactivate_commands', 'reset_metrics']
     
+    def total_successes_display(self, obj):
+        """Display total successful executions."""
+        count = obj.executions.filter(status='completed').count()
+        return count
+    total_successes_display.short_description = 'Total Successes'
+    
+    def total_failures_display(self, obj):
+        """Display total failed executions."""
+        count = obj.executions.filter(status='failed').count()
+        return count
+    total_failures_display.short_description = 'Total Failures'
+    
     def success_rate_display(self, obj):
         """Display success rate with color coding."""
-        rate = float(obj.success_rate) if obj.success_rate else 0.0
+        total = obj.executions.count()
+        if total == 0:
+            rate = 0.0
+        else:
+            successful = obj.executions.filter(status='completed').count()
+            rate = (successful / total) * 100
+        
         if rate >= 90:
             color = '#28a745'
         elif rate >= 70:
@@ -138,7 +156,6 @@ class CommandTemplateAdmin(admin.ModelAdmin):
             rate_str
         )
     success_rate_display.short_description = 'Success Rate'
-    success_rate_display.admin_order_field = 'success_rate'
     
     def estimated_cost_display(self, obj):
         """Display estimated cost formatted."""
@@ -150,11 +167,15 @@ class CommandTemplateAdmin(admin.ModelAdmin):
     
     def avg_execution_time_display(self, obj):
         """Display average execution time formatted."""
-        time = float(obj.avg_execution_time) if obj.avg_execution_time else 0.0
-        # Return plain formatted string - no HTML needed
-        return f"{time:.2f}s"
+        from django.db.models import Avg
+        
+        executions = obj.executions.filter(status='completed', execution_time_ms__gt=0)
+        if executions.exists():
+            avg_ms = executions.aggregate(avg=Avg('execution_time_ms'))['avg'] or 0
+            avg_seconds = avg_ms / 1000.0
+            return f"{avg_seconds:.2f}s"
+        return "0.00s"
     avg_execution_time_display.short_description = 'Avg Time'
-    avg_execution_time_display.admin_order_field = 'avg_execution_time'
     
     def activate_commands(self, request, queryset):
         """Activate selected commands."""
@@ -172,11 +193,10 @@ class CommandTemplateAdmin(admin.ModelAdmin):
         """Reset metrics for selected commands."""
         for command in queryset:
             command.usage_count = 0
-            command.total_successes = 0
-            command.total_failures = 0
-            command.success_rate = 100.0
             command.estimated_cost = 0.0
-            command.avg_execution_time = 0.0
+            command.estimated_duration = 0
             command.save()
+            # Delete execution records (optional - comment out if you want to keep history)
+            # command.executions.all().delete()
         self.message_user(request, f'Metrics reset for {queryset.count()} command(s).')
     reset_metrics.short_description = 'Reset metrics for selected commands'

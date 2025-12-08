@@ -73,8 +73,26 @@ class Result(models.Model):
     # Tags and categorization
     tags = models.JSONField(default=list, blank=True)
     
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_results',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_results',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'results'
@@ -117,7 +135,32 @@ class ResultFeedback(models.Model):
     is_helpful = models.BooleanField(null=True, blank=True)
     is_complete = models.BooleanField(null=True, blank=True)
     
-    created_at = models.DateTimeField(auto_now_add=True)
+    # Quality metrics (5-axis scoring)
+    quality_metrics = models.JSONField(default=dict, blank=True)
+    
+    # Tags for categorization
+    tags = models.JSONField(default=list, blank=True)
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_result_feedback',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_result_feedback',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'result_feedback'

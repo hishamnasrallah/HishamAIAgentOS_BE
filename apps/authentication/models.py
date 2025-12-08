@@ -59,6 +59,26 @@ class User(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(default=timezone.now)
     last_login = models.DateTimeField(null=True, blank=True)
     
+    # User tracking (for user creation/updates by admins)
+    created_by = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_users',
+        verbose_name='Created By',
+        help_text='Admin user who created this user account'
+    )
+    updated_by = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_users',
+        verbose_name='Updated By',
+        help_text='User who last updated this account'
+    )
+    
     # Additional profile fields
     avatar = models.CharField(max_length=500, blank=True)
     bio = models.TextField(blank=True)
@@ -108,7 +128,27 @@ class APIKey(models.Model):
     key = models.CharField(max_length=64, unique=True, db_index=True)
     
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_api_keys',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_api_keys',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
     

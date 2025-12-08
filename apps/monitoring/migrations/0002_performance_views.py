@@ -1,0 +1,162 @@
+"""
+Create database performance views for analytics and reporting.
+
+These views provide optimized queries for common analytics needs.
+"""
+
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('monitoring', '0001_initial'),
+        ('agents', '0001_initial'),
+        ('commands', '0001_initial'),
+        ('workflows', '0001_initial'),
+    ]
+
+    operations = [
+        # View: Agent Performance Summary
+        migrations.RunSQL(
+            sql="""
+            DROP VIEW IF EXISTS agent_performance_summary;
+            CREATE VIEW agent_performance_summary AS
+            SELECT 
+                a.id AS agent_id,
+                a.agent_id AS agent_identifier,
+                a.name AS agent_name,
+                COUNT(ae.id) AS total_executions,
+                COUNT(CASE WHEN ae.status = 'completed' THEN 1 END) AS successful_executions,
+                COUNT(CASE WHEN ae.status = 'failed' THEN 1 END) AS failed_executions,
+                ROUND(
+                    COUNT(CASE WHEN ae.status = 'completed' THEN 1 END) * 100.0 / NULLIF(COUNT(ae.id), 0),
+                    2
+                ) AS success_rate,
+                AVG(ae.execution_time) AS avg_execution_time,
+                SUM(ae.tokens_used) AS total_tokens_used,
+                SUM(ae.cost) AS total_cost,
+                MAX(ae.created_at) AS last_execution_at
+            FROM agents a
+            LEFT JOIN agent_executions ae ON a.id = ae.agent_id
+            GROUP BY a.id, a.agent_id, a.name;
+            """,
+            reverse_sql="DROP VIEW IF EXISTS agent_performance_summary;"
+        ),
+        
+        # View: Command Usage Statistics
+        migrations.RunSQL(
+            sql="""
+            DROP VIEW IF EXISTS command_usage_statistics;
+            CREATE VIEW command_usage_statistics AS
+            SELECT 
+                ct.id AS command_id,
+                ct.name AS command_name,
+                ct.category_id,
+                cc.name AS category_name,
+                COUNT(ce.id) AS total_executions,
+                COUNT(CASE WHEN ce.status = 'completed' THEN 1 END) AS successful_executions,
+                COUNT(CASE WHEN ce.status = 'failed' THEN 1 END) AS failed_executions,
+                ROUND(
+                    COUNT(CASE WHEN ce.status = 'completed' THEN 1 END) * 100.0 / NULLIF(COUNT(ce.id), 0),
+                    2
+                ) AS success_rate,
+                AVG(ce.execution_time_ms) / 1000.0 AS avg_execution_time_seconds,
+                SUM(ce.tokens_used) AS total_tokens_used,
+                SUM(ce.cost) AS total_cost,
+                MAX(ce.started_at) AS last_execution_at
+            FROM command_templates ct
+            LEFT JOIN command_categories cc ON ct.category_id = cc.id
+            LEFT JOIN command_executions ce ON ct.id = ce.command_id
+            GROUP BY ct.id, ct.name, ct.category_id, cc.name;
+            """,
+            reverse_sql="DROP VIEW IF EXISTS command_usage_statistics;"
+        ),
+        
+        # View: Daily System Metrics
+        migrations.RunSQL(
+            sql="""
+            DROP VIEW IF EXISTS daily_system_metrics;
+            CREATE VIEW daily_system_metrics AS
+            SELECT 
+                date(created_at) AS date,
+                COUNT(*) AS total_agent_executions,
+                COUNT(CASE WHEN status = 'completed' THEN 1 END) AS successful_executions,
+                COUNT(CASE WHEN status = 'failed' THEN 1 END) AS failed_executions,
+                SUM(tokens_used) AS total_tokens,
+                SUM(cost) AS total_cost,
+                AVG(execution_time) AS avg_execution_time
+            FROM agent_executions
+            WHERE created_at >= date('now', '-30 days')
+            GROUP BY date(created_at)
+            ORDER BY date DESC;
+            """,
+            reverse_sql="DROP VIEW IF EXISTS daily_system_metrics;"
+        ),
+        
+        # View: User Activity Summary
+        migrations.RunSQL(
+            sql="""
+            DROP VIEW IF EXISTS user_activity_summary;
+            CREATE VIEW user_activity_summary AS
+            SELECT 
+                u.id AS user_id,
+                u.email,
+                u.role,
+                COUNT(DISTINCT ae.id) AS agent_executions_count,
+                COUNT(DISTINCT ce.id) AS command_executions_count,
+                COUNT(DISTINCT we.id) AS workflow_executions_count,
+                SUM(ae.tokens_used) AS total_tokens_used,
+                SUM(ae.cost) AS total_cost,
+                MAX(
+                    CASE 
+                        WHEN COALESCE(ae.created_at, '1970-01-01') >= COALESCE(ce.started_at, '1970-01-01') 
+                             AND COALESCE(ae.created_at, '1970-01-01') >= COALESCE(we.created_at, '1970-01-01')
+                        THEN ae.created_at
+                        WHEN COALESCE(ce.started_at, '1970-01-01') >= COALESCE(we.created_at, '1970-01-01')
+                        THEN ce.started_at
+                        ELSE we.created_at
+                    END
+                ) AS last_activity_at
+            FROM users u
+            LEFT JOIN agent_executions ae ON u.id = ae.user_id
+            LEFT JOIN command_executions ce ON u.id = ce.user_id
+            LEFT JOIN workflow_executions we ON u.id = we.user_id
+            GROUP BY u.id, u.email, u.role;
+            """,
+            reverse_sql="DROP VIEW IF EXISTS user_activity_summary;"
+        ),
+        
+        # View: Workflow Performance Summary
+        migrations.RunSQL(
+            sql="""
+            DROP VIEW IF EXISTS workflow_performance_summary;
+            CREATE VIEW workflow_performance_summary AS
+            SELECT 
+                w.id AS workflow_id,
+                w.name AS workflow_name,
+                w.slug,
+                COUNT(we.id) AS total_executions,
+                COUNT(CASE WHEN we.status = 'completed' THEN 1 END) AS successful_executions,
+                COUNT(CASE WHEN we.status = 'failed' THEN 1 END) AS failed_executions,
+                COUNT(CASE WHEN we.status = 'running' THEN 1 END) AS running_executions,
+                ROUND(
+                    COUNT(CASE WHEN we.status = 'completed' THEN 1 END) * 100.0 / NULLIF(COUNT(we.id), 0),
+                    2
+                ) AS success_rate,
+                AVG(
+                    CASE 
+                        WHEN we.completed_at IS NOT NULL AND we.started_at IS NOT NULL
+                        THEN (julianday(we.completed_at) - julianday(we.started_at)) * 86400.0
+                        ELSE NULL
+                    END
+                ) AS avg_execution_time_seconds,
+                MAX(we.created_at) AS last_execution_at
+            FROM workflows w
+            LEFT JOIN workflow_executions we ON w.id = we.workflow_id
+            GROUP BY w.id, w.name, w.slug;
+            """,
+            reverse_sql="DROP VIEW IF EXISTS workflow_performance_summary;"
+        ),
+    ]
+

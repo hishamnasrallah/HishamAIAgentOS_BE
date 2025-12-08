@@ -107,11 +107,31 @@ class AIPlatform(models.Model):
     is_healthy = models.BooleanField(default=True)
 
     # -------------------------------
+    # USER TRACKING
+    # -------------------------------
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_ai_platforms',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_ai_platforms',
+        verbose_name='Updated By'
+    )
+    
+    # -------------------------------
     # TIMESTAMPS
     # -------------------------------
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
     class Meta:
         db_table = 'ai_platforms'
         verbose_name = 'AI Platform'
@@ -197,7 +217,26 @@ class PlatformUsage(models.Model):
     error_message = models.TextField(blank=True)
     response_time = models.FloatField(default=0)  # in seconds
     
-    timestamp = models.DateTimeField(auto_now_add=True)
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_platform_usage',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_platform_usage',
+        verbose_name='Updated By'
+    )
+    
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     class Meta:
         db_table = 'platform_usage'

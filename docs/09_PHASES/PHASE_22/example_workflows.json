@@ -1,0 +1,321 @@
+{
+  "parallel_workflow": {
+    "name": "Parallel Processing Workflow",
+    "version": "1.0.0",
+    "description": "Demonstrates parallel execution of independent steps",
+    "steps": [
+      {
+        "id": "init",
+        "name": "Initialize",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Initialize data processing"
+        }
+      },
+      {
+        "id": "process_a",
+        "name": "Process Data A",
+        "agent": "coding_agent",
+        "parallel": true,
+        "parallel_group": "processing",
+        "inputs": {
+          "task": "Process data set A"
+        },
+        "depends_on": ["init"]
+      },
+      {
+        "id": "process_b",
+        "name": "Process Data B",
+        "agent": "coding_agent",
+        "parallel": true,
+        "parallel_group": "processing",
+        "inputs": {
+          "task": "Process data set B"
+        },
+        "depends_on": ["init"]
+      },
+      {
+        "id": "merge_results",
+        "name": "Merge Results",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Merge results from A and B"
+        },
+        "depends_on": ["process_a", "process_b"]
+      }
+    ]
+  },
+  "conditional_workflow": {
+    "name": "Conditional Branching Workflow",
+    "version": "1.0.0",
+    "description": "Demonstrates conditional branching with if/else logic",
+    "steps": [
+      {
+        "id": "check_priority",
+        "name": "Check Priority",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Evaluate priority level"
+        }
+      },
+      {
+        "id": "high_priority_branch",
+        "name": "High Priority Path",
+        "agent": "coding_agent",
+        "branch_group": "priority_branch",
+        "condition": "{{steps.check_priority.output.priority}} == 'high'",
+        "inputs": {
+          "task": "Handle high priority task"
+        },
+        "depends_on": ["check_priority"]
+      },
+      {
+        "id": "medium_priority_branch",
+        "name": "Medium Priority Path",
+        "agent": "coding_agent",
+        "branch_group": "priority_branch",
+        "condition": "{{steps.check_priority.output.priority}} == 'medium'",
+        "inputs": {
+          "task": "Handle medium priority task"
+        },
+        "depends_on": ["check_priority"]
+      },
+      {
+        "id": "low_priority_branch",
+        "name": "Low Priority Path",
+        "agent": "coding_agent",
+        "branch_group": "priority_branch",
+        "condition": "{{steps.check_priority.output.priority}} == 'low'",
+        "inputs": {
+          "task": "Handle low priority task"
+        },
+        "depends_on": ["check_priority"]
+      },
+      {
+        "id": "merge_branches",
+        "name": "Merge Branches",
+        "step_type": "merge",
+        "agent": "",
+        "merge_after": "priority_branch",
+        "depends_on": ["high_priority_branch", "medium_priority_branch", "low_priority_branch"]
+      }
+    ]
+  },
+  "loop_workflow": {
+    "name": "Loop Processing Workflow",
+    "version": "1.0.0",
+    "description": "Demonstrates for loop iteration over an array",
+    "steps": [
+      {
+        "id": "get_items",
+        "name": "Get Items",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Retrieve list of items to process"
+        }
+      },
+      {
+        "id": "process_items",
+        "name": "Process Items Loop",
+        "step_type": "loop",
+        "agent": "",
+        "loop": {
+          "type": "for",
+          "over": "{{steps.get_items.output.items}}",
+          "variable": "item",
+          "max_iterations": 100,
+          "steps": [
+            {
+              "id": "process_item",
+              "name": "Process Item",
+              "agent": "coding_agent",
+              "inputs": {
+                "task": "Process {{loop.item}}"
+              }
+            }
+          ]
+        },
+        "depends_on": ["get_items"]
+      }
+    ]
+  },
+  "while_loop_workflow": {
+    "name": "While Loop Workflow",
+    "version": "1.0.0",
+    "description": "Demonstrates while loop with condition",
+    "steps": [
+      {
+        "id": "initialize",
+        "name": "Initialize Counter",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Initialize counter to 0"
+        }
+      },
+      {
+        "id": "increment_loop",
+        "name": "Increment Loop",
+        "step_type": "loop",
+        "agent": "",
+        "loop": {
+          "type": "while",
+          "condition": "{{steps.initialize.output.counter}} < 10",
+          "max_iterations": 20,
+          "steps": [
+            {
+              "id": "increment",
+              "name": "Increment Counter",
+              "agent": "coding_agent",
+              "inputs": {
+                "task": "Increment counter by 1"
+              }
+            }
+          ]
+        },
+        "depends_on": ["initialize"]
+      }
+    ]
+  },
+  "sub_workflow_example": {
+    "name": "Parent Workflow with Sub-workflow",
+    "version": "1.0.0",
+    "description": "Demonstrates nested workflow execution",
+    "steps": [
+      {
+        "id": "prepare_data",
+        "name": "Prepare Data",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Prepare data for sub-workflow"
+        }
+      },
+      {
+        "id": "execute_sub_workflow",
+        "name": "Execute Sub-workflow",
+        "step_type": "sub_workflow",
+        "agent": "",
+        "sub_workflow": {
+          "workflow_id": "child-workflow-slug",
+          "input_mapping": {
+            "data": "{{steps.prepare_data.output.data}}"
+          },
+          "output_mapping": {
+            "result": "sub_result"
+          }
+        },
+        "depends_on": ["prepare_data"]
+      },
+      {
+        "id": "use_result",
+        "name": "Use Sub-workflow Result",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Use {{sub_result}} from sub-workflow"
+        },
+        "depends_on": ["execute_sub_workflow"]
+      }
+    ]
+  },
+  "complex_workflow": {
+    "name": "Complex Workflow with All Features",
+    "version": "1.0.0",
+    "description": "Demonstrates parallel execution, branching, loops, and sub-workflows together",
+    "steps": [
+      {
+        "id": "init",
+        "name": "Initialize",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Initialize workflow"
+        }
+      },
+      {
+        "id": "parallel_task_1",
+        "name": "Parallel Task 1",
+        "agent": "coding_agent",
+        "parallel": true,
+        "parallel_group": "parallel_tasks",
+        "inputs": {
+          "task": "Execute parallel task 1"
+        },
+        "depends_on": ["init"]
+      },
+      {
+        "id": "parallel_task_2",
+        "name": "Parallel Task 2",
+        "agent": "coding_agent",
+        "parallel": true,
+        "parallel_group": "parallel_tasks",
+        "inputs": {
+          "task": "Execute parallel task 2"
+        },
+        "depends_on": ["init"]
+      },
+      {
+        "id": "check_condition",
+        "name": "Check Condition",
+        "agent": "coding_agent",
+        "inputs": {
+          "task": "Evaluate condition for branching"
+        },
+        "depends_on": ["parallel_task_1", "parallel_task_2"]
+      },
+      {
+        "id": "branch_if",
+        "name": "If Branch",
+        "agent": "coding_agent",
+        "branch_group": "condition_branch",
+        "condition": "{{steps.check_condition.output.result}} == true",
+        "inputs": {
+          "task": "Execute if branch"
+        },
+        "depends_on": ["check_condition"]
+      },
+      {
+        "id": "branch_else",
+        "name": "Else Branch",
+        "agent": "coding_agent",
+        "branch_group": "condition_branch",
+        "condition": "{{steps.check_condition.output.result}} == false",
+        "inputs": {
+          "task": "Execute else branch"
+        },
+        "depends_on": ["check_condition"]
+      },
+      {
+        "id": "merge_branches",
+        "name": "Merge",
+        "step_type": "merge",
+        "agent": "",
+        "merge_after": "condition_branch",
+        "depends_on": ["branch_if", "branch_else"]
+      },
+      {
+        "id": "process_loop",
+        "name": "Process Loop",
+        "step_type": "loop",
+        "agent": "",
+        "loop": {
+          "type": "for",
+          "over": "{{steps.merge_branches.output.items}}",
+          "variable": "item",
+          "max_iterations": 50,
+          "steps": [
+            {
+              "id": "process_item",
+              "name": "Process Item",
+              "agent": "coding_agent",
+              "inputs": {
+                "task": "Process {{loop.item}}"
+              }
+            }
+          ]
+        },
+        "depends_on": ["merge_branches"]
+      }
+    ]
+  }
+}
+
+
+

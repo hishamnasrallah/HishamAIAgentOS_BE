@@ -137,5 +137,13 @@ class TaskAgent(BaseAgent):
         Returns:
             AgentResult with tool call results
         """
-        # TODO: Implement tool calling in future phase
-        raise NotImplementedError("Tool calling not yet implemented")
+        # Tool calling is planned for a future phase
+        # This feature will allow agents to call external tools and APIs
+        # For now, agents use direct AI platform APIs only
+        logger.warning("Tool calling requested but not yet implemented. This is a planned feature.")
+        return AgentResult(
+            success=False,
+            output=None,
+            error="Tool calling is not yet implemented. This feature is planned for a future release.",
+            metadata={'tool_calling_requested': True}
+        )
