@@ -5,7 +5,9 @@ AI-powered story point estimation using historical data and complexity analysis.
 """
 
 from typing import Dict, Any, List
-from apps.projects.models import Story, Project
+from apps.projects.models import UserStory, Project
+# Alias for backward compatibility
+Story = UserStory
 from apps.agents.models import Agent
 from apps.agents.services.execution_engine import execution_engine
 

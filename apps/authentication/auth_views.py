@@ -294,6 +294,18 @@ def logout(request):
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to audit logout: {e}", exc_info=True)
     
+    # Remove user from online presence
+    try:
+        from apps.core.presence_views import _online_users
+        user_id = str(request.user.id)
+        if user_id in _online_users:
+            del _online_users[user_id]
+    except Exception as e:
+        # Don't break logout if presence removal fails
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to remove user presence on logout: {e}", exc_info=True)
+    
     # In JWT, logout is typically handled client-side by removing tokens
     # For additional security, you could implement token blacklisting
     

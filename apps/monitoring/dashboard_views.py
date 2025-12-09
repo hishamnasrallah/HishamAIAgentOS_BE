@@ -104,7 +104,7 @@ def dashboard_stats(request):
         from apps.monitoring.models import SystemMetric
         one_hour_ago = timezone.now() - timedelta(hours=1)
         recent_metrics = SystemMetric.objects.filter(
-            metric_name='api_response_time',
+            metric_type='api_latency',
             timestamp__gte=one_hour_ago
         ).order_by('-timestamp')[:100]
         

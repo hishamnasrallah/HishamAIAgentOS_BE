@@ -7,7 +7,9 @@ AI-powered user story generation from product vision using Business Analyst agen
 from typing import List, Dict, Any
 from apps.agents.models import Agent
 from apps.agents.services.execution_engine import execution_engine
-from apps.projects.models import Story, Epic, Project
+from apps.projects.models import UserStory, Epic, Project
+# Alias for backward compatibility
+Story = UserStory
 
 
 class StoryGenerator:

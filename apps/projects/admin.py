@@ -4,7 +4,10 @@ Django admin configuration for projects app.
 
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Project, Sprint, Epic, UserStory, Task
+from .models import (
+    Project, Sprint, Epic, UserStory, Task, Bug, Issue, TimeLog, ProjectConfiguration,
+    Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Activity, EditHistory, Watcher, SavedSearch
+)
 
 
 @admin.register(Project)
@@ -29,7 +32,7 @@ class ProjectAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'slug', 'description', 'status')
+            'fields': ('name', 'slug', 'description', 'status', 'tags')
         }),
         ('Dates', {
             'fields': ('start_date', 'end_date')
@@ -219,7 +222,7 @@ class EpicAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('project', 'title', 'description', 'status')
+            'fields': ('project', 'title', 'description', 'status', 'tags', 'owner')
         }),
         ('Dates', {
             'fields': ('start_date', 'target_date')
@@ -319,7 +322,13 @@ class UserStoryAdmin(admin.ModelAdmin):
             'fields': ('project', 'sprint', 'epic', 'title', 'description', 'acceptance_criteria')
         }),
         ('Status & Priority', {
-            'fields': ('status', 'priority', 'story_points')
+            'fields': ('status', 'priority', 'story_points', 'story_type', 'component')
+        }),
+        ('Tags & Labels', {
+            'fields': ('tags', 'labels')
+        }),
+        ('Dates', {
+            'fields': ('due_date',)
         }),
         ('AI Generation', {
             'fields': ('generated_by_ai', 'generation_workflow'),
@@ -451,6 +460,9 @@ class TaskAdmin(admin.ModelAdmin):
         ('Basic Information', {
             'fields': ('story', 'title', 'description', 'status')
         }),
+        ('Tags & Dates', {
+            'fields': ('tags', 'due_date')
+        }),
         ('Assignment', {
             'fields': ('assigned_to',)
         }),
@@ -524,3 +536,823 @@ class TaskAdmin(admin.ModelAdmin):
         updated = queryset.update(status='done')
         self.message_user(request, f'{updated} task(s) marked as done.')
     mark_done.short_description = 'Mark as done'
+
+
+@admin.register(Bug)
+class BugAdmin(admin.ModelAdmin):
+    """Bug admin interface."""
+    
+    list_display = (
+        'id', 'title', 'project', 'severity', 'priority', 'status', 'resolution',
+        'reporter', 'assigned_to', 'environment', 'created_at'
+    )
+    list_filter = (
+        'status', 'severity', 'priority', 'environment', 'resolution',
+        'created_at', 'resolved_at', 'closed_at'
+    )
+    search_fields = ('title', 'description', 'project__name', 'reporter__email', 'assigned_to__email')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'resolved_at', 'closed_at')
+    filter_horizontal = ('linked_stories',)
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('project', 'title', 'description', 'component')
+        }),
+        ('Classification', {
+            'fields': ('severity', 'priority', 'status', 'resolution', 'environment')
+        }),
+        ('Reproduction', {
+            'fields': ('reproduction_steps', 'expected_behavior', 'actual_behavior')
+        }),
+        ('Assignment', {
+            'fields': ('reporter', 'assigned_to', 'due_date')
+        }),
+        ('Relationships', {
+            'fields': ('linked_stories', 'duplicate_of')
+        }),
+        ('Metadata', {
+            'fields': ('tags', 'labels')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at', 'resolved_at', 'closed_at')
+        }),
+    )
+
+
+@admin.register(Issue)
+class IssueAdmin(admin.ModelAdmin):
+    """Issue admin interface."""
+    
+    list_display = (
+        'id', 'title', 'project', 'issue_type', 'priority', 'status', 'resolution',
+        'reporter', 'assigned_to', 'created_at'
+    )
+    list_filter = (
+        'status', 'issue_type', 'priority', 'resolution',
+        'created_at', 'resolved_at', 'closed_at'
+    )
+    search_fields = ('title', 'description', 'project__name', 'reporter__email', 'assigned_to__email')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'resolved_at', 'closed_at')
+    filter_horizontal = ('linked_stories', 'linked_tasks', 'linked_bugs', 'watchers')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('project', 'title', 'description', 'issue_type', 'component')
+        }),
+        ('Classification', {
+            'fields': ('priority', 'status', 'resolution', 'environment')
+        }),
+        ('Assignment', {
+            'fields': ('reporter', 'assigned_to', 'due_date')
+        }),
+        ('Relationships', {
+            'fields': ('linked_stories', 'linked_tasks', 'linked_bugs', 'duplicate_of')
+        }),
+        ('Watchers', {
+            'fields': ('watchers',)
+        }),
+        ('Metadata', {
+            'fields': ('tags', 'labels')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at', 'resolved_at', 'closed_at')
+        }),
+    )
+
+
+@admin.register(TimeLog)
+class TimeLogAdmin(admin.ModelAdmin):
+    """Time log admin interface."""
+    
+    list_display = (
+        'id', 'user', 'work_item_display', 'start_time', 'end_time', 
+        'duration_display', 'is_billable', 'created_at'
+    )
+    list_filter = (
+        'is_billable', 'start_time', 'created_at',
+        'story', 'task', 'bug', 'issue'
+    )
+    search_fields = (
+        'user__email', 'user__first_name', 'user__last_name',
+        'description', 'story__title', 'task__title', 'bug__title', 'issue__title'
+    )
+    readonly_fields = ('id', 'created_at', 'updated_at', 'duration_hours', 'is_active')
+    date_hierarchy = 'start_time'
+    
+    fieldsets = (
+        ('Work Item', {
+            'fields': ('story', 'task', 'bug', 'issue')
+        }),
+        ('Time Tracking', {
+            'fields': ('user', 'start_time', 'end_time', 'duration_minutes', 'is_billable')
+        }),
+        ('Description', {
+            'fields': ('description',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def work_item_display(self, obj):
+        """Display the work item this time log is for."""
+        if obj.story:
+            return f"Story: {obj.story.title[:50]}"
+        elif obj.task:
+            return f"Task: {obj.task.title[:50]}"
+        elif obj.bug:
+            return f"Bug: {obj.bug.title[:50]}"
+        elif obj.issue:
+            return f"Issue: {obj.issue.title[:50]}"
+        return "Unknown"
+    work_item_display.short_description = 'Work Item'
+    
+    def duration_display(self, obj):
+        """Display duration in a readable format."""
+        if obj.duration_minutes:
+            hours = obj.duration_minutes // 60
+            minutes = obj.duration_minutes % 60
+            if hours > 0:
+                return f"{hours}h {minutes}m"
+            return f"{minutes}m"
+        return "Active"
+    duration_display.short_description = 'Duration'
+
+
+@admin.register(Watcher)
+class WatcherAdmin(admin.ModelAdmin):
+    """Watcher admin interface."""
+
+    list_display = (
+        'id', 'user', 'content_type', 'object_id', 'content_object_display', 'created_at'
+    )
+    list_filter = (
+        'created_at', 'user', 'content_type'
+    )
+    search_fields = (
+        'user__email', 'user__first_name', 'user__last_name',
+        'object_id'
+    )
+    readonly_fields = ('id', 'created_at', 'content_object_display')
+    date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Watcher Information', {
+            'fields': ('user', 'content_type', 'object_id')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'id'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def content_object_display(self, obj):
+        """Display the content object being watched."""
+        if obj.content_object:
+            # Try common title/name fields
+            if hasattr(obj.content_object, 'title'):
+                return format_html(
+                    f'<a href="/admin/projects/{obj.content_type.model}/{obj.object_id}/change/">{obj.content_object.title}</a>'
+                )
+            elif hasattr(obj.content_object, 'name'):
+                return format_html(
+                    f'<a href="/admin/projects/{obj.content_type.model}/{obj.object_id}/change/">{obj.content_object.name}</a>'
+                )
+            return str(obj.content_object)
+        return "N/A"
+    content_object_display.short_description = 'Watched Item'
+
+
+@admin.register(Activity)
+class ActivityAdmin(admin.ModelAdmin):
+    """Activity admin interface."""
+
+    list_display = (
+        'id', 'activity_type', 'user', 'project', 'content_type_name', 'content_object_title',
+        'created_at'
+    )
+    list_filter = (
+        'activity_type', 'created_at', 'user', 'project', 'content_type'
+    )
+    search_fields = (
+        'description', 'user__email', 'user__first_name', 'user__last_name',
+        'project__name', 'object_id', 'metadata'
+    )
+    readonly_fields = ('id', 'created_at', 'content_object_title', 'content_type_name')
+    date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Activity Information', {
+            'fields': ('activity_type', 'user', 'project', 'description')
+        }),
+        ('Related Object', {
+            'fields': ('content_type', 'object_id', 'content_type_name', 'content_object_title')
+        }),
+        ('Metadata', {
+            'fields': ('metadata',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'id'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def content_type_name(self, obj):
+        """Display the content type model name."""
+        return obj.content_type.model if obj.content_type else None
+    content_type_name.short_description = 'Content Type'
+
+    def content_object_title(self, obj):
+        """Display the content object title/name."""
+        return obj.content_object_title or 'N/A'
+    content_object_title.short_description = 'Related Object'
+
+
+@admin.register(EditHistory)
+class EditHistoryAdmin(admin.ModelAdmin):
+    """Edit History admin interface."""
+
+    list_display = (
+        'id', 'version', 'user', 'project', 'content_type_name', 'content_object_title',
+        'changed_fields_count', 'created_at'
+    )
+    list_filter = (
+        'created_at', 'user', 'project', 'content_type', 'version'
+    )
+    search_fields = (
+        'comment', 'user__email', 'user__first_name', 'user__last_name',
+        'project__name', 'object_id', 'changed_fields'
+    )
+    readonly_fields = ('id', 'created_at', 'content_object_title', 'content_type_name', 'changed_fields_count', 'all_diffs_display')
+    date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Edit Information', {
+            'fields': ('version', 'user', 'project', 'comment')
+        }),
+        ('Related Object', {
+            'fields': ('content_type', 'object_id', 'content_type_name', 'content_object_title')
+        }),
+        ('Changes', {
+            'fields': ('changed_fields', 'changed_fields_count', 'all_diffs_display')
+        }),
+        ('Values', {
+            'fields': ('old_values', 'new_values', 'diffs'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'id'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def content_type_name(self, obj):
+        """Display the content type model name."""
+        return obj.content_type.model if obj.content_type else None
+    content_type_name.short_description = 'Content Type'
+
+    def content_object_title(self, obj):
+        """Display the content object title/name."""
+        return obj.content_object_title or 'N/A'
+    content_object_title.short_description = 'Related Object'
+    
+    def changed_fields_count(self, obj):
+        """Display the number of changed fields."""
+        return len(obj.changed_fields) if obj.changed_fields else 0
+    changed_fields_count.short_description = 'Changed Fields'
+    
+    def all_diffs_display(self, obj):
+        """Display all diffs in a readable format."""
+        diffs = obj.get_all_diffs()
+        if not diffs:
+            return "No diffs"
+        
+        result = []
+        for field_name, diff_data in diffs.items():
+            result.append(f"{field_name}:")
+            if 'diff' in diff_data and diff_data['diff'].get('unified_diff'):
+                result.append(f"  {diff_data['diff']['unified_diff']}")
+            else:
+                result.append(f"  Old: {diff_data.get('old_value')}")
+                result.append(f"  New: {diff_data.get('new_value')}")
+        
+        return format_html('<pre style="white-space: pre-wrap;">{}</pre>', '\n'.join(result))
+    all_diffs_display.short_description = 'All Diffs'
+
+
+@admin.register(SavedSearch)
+class SavedSearchAdmin(admin.ModelAdmin):
+    """Saved Search admin interface."""
+
+    list_display = (
+        'id', 'name', 'user', 'project', 'content_types', 'usage_count', 'last_used_at', 'created_at'
+    )
+    list_filter = (
+        'created_at', 'last_used_at', 'user', 'project'
+    )
+    search_fields = (
+        'name', 'description', 'query', 'user__email', 'user__first_name', 'user__last_name',
+        'project__name'
+    )
+    readonly_fields = ('id', 'created_at', 'updated_at', 'last_used_at', 'usage_count')
+    date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Search Information', {
+            'fields': ('name', 'description', 'user', 'project')
+        }),
+        ('Search Query', {
+            'fields': ('query', 'content_types', 'filters')
+        }),
+        ('Usage Statistics', {
+            'fields': ('usage_count', 'last_used_at'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at', 'id'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(ProjectConfiguration)
+class ProjectConfigurationAdmin(admin.ModelAdmin):
+    """Project Configuration admin."""
+    
+    list_display = (
+        'project',
+        'max_story_points_per_sprint',
+        'default_sprint_duration_days',
+        'default_board_view',
+        'swimlane_grouping',
+        'updated_by',
+        'updated_at'
+    )
+    list_filter = ('default_board_view', 'swimlane_grouping', 'updated_at')
+    search_fields = ('project__name', 'project__slug')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'project')
+    
+    fieldsets = (
+        ('Project', {
+            'fields': ('project',)
+        }),
+        ('Story Point Configuration', {
+            'fields': (
+                'max_story_points_per_story',
+                'min_story_points_per_story',
+                'story_point_scale',
+                'max_story_points_per_sprint',
+                'story_points_required'
+            )
+        }),
+        ('Sprint Configuration', {
+            'fields': (
+                'default_sprint_duration_days',
+                'sprint_start_day',
+                'auto_close_sprints',
+                'allow_overcommitment'
+            )
+        }),
+        ('Board Customization', {
+            'fields': (
+                'default_board_view',
+                'swimlane_grouping',
+                'swimlane_custom_field',
+                'card_display_fields',
+                'card_color_by'
+            )
+        }),
+        ('Workflow & States', {
+            'fields': ('custom_states', 'state_transitions', 'board_columns'),
+            'classes': ('collapse',)
+        }),
+        ('Automation', {
+            'fields': ('automation_rules',),
+            'classes': ('collapse',)
+        }),
+        ('Notifications', {
+            'fields': ('notification_settings',),
+            'classes': ('collapse',)
+        }),
+        ('Permissions', {
+            'fields': ('permission_settings',),
+            'classes': ('collapse',)
+        }),
+        ('Integrations', {
+            'fields': ('integration_settings',),
+            'classes': ('collapse',)
+        }),
+        ('Custom Fields', {
+            'fields': ('custom_fields_schema',),
+            'classes': ('collapse',)
+        }),
+        ('Validation Rules', {
+            'fields': ('validation_rules',),
+            'classes': ('collapse',)
+        }),
+        ('Analytics', {
+            'fields': ('analytics_settings',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at', 'updated_at', 'updated_by'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Make project readonly after creation."""
+        if obj:  # Editing an existing object
+            return self.readonly_fields + ('project',)
+        return self.readonly_fields
+
+
+@admin.register(Mention)
+class MentionAdmin(admin.ModelAdmin):
+    """Mention admin."""
+    
+    list_display = (
+        'mention_text',
+        'mentioned_user',
+        'story',
+        'read_badge',
+        'notified_badge',
+        'created_at'
+    )
+    list_filter = ('read', 'notified', 'created_at', 'story__project')
+    search_fields = (
+        'mention_text',
+        'mentioned_user__email',
+        'mentioned_user__username',
+        'story__title'
+    )
+    readonly_fields = ('id', 'created_at', 'read_at', 'created_by')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Mention Information', {
+            'fields': ('mention_text', 'mentioned_user', 'story', 'comment')
+        }),
+        ('Status', {
+            'fields': ('read', 'read_at', 'notified')
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_by', 'created_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['mark_as_read', 'mark_as_unread', 'mark_as_notified']
+    
+    def read_badge(self, obj):
+        """Display read status as badge."""
+        if obj.read:
+            return format_html(
+                '<span style="background-color: #28a745; color: white; '
+                'padding: 3px 8px; border-radius: 4px;">✓ Read</span>'
+            )
+        return format_html(
+            '<span style="background-color: #dc3545; color: white; '
+            'padding: 3px 8px; border-radius: 4px;">Unread</span>'
+        )
+    read_badge.short_description = 'Read Status'
+    read_badge.admin_order_field = 'read'
+    
+    def notified_badge(self, obj):
+        """Display notification status."""
+        if obj.notified:
+            return format_html(
+                '<span style="background-color: #17a2b8; color: white; '
+                'padding: 3px 8px; border-radius: 4px;">Notified</span>'
+            )
+        return format_html(
+            '<span style="background-color: #6c757d; color: white; '
+            'padding: 3px 8px; border-radius: 4px;">Pending</span>'
+        )
+    notified_badge.short_description = 'Notification'
+    notified_badge.admin_order_field = 'notified'
+    
+    def mark_as_read(self, request, queryset):
+        """Mark selected mentions as read."""
+        from django.utils import timezone
+        updated = queryset.update(read=True, read_at=timezone.now())
+        self.message_user(request, f'{updated} mention(s) marked as read.')
+    mark_as_read.short_description = 'Mark as read'
+    
+    def mark_as_unread(self, request, queryset):
+        """Mark selected mentions as unread."""
+        updated = queryset.update(read=False, read_at=None)
+        self.message_user(request, f'{updated} mention(s) marked as unread.')
+    mark_as_unread.short_description = 'Mark as unread'
+    
+    def mark_as_notified(self, request, queryset):
+        """Mark selected mentions as notified."""
+        updated = queryset.update(notified=True)
+        self.message_user(request, f'{updated} mention(s) marked as notified.')
+    mark_as_notified.short_description = 'Mark as notified'
+
+
+@admin.register(StoryComment)
+class StoryCommentAdmin(admin.ModelAdmin):
+    """Story Comment admin."""
+    
+    list_display = (
+        'content_preview',
+        'story',
+        'author',
+        'parent',
+        'replies_count',
+        'reactions_count',
+        'deleted_badge',
+        'created_at'
+    )
+    list_filter = ('deleted', 'created_at', 'story__project', 'story__sprint')
+    search_fields = (
+        'content',
+        'author__email',
+        'author__username',
+        'story__title'
+    )
+    readonly_fields = ('id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'replies_count')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Comment Information', {
+            'fields': ('story', 'parent', 'content', 'author')
+        }),
+        ('Threading', {
+            'fields': ('replies_count',),
+            'classes': ('collapse',)
+        }),
+        ('Reactions', {
+            'fields': ('reactions',),
+            'classes': ('collapse',)
+        }),
+        ('Soft Delete', {
+            'fields': ('deleted', 'deleted_at', 'deleted_by'),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_by', 'updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['mark_as_deleted', 'restore_deleted']
+    
+    def content_preview(self, obj):
+        """Display content preview."""
+        preview = obj.content[:50] + '...' if len(obj.content) > 50 else obj.content
+        return format_html('<span title="{}">{}</span>', obj.content, preview)
+    content_preview.short_description = 'Content'
+    
+    def replies_count(self, obj):
+        """Display number of replies."""
+        count = obj.replies.filter(deleted=False).count()
+        if count > 0:
+            return format_html(
+                '<span style="font-weight: bold; color: #007bff;">{}</span>',
+                count
+            )
+        return '0'
+    replies_count.short_description = 'Replies'
+    
+    def reactions_count(self, obj):
+        """Display number of reactions."""
+        if obj.reactions:
+            total = sum(len(users) for users in obj.reactions.values())
+            if total > 0:
+                return format_html(
+                    '<span style="font-weight: bold; color: #28a745;">{}</span>',
+                    total
+                )
+        return '0'
+    reactions_count.short_description = 'Reactions'
+    
+    def deleted_badge(self, obj):
+        """Display deleted status."""
+        if obj.deleted:
+            return format_html(
+                '<span style="background-color: #dc3545; color: white; '
+                'padding: 3px 8px; border-radius: 4px;">Deleted</span>'
+            )
+        return format_html(
+            '<span style="background-color: #28a745; color: white; '
+            'padding: 3px 8px; border-radius: 4px;">Active</span>'
+        )
+    deleted_badge.short_description = 'Status'
+    deleted_badge.admin_order_field = 'deleted'
+    
+    def mark_as_deleted(self, request, queryset):
+        """Mark selected comments as deleted."""
+        from django.utils import timezone
+        updated = queryset.update(
+            deleted=True,
+            deleted_at=timezone.now(),
+            deleted_by=request.user
+        )
+        self.message_user(request, f'{updated} comment(s) marked as deleted.')
+    mark_as_deleted.short_description = 'Mark as deleted'
+    
+    def restore_deleted(self, request, queryset):
+        """Restore deleted comments."""
+        updated = queryset.update(
+            deleted=False,
+            deleted_at=None,
+            deleted_by=None
+        )
+        self.message_user(request, f'{updated} comment(s) restored.')
+    restore_deleted.short_description = 'Restore deleted'
+
+
+@admin.register(StoryDependency)
+class StoryDependencyAdmin(admin.ModelAdmin):
+    """Story Dependency admin."""
+    
+    list_display = (
+        'source_story',
+        'dependency_type_badge',
+        'target_story',
+        'resolved_badge',
+        'resolved_by',
+        'created_at'
+    )
+    list_filter = ('dependency_type', 'resolved', 'created_at', 'source_story__project')
+    search_fields = (
+        'source_story__title',
+        'target_story__title',
+        'description'
+    )
+    readonly_fields = ('id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'resolved_at', 'resolved_by')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Dependency Information', {
+            'fields': ('source_story', 'target_story', 'dependency_type', 'description')
+        }),
+        ('Resolution', {
+            'fields': ('resolved', 'resolved_at', 'resolved_by'),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_by', 'updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['mark_as_resolved', 'mark_as_unresolved']
+    
+    def dependency_type_badge(self, obj):
+        """Display dependency type as badge."""
+        colors = {
+            'blocks': '#dc3545',
+            'blocked_by': '#ffc107',
+            'relates_to': '#17a2b8',
+            'duplicates': '#6c757d',
+            'depends_on': '#007bff',
+        }
+        color = colors.get(obj.dependency_type, '#6c757d')
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_dependency_type_display()
+        )
+    dependency_type_badge.short_description = 'Type'
+    dependency_type_badge.admin_order_field = 'dependency_type'
+    
+    def resolved_badge(self, obj):
+        """Display resolved status."""
+        if obj.resolved:
+            return format_html(
+                '<span style="background-color: #28a745; color: white; '
+                'padding: 3px 8px; border-radius: 4px;">✓ Resolved</span>'
+            )
+        return format_html(
+            '<span style="background-color: #dc3545; color: white; '
+            'padding: 3px 8px; border-radius: 4px;">Unresolved</span>'
+        )
+    resolved_badge.short_description = 'Status'
+    resolved_badge.admin_order_field = 'resolved'
+    
+    def mark_as_resolved(self, request, queryset):
+        """Mark selected dependencies as resolved."""
+        from django.utils import timezone
+        updated = queryset.update(
+            resolved=True,
+            resolved_at=timezone.now(),
+            resolved_by=request.user
+        )
+        self.message_user(request, f'{updated} dependency/dependencies marked as resolved.')
+    mark_as_resolved.short_description = 'Mark as resolved'
+    
+    def mark_as_unresolved(self, request, queryset):
+        """Mark selected dependencies as unresolved."""
+        updated = queryset.update(
+            resolved=False,
+            resolved_at=None,
+            resolved_by=None
+        )
+        self.message_user(request, f'{updated} dependency/dependencies marked as unresolved.')
+    mark_as_unresolved.short_description = 'Mark as unresolved'
+
+
+@admin.register(StoryAttachment)
+class StoryAttachmentAdmin(admin.ModelAdmin):
+    """Story Attachment admin."""
+    
+    list_display = (
+        'file_name',
+        'story',
+        'file_size_display',
+        'file_type',
+        'uploaded_by',
+        'created_at'
+    )
+    list_filter = ('file_type', 'created_at', 'story__project')
+    search_fields = (
+        'file_name',
+        'description',
+        'story__title',
+        'uploaded_by__email'
+    )
+    readonly_fields = ('id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'uploaded_by', 'file_size_display')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Attachment Information', {
+            'fields': ('story', 'file', 'file_name', 'file_size', 'file_size_display', 'file_type', 'description')
+        }),
+        ('Upload Information', {
+            'fields': ('uploaded_by',),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_by', 'updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def file_size_display(self, obj):
+        """Display human-readable file size."""
+        return obj.get_file_size_display()
+    file_size_display.short_description = 'Size'
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    """Notification admin."""
+    
+    list_display = (
+        'notification_type',
+        'title',
+        'recipient',
+        'is_read',
+        'read_badge',
+        'project',
+        'story',
+        'created_at'
+    )
+    list_filter = ('notification_type', 'is_read', 'email_sent', 'created_at', 'project')
+    search_fields = (
+        'title',
+        'message',
+        'recipient__email',
+        'recipient__username',
+        'story__title',
+        'project__name'
+    )
+    readonly_fields = ('id', 'created_at', 'read_at', 'email_sent_at', 'created_by', 'read_badge')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Notification Information', {
+            'fields': ('recipient', 'notification_type', 'title', 'message')
+        }),
+        ('Related Objects', {
+            'fields': ('project', 'story', 'comment', 'mention'),
+            'classes': ('collapse',)
+        }),
+        ('Status', {
+            'fields': ('is_read', 'read_at', 'read_badge', 'email_sent', 'email_sent_at')
+        }),
+        ('Metadata', {
+            'fields': ('metadata', 'id', 'created_by', 'created_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def read_badge(self, obj):
+        """Display read status badge."""
+        if obj.is_read:
+            return format_html(
+                '<span style="color: green; font-weight: bold;">✓ Read</span>'
+            )
+        return format_html(
+            '<span style="color: orange; font-weight: bold;">● Unread</span>'
+        )
+    read_badge.short_description = 'Status'

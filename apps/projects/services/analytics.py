@@ -7,7 +7,9 @@ Burndown charts, velocity tracking, and sprint health metrics.
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from django.db.models import Sum, Count, Q
-from apps.projects.models import Sprint, Story, Project
+from apps.projects.models import Sprint, UserStory, Project
+# Alias for backward compatibility
+Story = UserStory
 
 
 class ProjectAnalytics:

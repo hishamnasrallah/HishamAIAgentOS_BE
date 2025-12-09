@@ -32,9 +32,17 @@ class GitHubIntegrationViewSet(viewsets.ModelViewSet):
     """ViewSet for GitHub integrations."""
     serializer_class = GitHubIntegrationSerializer
     permission_classes = [IsAuthenticated]
+    queryset = GitHubIntegration.objects.none()  # Default queryset for schema generation
     
     def get_queryset(self):
         """Get GitHub integrations for the current user."""
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return GitHubIntegration.objects.none()
+        
+        if not self.request.user or not self.request.user.is_authenticated:
+            return GitHubIntegration.objects.none()
+        
         return GitHubIntegration.objects.filter(user=self.request.user)
     
     def perform_create(self, serializer):
@@ -70,9 +78,17 @@ class SlackIntegrationViewSet(viewsets.ModelViewSet):
     """ViewSet for Slack integrations."""
     serializer_class = SlackIntegrationSerializer
     permission_classes = [IsAuthenticated]
+    queryset = SlackIntegration.objects.none()  # Default queryset for schema generation
     
     def get_queryset(self):
         """Get Slack integrations for the current user."""
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return SlackIntegration.objects.none()
+        
+        if not self.request.user or not self.request.user.is_authenticated:
+            return SlackIntegration.objects.none()
+        
         return SlackIntegration.objects.filter(user=self.request.user)
     
     def perform_create(self, serializer):
@@ -108,9 +124,17 @@ class EmailNotificationSettingsViewSet(viewsets.ModelViewSet):
     """ViewSet for email notification settings."""
     serializer_class = EmailNotificationSettingsSerializer
     permission_classes = [IsAuthenticated]
+    queryset = EmailNotificationSettings.objects.none()  # Default queryset for schema generation
     
     def get_queryset(self):
         """Get email settings for the current user."""
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return EmailNotificationSettings.objects.none()
+        
+        if not self.request.user or not self.request.user.is_authenticated:
+            return EmailNotificationSettings.objects.none()
+        
         return EmailNotificationSettings.objects.filter(user=self.request.user)
     
     def get_object(self):
@@ -145,9 +169,17 @@ class WebhookEndpointViewSet(viewsets.ModelViewSet):
     """ViewSet for webhook endpoints."""
     serializer_class = WebhookEndpointSerializer
     permission_classes = [IsAuthenticated]
+    queryset = WebhookEndpoint.objects.none()  # Default queryset for schema generation
     
     def get_queryset(self):
         """Get webhook endpoints for the current user."""
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return WebhookEndpoint.objects.none()
+        
+        if not self.request.user or not self.request.user.is_authenticated:
+            return WebhookEndpoint.objects.none()
+        
         return WebhookEndpoint.objects.filter(user=self.request.user)
     
     def perform_create(self, serializer):
@@ -180,9 +212,17 @@ class WebhookDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for webhook deliveries (read-only)."""
     serializer_class = WebhookDeliverySerializer
     permission_classes = [IsAuthenticated]
+    queryset = WebhookDelivery.objects.none()  # Default queryset for schema generation
     
     def get_queryset(self):
         """Get webhook deliveries for the current user's endpoints."""
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return WebhookDelivery.objects.none()
+        
+        if not self.request.user or not self.request.user.is_authenticated:
+            return WebhookDelivery.objects.none()
+        
         return WebhookDelivery.objects.filter(
             endpoint__user=self.request.user
         ).select_related('endpoint')

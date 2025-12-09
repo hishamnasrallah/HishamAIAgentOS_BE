@@ -6,7 +6,9 @@ AI-powered sprint planning with intelligent story distribution.
 
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
-from apps.projects.models import Sprint, Story, Project
+from apps.projects.models import Sprint, UserStory, Project
+# Alias for backward compatibility
+Story = UserStory
 from apps.agents.models import Agent
 from apps.agents.services.execution_engine import execution_engine
 

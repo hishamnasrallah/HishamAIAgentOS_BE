@@ -9,9 +9,17 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 from django.db import models
+from django.db.models import Q
+from django.utils import timezone
 import asyncio
+import json
 
-from apps.projects.models import Project, Sprint, Story, Epic
+from apps.projects.models import (
+    Project, Sprint, UserStory, Epic, Task, Bug, Issue, TimeLog, ProjectConfiguration, 
+    Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch
+)
+# Alias for backward compatibility
+Story = UserStory
 from apps.projects.serializers import (
     ProjectSerializer,
     SprintSerializer,
@@ -21,13 +29,53 @@ from apps.projects.serializers import (
     EstimationRequestSerializer,
     EstimationResponseSerializer,
     EpicSerializer,
-    TaskSerializer
+    TaskSerializer,
+    BugSerializer,
+    IssueSerializer,
+    TimeLogSerializer,
+    WatcherSerializer,
+    ProjectConfigurationSerializer,
+    MentionSerializer,
+    StoryCommentSerializer,
+    StoryDependencySerializer,
+    StoryAttachmentSerializer,
+    NotificationSerializer,
+    ActivitySerializer,
+    EditHistorySerializer,
+    SavedSearchSerializer
 )
 from apps.projects.services.story_generator import story_generator
 from apps.projects.services.sprint_planner import sprint_planner
 from apps.projects.services.estimation_engine import estimation_engine
 from apps.projects.services.analytics import analytics
 from apps.authentication.permissions import IsProjectMember, IsProjectMemberOrReadOnly, IsProjectOwner
+from apps.authentication.serializers import UserSerializer
+
+
+def filter_by_tags(queryset, tags_list, tags_field='tags'):
+    """
+    Filter queryset by tags in a database-agnostic way.
+    For SQLite, uses a workaround since contains lookup is not supported.
+    For PostgreSQL and other databases, uses contains lookup.
+    """
+    from django.db import connection
+    
+    if connection.vendor == 'sqlite':
+        # For SQLite, we need to filter in Python or use a workaround
+        # Since filtering in Python is inefficient, we'll use a simple workaround:
+        # Check if the JSON string contains the tag (less precise but works)
+        tag_filters = Q()
+        for tag in tags_list:
+            # Use icontains on the JSON string representation
+            # This is a workaround and may have false positives
+            tag_filters |= Q(**{f'{tags_field}__icontains': tag})
+        return queryset.filter(tag_filters)
+    else:
+        # For PostgreSQL and other databases, use contains lookup
+        tag_filters = Q()
+        for tag in tags_list:
+            tag_filters |= Q(**{f'{tags_field}__contains': [tag]})
+        return queryset.filter(tag_filters)
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
@@ -48,22 +96,28 @@ class ProjectViewSet(viewsets.ModelViewSet):
         """
         Filter projects to only show those where the user is owner or member.
         Admins can see all projects.
+        Supports tag filtering via ?tags=tag1,tag2 query parameter.
         """
         user = self.request.user
         if not user or not user.is_authenticated:
             return Project.objects.none()
         
-        # Admins can see all projects
+        # Base queryset
         if user.role == 'admin':
-            return Project.objects.all().select_related('owner').prefetch_related('members')
+            queryset = Project.objects.all()
+        else:
+            queryset = Project.objects.filter(
+                models.Q(owner=user) | models.Q(members__id=user.id)
+            ).distinct()
         
-        # Regular users can only see projects they own or are members of
-        # Use members__id for ManyToMany field to ensure proper filtering
-        user_projects = Project.objects.filter(
-            models.Q(owner=user) | models.Q(members__id=user.id)
-        ).distinct()
+        # Tag filtering
+        tags_param = self.request.query_params.get('tags', None)
+        if tags_param:
+            tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
+            if tags_list:
+                queryset = filter_by_tags(queryset, tags_list)
         
-        return user_projects.select_related('owner').prefetch_related('members')
+        return queryset.select_related('owner').prefetch_related('members')
     
     def perform_create(self, serializer):
         """Set the current user as the project owner when creating."""
@@ -124,6 +178,176 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @extend_schema(
+        description="Get project members (owner + members)",
+        responses={200: UserSerializer(many=True)}
+    )
+    @action(detail=True, methods=['get'], url_path='members')
+    def members(self, request, pk=None):
+        """Get all project members including the owner."""
+        project = self.get_object()
+        
+        # Get all members (owner + members)
+        members_list = list(project.members.all())
+        if project.owner and project.owner not in members_list:
+            members_list.insert(0, project.owner)
+        
+        serializer = UserSerializer(members_list, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @extend_schema(
+        description="Add a member to the project",
+        request={'type': 'object', 'properties': {'user_id': {'type': 'string', 'format': 'uuid'}}},
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'], url_path='members/add')
+    def add_member(self, request, pk=None):
+        """Add a member to the project."""
+        project = self.get_object()
+        user_id = request.data.get('user_id')
+        
+        if not user_id:
+            return Response(
+                {'error': 'user_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from apps.authentication.models import User
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Don't add the owner as a member
+        if project.owner == user:
+            return Response(
+                {'error': 'Project owner is already a member'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Add member if not already a member
+        if not project.members.filter(id=user.id).exists():
+            project.members.add(user)
+        
+        return Response(
+            {'message': 'Member added successfully', 'user_id': str(user.id)},
+            status=status.HTTP_200_OK
+        )
+    
+    @extend_schema(
+        description="Remove a member from the project",
+        request={'type': 'object', 'properties': {'user_id': {'type': 'string', 'format': 'uuid'}}},
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'], url_path='members/remove')
+    def remove_member(self, request, pk=None):
+        """Remove a member from the project."""
+        project = self.get_object()
+        user_id = request.data.get('user_id')
+        
+        if not user_id:
+            return Response(
+                {'error': 'user_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from apps.authentication.models import User
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Don't allow removing the owner
+        if project.owner == user:
+            return Response(
+                {'error': 'Cannot remove project owner'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Remove member if they are a member
+        if project.members.filter(id=user.id).exists():
+            project.members.remove(user)
+        
+        return Response(
+            {'message': 'Member removed successfully', 'user_id': str(user.id)},
+            status=status.HTTP_200_OK
+        )
+    
+    @extend_schema(
+        description="Get all tags used in projects accessible to the user",
+        responses={200: {'type': 'object', 'properties': {'tags': {'type': 'array', 'items': {'type': 'string'}}}}}
+    )
+    @action(detail=False, methods=['get'], url_path='tags')
+    def tags(self, request):
+        """Get all unique tags from projects accessible to the user."""
+        user = request.user
+        if not user or not user.is_authenticated:
+            return Response({'tags': []}, status=status.HTTP_200_OK)
+        
+        # Get accessible projects
+        if user.role == 'admin':
+            projects = Project.objects.all()
+        else:
+            projects = Project.objects.filter(
+                models.Q(owner=user) | models.Q(members__id=user.id)
+            ).distinct()
+        
+        # Collect all tags
+        all_tags = set()
+        for project in projects:
+            if project.tags and isinstance(project.tags, list):
+                all_tags.update(project.tags)
+        
+        return Response({
+            'tags': sorted(list(all_tags))
+        }, status=status.HTTP_200_OK)
+    
+    @extend_schema(
+        description="Get tag suggestions (autocomplete)",
+        parameters=[{
+            'name': 'q',
+            'in': 'query',
+            'description': 'Search query',
+            'required': False,
+            'schema': {'type': 'string'}
+        }],
+        responses={200: {'type': 'object', 'properties': {'tags': {'type': 'array', 'items': {'type': 'string'}}}}}
+    )
+    @action(detail=False, methods=['get'], url_path='tags/autocomplete')
+    def tags_autocomplete(self, request):
+        """Get tag suggestions for autocomplete."""
+        query = request.query_params.get('q', '').strip().lower()
+        
+        user = request.user
+        if not user or not user.is_authenticated:
+            return Response({'tags': []}, status=status.HTTP_200_OK)
+        
+        # Get accessible projects
+        if user.role == 'admin':
+            projects = Project.objects.all()
+        else:
+            projects = Project.objects.filter(
+                models.Q(owner=user) | models.Q(members__id=user.id)
+            ).distinct()
+        
+        # Collect matching tags
+        matching_tags = set()
+        for project in projects:
+            if project.tags and isinstance(project.tags, list):
+                for tag in project.tags:
+                    if isinstance(tag, str) and (not query or query in tag.lower()):
+                        matching_tags.add(tag)
+        
+        return Response({
+            'tags': sorted(list(matching_tags))[:20]  # Limit to 20 suggestions
+        }, status=status.HTTP_200_OK)
 
 
 class SprintViewSet(viewsets.ModelViewSet):
@@ -250,45 +474,119 @@ class StoryViewSet(viewsets.ModelViewSet):
     
     serializer_class = StorySerializer
     permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
-    filterset_fields = ['project', 'sprint', 'status', 'priority']  # Enable filtering
+    filterset_fields = ['sprint', 'status', 'priority', 'story_type', 'component']  # Enable filtering (project handled manually)
     
     def get_queryset(self):
         """
         Filter stories to only show those from projects where the user is owner or member.
         Admins can see all stories.
+        Supports tag filtering via ?tags=tag1,tag2 query parameter.
+        Supports project filtering via ?project=uuid query parameter.
         """
         user = self.request.user
         if not user or not user.is_authenticated:
             return Story.objects.none()
         
-        # Admins can see all stories
+        # Base queryset
         if user.role == 'admin':
-            return Story.objects.all().select_related('project', 'project__owner', 'sprint', 'epic', 'assigned_to', 'created_by').prefetch_related('project__members')
+            queryset = Story.objects.all()
+        else:
+            queryset = Story.objects.filter(
+                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            ).distinct()
         
-        # Regular users can only see stories from projects they own or are members of
-        return Story.objects.filter(
-            models.Q(project__owner=user) | models.Q(project__members__id=user.id)
-        ).distinct().select_related('project', 'project__owner', 'sprint', 'epic', 'assigned_to', 'created_by').prefetch_related('project__members')
+        # Project filtering (handle manually to ensure permission checking)
+        project_id = self.request.query_params.get('project', None)
+        if project_id:
+            try:
+                # Validate UUID format
+                import uuid as uuid_lib
+                project_uuid = uuid_lib.UUID(project_id)
+                # Filter by project, but only if user has access (already filtered above)
+                queryset = queryset.filter(project_id=project_uuid)
+            except (ValueError, TypeError):
+                # Invalid UUID format - return empty queryset
+                return Story.objects.none()
+        
+        # Tag filtering
+        tags_param = self.request.query_params.get('tags', None)
+        if tags_param:
+            tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
+            if tags_list:
+                queryset = filter_by_tags(queryset, tags_list)
+        
+        return queryset.select_related('project', 'project__owner', 'sprint', 'epic', 'assigned_to', 'created_by').prefetch_related('project__members')
     
     def perform_create(self, serializer):
         """Set the current user as the story creator when creating."""
+        # Check project-level permissions
+        project = serializer.validated_data.get('project')
+        if project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(project)
+            has_perm, error = perm_service.can_create_story(self.request.user)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to create stories in this project")
+        
         serializer.save(created_by=self.request.user)
     
     def update(self, request, *args, **kwargs):
-        """Override update to log request data."""
+        """Override update to log request data and check permissions."""
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"[StoryViewSet] Update request for story {kwargs.get('pk')}")
         logger.info(f"[StoryViewSet] Request data: {request.data}")
+        
+        # Check project-level permissions
+        story = self.get_object()
+        if story and story.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(story.project)
+            
+            # Check edit permission
+            has_perm, error = perm_service.can_edit_story(request.user, story)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to edit this story")
+            
+            # Check status change permission if status is being changed
+            if 'status' in request.data and request.data['status'] != story.status:
+                has_perm, error = perm_service.can_change_status(request.user, story)
+                if not has_perm:
+                    from rest_framework.exceptions import PermissionDenied
+                    raise PermissionDenied(error or "You don't have permission to change the status of this story")
+            
+            # Check assignment permission if assigned_to is being changed
+            if 'assigned_to' in request.data:
+                has_perm, error = perm_service.can_assign_story(request.user)
+                if not has_perm:
+                    from rest_framework.exceptions import PermissionDenied
+                    raise PermissionDenied(error or "You don't have permission to assign stories")
+        
         return super().update(request, *args, **kwargs)
     
     def create(self, request, *args, **kwargs):
-        """Override create to log request data."""
+        """Override create to log request data and check permissions."""
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"[StoryViewSet] Create request")
         logger.info(f"[StoryViewSet] Request data: {request.data}")
+        
+        # Permission check is done in perform_create
         return super().create(request, *args, **kwargs)
+    
+    def perform_destroy(self, instance):
+        """Check permissions before destroying."""
+        if instance.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(instance.project)
+            has_perm, error = perm_service.can_delete_story(self.request.user, instance)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to delete this story")
+        
+        super().perform_destroy(instance)
     
     @extend_schema(
         request=EstimationRequestSerializer,
@@ -316,6 +614,86 @@ class StoryViewSet(viewsets.ModelViewSet):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @extend_schema(
+        description="Get all tags used in stories accessible to the user",
+        responses={200: {'type': 'object', 'properties': {'tags': {'type': 'array', 'items': {'type': 'string'}}}}}
+    )
+    @action(detail=False, methods=['get'], url_path='tags')
+    def tags(self, request):
+        """Get all unique tags from stories accessible to the user."""
+        user = request.user
+        if not user or not user.is_authenticated:
+            return Response({'tags': []}, status=status.HTTP_200_OK)
+        
+        # Get accessible stories
+        if user.role == 'admin':
+            stories = Story.objects.all()
+        else:
+            stories = Story.objects.filter(
+                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            ).distinct()
+        
+        # Collect all tags
+        all_tags = set()
+        for story in stories:
+            if story.tags and isinstance(story.tags, list):
+                all_tags.update(story.tags)
+        
+        return Response({
+            'tags': sorted(list(all_tags))
+        }, status=status.HTTP_200_OK)
+    
+    @extend_schema(
+        description="Get tag suggestions for stories (autocomplete)",
+        parameters=[{
+            'name': 'q',
+            'in': 'query',
+            'description': 'Search query',
+            'required': False,
+            'schema': {'type': 'string'}
+        }, {
+            'name': 'project',
+            'in': 'query',
+            'description': 'Filter by project ID',
+            'required': False,
+            'schema': {'type': 'string', 'format': 'uuid'}
+        }],
+        responses={200: {'type': 'object', 'properties': {'tags': {'type': 'array', 'items': {'type': 'string'}}}}}
+    )
+    @action(detail=False, methods=['get'], url_path='tags/autocomplete')
+    def tags_autocomplete(self, request):
+        """Get tag suggestions for autocomplete."""
+        query = request.query_params.get('q', '').strip().lower()
+        project_id = request.query_params.get('project', None)
+        
+        user = request.user
+        if not user or not user.is_authenticated:
+            return Response({'tags': []}, status=status.HTTP_200_OK)
+        
+        # Get accessible stories
+        if user.role == 'admin':
+            stories = Story.objects.all()
+        else:
+            stories = Story.objects.filter(
+                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            ).distinct()
+        
+        # Filter by project if specified
+        if project_id:
+            stories = stories.filter(project_id=project_id)
+        
+        # Collect matching tags
+        matching_tags = set()
+        for story in stories:
+            if story.tags and isinstance(story.tags, list):
+                for tag in story.tags:
+                    if isinstance(tag, str) and (not query or query in tag.lower()):
+                        matching_tags.add(tag)
+        
+        return Response({
+            'tags': sorted(list(matching_tags))[:20]  # Limit to 20 suggestions
+        }, status=status.HTTP_200_OK)
 
 
 # Backward compatibility - UserStoryViewSet is an alias for StoryViewSet
@@ -332,25 +710,69 @@ class EpicViewSet(viewsets.ModelViewSet):
     
     serializer_class = EpicSerializer
     permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
-    filterset_fields = ['project', 'status']  # Enable filtering
+    filterset_fields = ['project', 'status', 'owner']  # Enable filtering
     
     def get_queryset(self):
         """
         Filter epics to only show those from projects where the user is owner or member.
         Admins can see all epics.
+        Supports tag filtering via ?tags=tag1,tag2 query parameter.
         """
         user = self.request.user
         if not user or not user.is_authenticated:
             return Epic.objects.none()
         
-        # Admins can see all epics
+        # Base queryset
         if user.role == 'admin':
-            return Epic.objects.all().select_related('project', 'project__owner').prefetch_related('project__members')
+            queryset = Epic.objects.all()
+        else:
+            queryset = Epic.objects.filter(
+                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            ).distinct()
         
-        # Regular users can only see epics from projects they own or are members of
-        return Epic.objects.filter(
-            models.Q(project__owner=user) | models.Q(project__members__id=user.id)
-        ).distinct().select_related('project', 'project__owner').prefetch_related('project__members')
+        # Tag filtering
+        tags_param = self.request.query_params.get('tags', None)
+        if tags_param:
+            tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
+            if tags_list:
+                queryset = filter_by_tags(queryset, tags_list)
+        
+        return queryset.select_related('project', 'project__owner', 'owner').prefetch_related('project__members')
+    
+    def perform_create(self, serializer):
+        """Check permissions before creating epic."""
+        project = serializer.validated_data.get('project')
+        if project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(project)
+            has_perm, error = perm_service.can_create_epic(self.request.user)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to create epics in this project")
+        serializer.save(created_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        """Check permissions before updating epic."""
+        epic = serializer.instance
+        if epic and epic.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(epic.project)
+            has_perm, error = perm_service.can_edit_epic(self.request.user, epic)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to edit this epic")
+        serializer.save(updated_by=self.request.user)
+    
+    def perform_destroy(self, instance):
+        """Check permissions before destroying epic."""
+        if instance.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(instance.project)
+            has_perm, error = perm_service.can_delete_epic(self.request.user)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to delete this epic")
+        super().perform_destroy(instance)
 
 
 class TaskViewSet(viewsets.ModelViewSet):
@@ -363,25 +785,1662 @@ class TaskViewSet(viewsets.ModelViewSet):
     - Only accessible to users who are members/owners of the task's story's project.
     """
     
-    from apps.projects.models import Task
     serializer_class = TaskSerializer
     permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
     filterset_fields = ['story', 'status', 'assigned_to']  # Enable filtering
+    queryset = Task.objects.none()  # Default queryset for schema generation
     
     def get_queryset(self):
         """
         Filter tasks to only show those from stories in projects where the user is owner or member.
         Admins can see all tasks.
+        Supports tag filtering via ?tags=tag1,tag2 query parameter.
         """
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Task.objects.none()
+        
         user = self.request.user
         if not user or not user.is_authenticated:
             return Task.objects.none()
         
-        # Admins can see all tasks
+        # Base queryset
         if user.role == 'admin':
-            return Task.objects.all().select_related('story', 'story__project', 'story__project__owner', 'assigned_to').prefetch_related('story__project__members')
+            queryset = Task.objects.all()
+        else:
+            queryset = Task.objects.filter(
+                models.Q(story__project__owner=user) | models.Q(story__project__members__id=user.id)
+            ).distinct()
         
-        # Regular users can only see tasks from stories in projects they own or are members of
-        return Task.objects.filter(
-            models.Q(story__project__owner=user) | models.Q(story__project__members__id=user.id)
-        ).distinct().select_related('story', 'story__project', 'story__project__owner', 'assigned_to').prefetch_related('story__project__members')
+        # Tag filtering
+        tags_param = self.request.query_params.get('tags', None)
+        if tags_param:
+            tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
+            if tags_list:
+                queryset = filter_by_tags(queryset, tags_list)
+        
+        return queryset.select_related('story', 'story__project', 'story__project__owner', 'assigned_to').prefetch_related('story__project__members')
+
+
+class BugViewSet(viewsets.ModelViewSet):
+    """
+    Bug management ViewSet.
+    
+    Access Control:
+    - Only accessible to users who are members/owners of the bug's project.
+    """
+    
+    serializer_class = BugSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    filterset_fields = ['project', 'status', 'severity', 'priority', 'assigned_to', 'reporter', 'environment']
+    queryset = Bug.objects.none()  # Default queryset for schema generation
+    
+    def get_queryset(self):
+        """
+        Filter bugs to only show those from projects where the user is owner or member.
+        Admins can see all bugs.
+        Supports tag filtering via ?tags=tag1,tag2 query parameter.
+        """
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Bug.objects.none()
+        
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Bug.objects.none()
+        
+        # Base queryset
+        if user.role == 'admin':
+            queryset = Bug.objects.all()
+        else:
+            queryset = Bug.objects.filter(
+                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            ).distinct()
+        
+        # Tag filtering
+        tags_param = self.request.query_params.get('tags', None)
+        if tags_param:
+            tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
+            if tags_list:
+                queryset = filter_by_tags(queryset, tags_list)
+        
+        return queryset.select_related(
+            'project', 'project__owner', 'reporter', 'assigned_to', 'duplicate_of'
+        ).prefetch_related('project__members', 'linked_stories', 'duplicates')
+    
+    def perform_create(self, serializer):
+        """Set created_by and reporter on bug creation."""
+        user = self.request.user
+        serializer.save(created_by=user, reporter=user if not serializer.validated_data.get('reporter') else None)
+    
+    def perform_update(self, serializer):
+        """Set updated_by on bug update."""
+        serializer.save(updated_by=self.request.user)
+
+
+class IssueViewSet(viewsets.ModelViewSet):
+    """
+    Issue management ViewSet.
+    
+    Provides CRUD for issues within projects.
+    
+    Access Control:
+    - Only accessible to users who are members/owners of the issue's project.
+    """
+    
+    serializer_class = IssueSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    filterset_fields = ['project', 'status', 'issue_type', 'priority', 'assigned_to', 'reporter']
+    queryset = Issue.objects.none()  # Default queryset for schema generation
+    
+    def get_queryset(self):
+        """
+        Filter issues to only show those from projects where the user is owner or member.
+        Admins can see all issues.
+        Supports tag filtering via ?tags=tag1,tag2 query parameter.
+        """
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Issue.objects.none()
+        
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Issue.objects.none()
+        
+        # Base queryset
+        if user.role == 'admin':
+            queryset = Issue.objects.all()
+        else:
+            queryset = Issue.objects.filter(
+                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            ).distinct()
+        
+        # Tag filtering
+        tags_param = self.request.query_params.get('tags', None)
+        if tags_param:
+            tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
+            if tags_list:
+                queryset = filter_by_tags(queryset, tags_list)
+        
+        return queryset.select_related(
+            'project', 'project__owner', 'reporter', 'assigned_to', 'duplicate_of'
+        ).prefetch_related(
+            'project__members', 'linked_stories', 'linked_tasks', 'linked_bugs', 
+            'watchers', 'duplicates'
+        )
+    
+    def perform_create(self, serializer):
+        """Check permissions before creating issue."""
+        project = serializer.validated_data.get('project')
+        if project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(project)
+            has_perm, error = perm_service.can_create_issue(self.request.user)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to create issues in this project")
+        serializer.save(created_by=self.request.user, reporter=self.request.user)
+    
+    def perform_update(self, serializer):
+        """Check permissions before updating issue."""
+        issue = serializer.instance
+        if issue and issue.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(issue.project)
+            has_perm, error = perm_service.can_edit_issue(self.request.user, issue)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to edit this issue")
+        serializer.save(updated_by=self.request.user)
+    
+    def perform_destroy(self, instance):
+        """Check permissions before destroying issue."""
+        if instance.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(instance.project)
+            has_perm, error = perm_service.can_delete_issue(self.request.user)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to delete this issue")
+        super().perform_destroy(instance)
+
+
+class TimeLogViewSet(viewsets.ModelViewSet):
+    """
+    Time log management ViewSet.
+    
+    Provides CRUD for time logs within projects.
+    
+    Access Control:
+    - Users can only see/edit their own time logs unless they're project owners/admins.
+    """
+    
+    serializer_class = TimeLogSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    filterset_fields = ['user', 'story', 'task', 'bug', 'issue', 'is_billable']
+    queryset = TimeLog.objects.none()  # Default queryset for schema generation
+    
+    def get_queryset(self):
+        """
+        Filter time logs based on user permissions.
+        Users can see their own time logs and time logs from projects they're members of.
+        Admins can see all time logs.
+        """
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return TimeLog.objects.none()
+        
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return TimeLog.objects.none()
+        
+        # Base queryset
+        if user.role == 'admin':
+            queryset = TimeLog.objects.all()
+        else:
+            # Users can see their own time logs or time logs from projects they're members of
+            queryset = TimeLog.objects.filter(
+                models.Q(user=user) |
+                models.Q(story__project__owner=user) |
+                models.Q(story__project__members__id=user.id) |
+                models.Q(task__story__project__owner=user) |
+                models.Q(task__story__project__members__id=user.id) |
+                models.Q(bug__project__owner=user) |
+                models.Q(bug__project__members__id=user.id) |
+                models.Q(issue__project__owner=user) |
+                models.Q(issue__project__members__id=user.id)
+            ).distinct()
+        
+        # Filter by date range if provided
+        start_date = self.request.query_params.get('start_date', None)
+        end_date = self.request.query_params.get('end_date', None)
+        if start_date:
+            queryset = queryset.filter(start_time__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(start_time__lte=end_date)
+        
+        return queryset.select_related(
+            'user', 'story', 'task', 'bug', 'issue',
+            'story__project', 'task__story__project', 'bug__project', 'issue__project'
+        )
+    
+    def perform_create(self, serializer):
+        """Set created_by and user on time log creation."""
+        user = self.request.user
+        
+        serializer.save(
+            created_by=user,
+            user=user,  # Always set to current user
+        )
+    
+    def perform_update(self, serializer):
+        """Set updated_by on time log update."""
+        serializer.save(updated_by=self.request.user)
+    
+    @action(detail=False, methods=['post'])
+    def start_timer(self, request):
+        """Start a new timer for a work item."""
+        from django.utils import timezone
+        
+        story_id = request.data.get('story')
+        task_id = request.data.get('task')
+        bug_id = request.data.get('bug')
+        issue_id = request.data.get('issue')
+        description = request.data.get('description', '')
+        
+        if not any([story_id, task_id, bug_id, issue_id]):
+            return Response(
+                {'error': 'At least one work item (story, task, bug, or issue) must be specified.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user already has an active timer
+        active_timer = TimeLog.objects.filter(
+            user=request.user,
+            end_time__isnull=True
+        ).first()
+        
+        if active_timer:
+            return Response(
+                {'error': 'You already have an active timer. Please stop it first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create new time log
+        time_log_data = {
+            'user': request.user.id,
+            'start_time': timezone.now(),
+            'description': description,
+            'created_by': request.user.id,
+        }
+        
+        if story_id:
+            time_log_data['story'] = story_id
+        if task_id:
+            time_log_data['task'] = task_id
+        if bug_id:
+            time_log_data['bug'] = bug_id
+        if issue_id:
+            time_log_data['issue'] = issue_id
+        
+        serializer = self.get_serializer(data=time_log_data)
+        serializer.is_valid(raise_exception=True)
+        time_log = serializer.save()
+        
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['post'])
+    def stop_timer(self, request, pk=None):
+        """Stop an active timer."""
+        from django.utils import timezone
+        
+        time_log = self.get_object()
+        
+        if time_log.end_time:
+            return Response(
+                {'error': 'This timer is already stopped.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if time_log.user != request.user:
+            return Response(
+                {'error': 'You can only stop your own timers.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        time_log.end_time = timezone.now()
+        time_log.updated_by = request.user
+        time_log.save()
+        
+        serializer = self.get_serializer(time_log)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def active_timer(self, request):
+        """Get the current user's active timer."""
+        active_timer = TimeLog.objects.filter(
+            user=request.user,
+            end_time__isnull=True
+        ).first()
+        
+        if not active_timer:
+            return Response({'active_timer': None})
+        
+        serializer = self.get_serializer(active_timer)
+        return Response({'active_timer': serializer.data})
+    
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get time log summary for the current user."""
+        from django.db.models import Sum, Count
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        user = request.user
+        project_id = request.query_params.get('project', None)
+        start_date = request.query_params.get('start_date', None)
+        end_date = request.query_params.get('end_date', None)
+        
+        queryset = TimeLog.objects.filter(user=user)
+        
+        # Filter by project if provided
+        if project_id:
+            queryset = queryset.filter(
+                models.Q(story__project_id=project_id) |
+                models.Q(task__story__project_id=project_id) |
+                models.Q(bug__project_id=project_id) |
+                models.Q(issue__project_id=project_id)
+            )
+        
+        # Filter by date range
+        if start_date:
+            queryset = queryset.filter(start_time__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(start_time__lte=end_date)
+        
+        # Calculate totals
+        total_minutes = queryset.aggregate(
+            total=Sum('duration_minutes')
+        )['total'] or 0
+        
+        total_hours = round(total_minutes / 60, 2)
+        
+        # Count entries
+        total_entries = queryset.count()
+        
+        # Billable vs non-billable
+        billable_minutes = queryset.filter(is_billable=True).aggregate(
+            total=Sum('duration_minutes')
+        )['total'] or 0
+        billable_hours = round(billable_minutes / 60, 2)
+        
+        return Response({
+            'total_hours': total_hours,
+            'total_minutes': total_minutes,
+            'total_entries': total_entries,
+            'billable_hours': billable_hours,
+            'billable_minutes': billable_minutes,
+            'non_billable_hours': round((total_minutes - billable_minutes) / 60, 2),
+        })
+
+
+class ProjectConfigurationViewSet(viewsets.ModelViewSet):
+    """
+    Project configuration management ViewSet.
+    
+    Access Control:
+    - Only project owners and admins can modify configurations.
+    - Project members can view configurations.
+    """
+    
+    serializer_class = ProjectConfigurationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter configurations to only show those from projects where user is member/owner."""
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return ProjectConfiguration.objects.none()
+        
+        # Admins can see all configurations
+        if user.role == 'admin':
+            return ProjectConfiguration.objects.all().select_related('project', 'project__owner', 'updated_by').prefetch_related('project__members')
+        
+        # Regular users can only see configurations from projects they own or are members of
+        return ProjectConfiguration.objects.filter(
+            models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+        ).distinct().select_related('project', 'project__owner', 'updated_by').prefetch_related('project__members')
+    
+    def get_permissions(self):
+        """Override to check if user can modify configuration."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            # Only project owners and admins can modify
+            return [permissions.IsAuthenticated(), IsProjectOwner()]
+        return [permissions.IsAuthenticated()]
+    
+    def get_object(self):
+        """Get configuration by project ID instead of configuration ID. Creates it if it doesn't exist."""
+        project_id = self.kwargs.get('pk')
+        
+        # Get or create configuration
+        try:
+            config = ProjectConfiguration.objects.get(project_id=project_id)
+        except ProjectConfiguration.DoesNotExist:
+            # Configuration doesn't exist - create it
+            try:
+                from apps.projects.models import Project
+                project = Project.objects.get(pk=project_id)
+                
+                # Check permissions before creating
+                user = self.request.user
+                if user.role != 'admin' and project.owner != user and user not in project.members.all():
+                    from rest_framework.exceptions import PermissionDenied
+                    raise PermissionDenied("You don't have access to this project's configuration.")
+                
+                # Create configuration
+                config = ProjectConfiguration.objects.create(project=project)
+                config.initialize_defaults()
+                config.save()
+            except Project.DoesNotExist:
+                from rest_framework.exceptions import NotFound
+                raise NotFound("Project not found.")
+        
+        # Check permissions
+        project = config.project
+        user = self.request.user
+        
+        if user.role != 'admin' and project.owner != user and user not in project.members.all():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You don't have access to this project's configuration.")
+        
+        return config
+    
+    def perform_create(self, serializer):
+        """Set updated_by when creating."""
+        serializer.save(updated_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        """Set updated_by when updating."""
+        serializer.save(updated_by=self.request.user)
+    
+    @extend_schema(
+        description="Get configuration by project ID",
+        responses={200: ProjectConfigurationSerializer}
+    )
+    def retrieve(self, request, *args, **kwargs):
+        """Retrieve configuration by project ID."""
+        return super().retrieve(request, *args, **kwargs)
+    
+    @extend_schema(
+        description="Reset configuration to defaults",
+        responses={200: ProjectConfigurationSerializer}
+    )
+    @action(detail=True, methods=['post'], url_path='reset-to-defaults')
+    def reset_to_defaults(self, request, pk=None):
+        """Reset configuration to default values."""
+        config = self.get_object()
+        
+        # Check if user is project owner or admin
+        if request.user.role != 'admin' and config.project.owner != request.user:
+            return Response(
+                {'error': 'Only project owners and admins can reset configuration.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Initialize defaults
+        config.initialize_defaults()
+        config.updated_by = request.user
+        config.save()
+        
+        return Response(
+            ProjectConfigurationSerializer(config).data,
+            status=status.HTTP_200_OK
+        )
+
+
+class MentionViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for viewing mentions.
+    Users can only see their own mentions.
+    """
+    serializer_class = MentionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = Mention.objects.none()  # Default queryset for schema generation
+    
+    def get_queryset(self):
+        """Return mentions for the current user."""
+        # Handle schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Mention.objects.none()
+        
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Mention.objects.none()
+        
+        queryset = Mention.objects.filter(mentioned_user=user)
+        
+        # Filter by read status
+        read_status = self.request.query_params.get('read', None)
+        if read_status is not None:
+            read_status = read_status.lower() == 'true'
+            queryset = queryset.filter(read=read_status)
+        
+        # Filter by story
+        story_id = self.request.query_params.get('story', None)
+        if story_id:
+            queryset = queryset.filter(story_id=story_id)
+        
+        return queryset.order_by('-created_at')
+    
+    @extend_schema(
+        description="Mark a mention as read",
+        responses={200: MentionSerializer}
+    )
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        """Mark a mention as read."""
+        mention = self.get_object()
+        mention.mark_as_read()
+        serializer = self.get_serializer(mention)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        description="Mark all mentions as read",
+        responses={200: {'type': 'object', 'properties': {'count': {'type': 'integer'}}}}
+    )
+    @action(detail=False, methods=['post'])
+    def mark_all_read(self, request):
+        """Mark all mentions for the current user as read."""
+        from django.utils import timezone
+        count = Mention.objects.filter(
+            mentioned_user=request.user,
+            read=False
+        ).update(read=True, read_at=timezone.now())
+        return Response({'count': count})
+
+
+class StoryCommentViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for story comments with threading support.
+    """
+    serializer_class = StoryCommentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return comments for a story."""
+        story_id = self.request.query_params.get('story', None)
+        if not story_id:
+            return StoryComment.objects.none()
+        
+        queryset = StoryComment.objects.filter(
+            story_id=story_id,
+            deleted=False
+        )
+        
+        # Filter by parent for threading
+        parent_id = self.request.query_params.get('parent', None)
+        if parent_id:
+            queryset = queryset.filter(parent_id=parent_id)
+        else:
+            # Top-level comments only
+            queryset = queryset.filter(parent__isnull=True)
+        
+        return queryset.order_by('created_at')
+    
+    def perform_create(self, serializer):
+        """Set author to current user and check permissions."""
+        story = serializer.validated_data.get('story')
+        if story and story.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(story.project)
+            has_perm, error = perm_service.can_add_comment(self.request.user)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to add comments")
+        serializer.save(author=self.request.user)
+    
+    @extend_schema(
+        description="Add a reaction to a comment",
+        request={'type': 'object', 'properties': {'emoji': {'type': 'string'}}},
+        responses={200: StoryCommentSerializer}
+    )
+    @action(detail=True, methods=['post'])
+    def react(self, request, pk=None):
+        """Add or remove a reaction to a comment."""
+        comment = self.get_object()
+        emoji = request.data.get('emoji', '')
+        user_id = str(request.user.id)
+        
+        if not emoji:
+            return Response(
+                {'error': 'emoji is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        reactions = comment.reactions or {}
+        emoji_reactions = reactions.get(emoji, [])
+        
+        if user_id in emoji_reactions:
+            # Remove reaction
+            emoji_reactions.remove(user_id)
+        else:
+            # Add reaction
+            emoji_reactions.append(user_id)
+        
+        if emoji_reactions:
+            reactions[emoji] = emoji_reactions
+        else:
+            reactions.pop(emoji, None)
+        
+        comment.reactions = reactions
+        comment.save()
+        
+        serializer = self.get_serializer(comment)
+        return Response(serializer.data)
+
+
+class StoryDependencyViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for story dependencies.
+    """
+    serializer_class = StoryDependencySerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return dependencies for stories in accessible projects."""
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return StoryDependency.objects.none()
+        
+        # Filter by story if provided
+        story_id = self.request.query_params.get('story', None)
+        if story_id:
+            queryset = StoryDependency.objects.filter(
+                models.Q(source_story_id=story_id) | models.Q(target_story_id=story_id)
+            )
+        else:
+            queryset = StoryDependency.objects.all()
+        
+        # Filter by project access
+        if user.role != 'admin':
+            queryset = queryset.filter(
+                models.Q(source_story__project__owner=user) | 
+                models.Q(source_story__project__members__id=user.id) |
+                models.Q(target_story__project__owner=user) | 
+                models.Q(target_story__project__members__id=user.id)
+            ).distinct()
+        
+        return queryset.select_related(
+            'source_story', 'target_story', 'source_story__project', 
+            'target_story__project', 'resolved_by'
+        )
+    
+    def perform_create(self, serializer):
+        """Set created_by when creating and check permissions."""
+        source_story = serializer.validated_data.get('source_story')
+        if source_story and source_story.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(source_story.project)
+            has_perm, error = perm_service.can_manage_dependencies(self.request.user)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to manage dependencies")
+        serializer.save(created_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        """Set updated_by and handle resolution."""
+        instance = serializer.save(updated_by=self.request.user)
+        
+        # If marking as resolved, set resolved_by and resolved_at
+        if 'resolved' in serializer.validated_data and serializer.validated_data['resolved']:
+            if not instance.resolved:
+                from django.utils import timezone
+                instance.resolved = True
+                instance.resolved_at = timezone.now()
+                instance.resolved_by = self.request.user
+                instance.save()
+    
+    @extend_schema(
+        description="Check for circular dependencies",
+        responses={200: {'type': 'object', 'properties': {'has_circular': {'type': 'boolean'}}}}
+    )
+    @action(detail=False, methods=['post'])
+    def check_circular(self, request):
+        """Check if adding a dependency would create a circular dependency."""
+        source_story_id = request.data.get('source_story')
+        target_story_id = request.data.get('target_story')
+        
+        if not source_story_id or not target_story_id:
+            return Response(
+                {'error': 'source_story and target_story are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if target_story already depends on source_story (directly or indirectly)
+        has_circular = self._check_circular_dependency(source_story_id, target_story_id)
+        
+        return Response({'has_circular': has_circular})
+    
+    def _check_circular_dependency(self, source_id, target_id):
+        """Recursively check for circular dependencies."""
+        if source_id == target_id:
+            return True
+        
+        # Get all stories that target_story depends on
+        dependencies = StoryDependency.objects.filter(
+            source_story_id=target_id,
+            resolved=False
+        ).select_related('target_story')
+        
+        for dep in dependencies:
+            if dep.target_story_id == source_id:
+                return True
+            # Recursively check
+            if self._check_circular_dependency(source_id, dep.target_story_id):
+                return True
+        
+        return False
+
+
+class StoryAttachmentViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for story attachments.
+    """
+    serializer_class = StoryAttachmentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return attachments for stories in accessible projects."""
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return StoryAttachment.objects.none()
+        
+        # Filter by story if provided
+        story_id = self.request.query_params.get('story', None)
+        if story_id:
+            queryset = StoryAttachment.objects.filter(story_id=story_id)
+        else:
+            queryset = StoryAttachment.objects.all()
+        
+        # Filter by project access
+        if user.role != 'admin':
+            queryset = queryset.filter(
+                models.Q(story__project__owner=user) | 
+                models.Q(story__project__members__id=user.id)
+            ).distinct()
+        
+        return queryset.select_related('story', 'story__project', 'uploaded_by')
+    
+    def get_serializer_context(self):
+        """Add request to serializer context for file URLs."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    def perform_create(self, serializer):
+        """Set uploaded_by and file metadata when creating and check permissions."""
+        story = serializer.validated_data.get('story')
+        if story and story.project:
+            from apps.projects.services.permissions import get_permission_service
+            perm_service = get_permission_service(story.project)
+            has_perm, error = perm_service.can_add_attachment(self.request.user)
+            if not has_perm:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(error or "You don't have permission to add attachments")
+        
+        file = serializer.validated_data.get('file')
+        if file:
+            serializer.save(
+                uploaded_by=self.request.user,
+                file_name=file.name,
+                file_size=file.size,
+                file_type=file.content_type or 'application/octet-stream'
+            )
+        else:
+            serializer.save(uploaded_by=self.request.user)
+    
+    @extend_schema(
+        description="Download attachment file",
+        responses={200: {'type': 'file'}}
+    )
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        """Download the attachment file."""
+        attachment = self.get_object()
+        
+        if not attachment.file:
+            return Response(
+                {'error': 'File not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        from django.http import FileResponse
+        
+        response = FileResponse(
+            attachment.file.open('rb'),
+            content_type=attachment.file_type
+        )
+        response['Content-Disposition'] = f'attachment; filename="{attachment.file_name}"'
+        return response
+
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for user notifications.
+    
+    Users can only see their own notifications.
+    """
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return notifications for the current user only."""
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Notification.objects.none()
+        
+        queryset = Notification.objects.filter(recipient=user)
+        
+        # Filter by read status if provided
+        is_read = self.request.query_params.get('is_read', None)
+        if is_read is not None:
+            is_read_bool = is_read.lower() == 'true'
+            queryset = queryset.filter(is_read=is_read_bool)
+        
+        # Filter by notification type if provided
+        notification_type = self.request.query_params.get('type', None)
+        if notification_type:
+            queryset = queryset.filter(notification_type=notification_type)
+        
+        # Filter by project if provided
+        project_id = self.request.query_params.get('project', None)
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        
+        return queryset.select_related(
+            'recipient', 'project', 'story', 'comment', 'mention', 'created_by'
+        )
+    
+    @extend_schema(
+        description="Mark notification as read",
+        responses={200: NotificationSerializer}
+    )
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        """Mark a notification as read."""
+        notification = self.get_object()
+        notification.mark_as_read()
+        serializer = self.get_serializer(notification)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        description="Mark all notifications as read",
+        responses={200: {'type': 'object', 'properties': {'count': {'type': 'integer'}}}}
+    )
+    @action(detail=False, methods=['post'])
+    def mark_all_read(self, request):
+        """Mark all unread notifications as read."""
+        user = request.user
+        count = Notification.objects.filter(
+            recipient=user,
+            is_read=False
+        ).update(
+            is_read=True,
+            read_at=timezone.now()
+        )
+        return Response({'count': count})
+    
+    @extend_schema(
+        description="Get unread notification count",
+        responses={200: {'type': 'object', 'properties': {'count': {'type': 'integer'}}}}
+    )
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        """Get count of unread notifications."""
+        user = request.user
+        count = Notification.objects.filter(
+            recipient=user,
+            is_read=False
+        ).count()
+        return Response({'count': count})
+
+
+class WatcherViewSet(viewsets.ModelViewSet):
+    """
+    Watcher management ViewSet.
+
+    Allows users to subscribe to (watch) and unsubscribe from (unwatch) various
+    content objects (e.g., UserStories, Tasks, Bugs, Issues, Epics, Projects).
+    """
+    serializer_class = WatcherSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    queryset = Watcher.objects.none()  # Default queryset for schema generation
+
+    def get_queryset(self):
+        """
+        Filter watchers to only show those related to projects where the user is owner or member,
+        or watchers created by the user.
+        Admins can see all watchers.
+        """
+        if getattr(self, 'swagger_fake_view', False):
+            return Watcher.objects.none()
+
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Watcher.objects.none()
+
+        if user.role == 'admin':
+            return Watcher.objects.all().select_related('user', 'content_type')
+
+        # Get projects the user is a member of
+        accessible_projects = Project.objects.filter(
+            Q(owner=user) | Q(members__id=user.id)
+        ).values_list('id', flat=True)
+
+        # Filter watchers related to accessible projects or created by the user
+        return Watcher.objects.filter(
+            Q(user=user) |
+            Q(content_type__model='project', object_id__in=accessible_projects) |
+            Q(content_type__model='userstory', userstory__project__id__in=accessible_projects) |
+            Q(content_type__model='task', task__story__project__id__in=accessible_projects) |
+            Q(content_type__model='bug', bug__project__id__in=accessible_projects) |
+            Q(content_type__model='issue', issue__project__id__in=accessible_projects) |
+            Q(content_type__model='epic', epic__project__id__in=accessible_projects)
+        ).distinct().select_related('user', 'content_type')
+
+    def perform_create(self, serializer):
+        """Set created_by on watcher creation."""
+        serializer.save(user=self.request.user)
+
+    @extend_schema(
+        description="Start watching a content object",
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'content_type_app': {'type': 'string'},
+                    'content_type_model': {'type': 'string'},
+                    'object_id': {'type': 'string', 'format': 'uuid'},
+                },
+                'required': ['content_type_app', 'content_type_model', 'object_id']
+            }
+        },
+        responses={201: WatcherSerializer, 200: WatcherSerializer}
+    )
+    @action(detail=False, methods=['post'], url_path='watch')
+    def watch(self, request):
+        """
+        Start watching a content object.
+        Requires 'content_type_app', 'content_type_model', and 'object_id' in request data.
+        """
+        from django.contrib.contenttypes.models import ContentType
+        from rest_framework.exceptions import ValidationError
+        
+        user = request.user
+        app_label = request.data.get('content_type_app')
+        model_name = request.data.get('content_type_model')
+        object_id = request.data.get('object_id')
+
+        if not all([app_label, model_name, object_id]):
+            raise ValidationError("content_type_app, content_type_model, and object_id are required.")
+
+        try:
+            content_type = ContentType.objects.get(app_label=app_label, model=model_name)
+        except ContentType.DoesNotExist:
+            raise ValidationError(f"Content type {app_label}.{model_name} not found.")
+
+        # Check if the object exists and user has permission to view it
+        try:
+            model_class = content_type.model_class()
+            if not model_class:
+                raise ValidationError(f"Model class not found for {app_label}.{model_name}.")
+            content_object = model_class.objects.get(pk=object_id)
+        except Exception as e:
+            if isinstance(e, ValidationError):
+                raise
+            # Handle DoesNotExist or other exceptions
+            from django.core.exceptions import ObjectDoesNotExist
+            if isinstance(e, ObjectDoesNotExist):
+                raise ValidationError(f"Object with ID {object_id} not found for model {model_name}.")
+            raise ValidationError(f"Error accessing object: {str(e)}")
+
+            # Check project-level permissions for the content object
+            project = None
+            if hasattr(content_object, 'project'):
+                project = content_object.project
+            elif hasattr(content_object, 'story') and hasattr(content_object.story, 'project'):
+                project = content_object.story.project
+
+            if project:
+                # Check permissions - user must be owner, member, or admin
+                if user.role != 'admin':
+                    if project.owner != user and not project.members.filter(id=user.id).exists():
+                        return Response(
+                            {'error': 'You do not have permission to watch objects in this project.'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+        else:
+            # For non-project related objects, ensure user has general access or is admin
+            if user.role != 'admin' and hasattr(content_object, 'created_by') and content_object.created_by != user:
+                return Response(
+                    {'error': 'You do not have permission to watch this object.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        watcher, created = Watcher.objects.get_or_create(
+            user=user,
+            content_type=content_type,
+            object_id=object_id,
+            defaults={}
+        )
+
+        if not created:
+            return Response({'message': 'Already watching this object.'}, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(watcher)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        description="Stop watching a content object",
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'content_type_app': {'type': 'string'},
+                    'content_type_model': {'type': 'string'},
+                    'object_id': {'type': 'string', 'format': 'uuid'},
+                },
+                'required': ['content_type_app', 'content_type_model', 'object_id']
+            }
+        },
+        responses={204: None, 200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['post'], url_path='unwatch')
+    def unwatch(self, request):
+        """
+        Stop watching a content object.
+        Requires 'content_type_app', 'content_type_model', and 'object_id' in request data.
+        """
+        from django.contrib.contenttypes.models import ContentType
+        from rest_framework.exceptions import ValidationError
+        
+        user = request.user
+        app_label = request.data.get('content_type_app')
+        model_name = request.data.get('content_type_model')
+        object_id = request.data.get('object_id')
+
+        if not all([app_label, model_name, object_id]):
+            raise ValidationError("content_type_app, content_type_model, and object_id are required.")
+
+        try:
+            content_type = ContentType.objects.get(app_label=app_label, model=model_name)
+        except ContentType.DoesNotExist:
+            raise ValidationError(f"Content type {app_label}.{model_name} not found.")
+
+        try:
+            watcher = Watcher.objects.get(
+                user=user,
+                content_type=content_type,
+                object_id=object_id
+            )
+            watcher.delete()
+            return Response({'message': 'Successfully un-watched object.'}, status=status.HTTP_204_NO_CONTENT)
+        except Watcher.DoesNotExist:
+            return Response({'message': 'Not currently watching this object.'}, status=status.HTTP_200_OK)
+
+
+class ActivityViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for activity feed.
+    
+    Provides read-only access to activity logs with comprehensive filtering.
+    Users can only see activities for projects they have access to.
+    """
+    serializer_class = ActivitySerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    queryset = Activity.objects.none()  # Default queryset for schema generation
+    
+    def get_queryset(self):
+        """
+        Filter activities to only show those related to projects where the user is owner or member.
+        Admins can see all activities.
+        Supports filtering by:
+        - project: Filter by project ID
+        - activity_type: Filter by activity type
+        - user: Filter by user ID (who performed the activity)
+        - content_type: Filter by content type (e.g., 'userstory', 'task', 'bug')
+        - object_id: Filter by specific object ID
+        - date_from: Filter activities from this date (YYYY-MM-DD)
+        - date_to: Filter activities to this date (YYYY-MM-DD)
+        """
+        if getattr(self, 'swagger_fake_view', False):
+            return Activity.objects.none()
+        
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Activity.objects.none()
+        
+        # Base queryset - filter by project access
+        if user.role == 'admin':
+            queryset = Activity.objects.all()
+        else:
+            # Get projects the user is a member of
+            accessible_projects = Project.objects.filter(
+                Q(owner=user) | Q(members__id=user.id)
+            ).values_list('id', flat=True)
+            
+            queryset = Activity.objects.filter(
+                Q(project_id__in=accessible_projects) | Q(project__isnull=True)
+            )
+        
+        # Filter by project
+        project_id = self.request.query_params.get('project', None)
+        if project_id:
+            try:
+                queryset = queryset.filter(project_id=project_id)
+            except (ValueError, TypeError):
+                # Invalid UUID
+                queryset = queryset.none()
+        
+        # Filter by activity type
+        activity_type = self.request.query_params.get('activity_type', None)
+        if activity_type:
+            queryset = queryset.filter(activity_type=activity_type)
+        
+        # Filter by user (who performed the activity)
+        user_id = self.request.query_params.get('user', None)
+        if user_id:
+            try:
+                queryset = queryset.filter(user_id=user_id)
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        # Filter by content type
+        content_type = self.request.query_params.get('content_type', None)
+        if content_type:
+            from django.contrib.contenttypes.models import ContentType
+            try:
+                ct = ContentType.objects.get(model=content_type.lower())
+                queryset = queryset.filter(content_type=ct)
+            except ContentType.DoesNotExist:
+                queryset = queryset.none()
+        
+        # Filter by object ID
+        object_id = self.request.query_params.get('object_id', None)
+        if object_id:
+            try:
+                queryset = queryset.filter(object_id=object_id)
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        # Filter by date range
+        date_from = self.request.query_params.get('date_from', None)
+        if date_from:
+            try:
+                from datetime import datetime
+                date_from_obj = datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__gte=date_from_obj)
+            except ValueError:
+                pass  # Invalid date format, ignore
+        
+        date_to = self.request.query_params.get('date_to', None)
+        if date_to:
+            try:
+                from datetime import datetime
+                date_to_obj = datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__lte=date_to_obj)
+            except ValueError:
+                pass  # Invalid date format, ignore
+        
+        return queryset.select_related(
+            'user', 'project', 'content_type'
+        ).order_by('-created_at')
+
+
+class EditHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for edit history.
+    
+    Provides read-only access to edit history with version comparison.
+    Users can only see edit history for objects in projects they have access to.
+    """
+    serializer_class = EditHistorySerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    queryset = EditHistory.objects.none()  # Default queryset for schema generation
+    
+    def get_queryset(self):
+        """
+        Filter edit history to only show those related to projects where the user is owner or member.
+        Admins can see all edit history.
+        Supports filtering by:
+        - project: Filter by project ID
+        - content_type: Filter by content type (e.g., 'userstory', 'task', 'bug')
+        - object_id: Filter by specific object ID
+        - user: Filter by user ID (who made the edit)
+        - version: Filter by specific version number
+        """
+        if getattr(self, 'swagger_fake_view', False):
+            return EditHistory.objects.none()
+        
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return EditHistory.objects.none()
+        
+        # Base queryset - filter by project access
+        if user.role == 'admin':
+            queryset = EditHistory.objects.all()
+        else:
+            # Get projects the user is a member of
+            accessible_projects = Project.objects.filter(
+                Q(owner=user) | Q(members__id=user.id)
+            ).values_list('id', flat=True)
+            
+            queryset = EditHistory.objects.filter(
+                Q(project_id__in=accessible_projects) | Q(project__isnull=True)
+            )
+        
+        # Filter by project
+        project_id = self.request.query_params.get('project', None)
+        if project_id:
+            try:
+                queryset = queryset.filter(project_id=project_id)
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        # Filter by content type
+        content_type = self.request.query_params.get('content_type', None)
+        if content_type:
+            from django.contrib.contenttypes.models import ContentType
+            try:
+                ct = ContentType.objects.get(model=content_type.lower())
+                queryset = queryset.filter(content_type=ct)
+            except ContentType.DoesNotExist:
+                queryset = queryset.none()
+        
+        # Filter by object ID
+        object_id = self.request.query_params.get('object_id', None)
+        if object_id:
+            try:
+                queryset = queryset.filter(object_id=object_id)
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        # Filter by user
+        user_id = self.request.query_params.get('user', None)
+        if user_id:
+            try:
+                queryset = queryset.filter(user_id=user_id)
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        # Filter by version
+        version = self.request.query_params.get('version', None)
+        if version:
+            try:
+                queryset = queryset.filter(version=int(version))
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        return queryset.select_related(
+            'user', 'project', 'content_type'
+        ).order_by('-version', '-created_at')
+    
+    @extend_schema(
+        description="Compare two versions of an object",
+        parameters=[
+            {
+                'name': 'version1',
+                'in': 'query',
+                'required': True,
+                'schema': {'type': 'integer'},
+                'description': 'First version number'
+            },
+            {
+                'name': 'version2',
+                'in': 'query',
+                'required': True,
+                'schema': {'type': 'integer'},
+                'description': 'Second version number'
+            },
+        ],
+        responses={200: EditHistorySerializer}
+    )
+    @action(detail=False, methods=['get'], url_path='compare')
+    def compare_versions(self, request):
+        """
+        Compare two versions of an object.
+        Requires content_type and object_id query parameters, plus version1 and version2.
+        """
+        from apps.projects.services.edit_history import EditHistoryService
+        from django.contrib.contenttypes.models import ContentType
+        
+        content_type_name = request.query_params.get('content_type', None)
+        object_id = request.query_params.get('object_id', None)
+        version1 = request.query_params.get('version1', None)
+        version2 = request.query_params.get('version2', None)
+        
+        if not all([content_type_name, object_id, version1, version2]):
+            return Response(
+                {'error': 'content_type, object_id, version1, and version2 are required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            ct = ContentType.objects.get(model=content_type_name.lower())
+            model_class = ct.model_class()
+            obj = model_class.objects.get(pk=object_id)
+            
+            # Check permissions
+            project = None
+            if hasattr(obj, 'project'):
+                project = obj.project
+            elif hasattr(obj, 'story') and hasattr(obj.story, 'project'):
+                project = obj.story.project
+            
+            if project:
+                # Check permissions - user must be owner, member, or admin
+                user = request.user
+                if user.role != 'admin':
+                    if project.owner != user and not project.members.filter(id=user.id).exists():
+                        return Response(
+                            {'error': 'You do not have permission to view this object.'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+            
+            from apps.projects.services.edit_history import EditHistoryService
+            comparison = EditHistoryService.compare_versions(obj, int(version1), int(version2))
+            
+            return Response({
+                'version1': EditHistorySerializer(comparison['version1']).data if comparison['version1'] else None,
+                'version2': EditHistorySerializer(comparison['version2']).data if comparison['version2'] else None,
+                'differences': comparison['differences']
+            })
+        except ContentType.DoesNotExist:
+            return Response(
+                {'error': f'Content type {content_type_name} not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class SearchViewSet(viewsets.ViewSet):
+    """
+    Advanced search ViewSet.
+    
+    Provides unified search across multiple content types with operators and filters.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    @extend_schema(
+        description="Perform advanced search across multiple content types",
+        parameters=[
+            {
+                'name': 'q',
+                'in': 'query',
+                'required': True,
+                'schema': {'type': 'string'},
+                'description': 'Search query (supports operators: AND, OR, NOT, quotes, field:value)'
+            },
+            {
+                'name': 'content_types',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'array', 'items': {'type': 'string'}},
+                'description': 'Content types to search (e.g., userstory,task,bug)'
+            },
+            {
+                'name': 'project',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'string', 'format': 'uuid'},
+                'description': 'Project ID to limit search to'
+            },
+            {
+                'name': 'status',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'string'},
+                'description': 'Filter by status'
+            },
+            {
+                'name': 'limit',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'integer'},
+                'description': 'Limit results per content type'
+            },
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='')
+    def search(self, request):
+        """
+        Perform advanced search.
+        
+        Query examples:
+        - Simple: "bug fix"
+        - Quoted phrase: "critical bug"
+        - Field-specific: title:bug, status:open
+        - Operators: bug AND fix, bug OR issue
+        - Negation: -status:closed
+        """
+        from apps.projects.services.search import SearchService
+        
+        query = request.query_params.get('q', '')
+        content_types_param = request.query_params.get('content_types', '')
+        project_id = request.query_params.get('project', None)
+        limit = request.query_params.get('limit', None)
+        
+        # Parse content types
+        content_types = None
+        if content_types_param:
+            content_types = [ct.strip() for ct in content_types_param.split(',') if ct.strip()]
+        
+        # Get project if specified
+        project = None
+        if project_id:
+            try:
+                project = Project.objects.get(pk=project_id)
+                # Check permissions - user must be owner, member, or admin
+                user = request.user
+                if user.role != 'admin':
+                    if project.owner != user and not project.members.filter(id=user.id).exists():
+                        return Response(
+                            {'error': 'You do not have permission to search in this project.'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+            except (Project.DoesNotExist, ValueError):
+                return Response(
+                    {'error': 'Invalid project ID.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Parse additional filters
+        filters = {}
+        status_filter = request.query_params.get('status', None)
+        if status_filter:
+            filters['status'] = status_filter
+        
+        # Perform search
+        results = SearchService.search(
+            query=query,
+            content_types=content_types,
+            filters=filters,
+            project=project,
+            user=request.user,
+            limit=int(limit) if limit else None
+        )
+        
+        return Response({
+            'query': query,
+            'results': results,
+            'total_count': sum(len(items) for items in results.values())
+        })
+    
+    @extend_schema(
+        description="Perform unified search (single sorted list)",
+        parameters=[
+            {
+                'name': 'q',
+                'in': 'query',
+                'required': True,
+                'schema': {'type': 'string'},
+                'description': 'Search query'
+            },
+            {
+                'name': 'content_types',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'array', 'items': {'type': 'string'}},
+                'description': 'Content types to search'
+            },
+            {
+                'name': 'project',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'string', 'format': 'uuid'},
+                'description': 'Project ID to limit search to'
+            },
+            {
+                'name': 'limit',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'integer'},
+                'description': 'Total limit on results'
+            },
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='unified')
+    def unified_search(self, request):
+        """Perform unified search returning a single sorted list."""
+        from apps.projects.services.search import SearchService
+        
+        query = request.query_params.get('q', '')
+        content_types_param = request.query_params.get('content_types', '')
+        project_id = request.query_params.get('project', None)
+        limit = request.query_params.get('limit', None)
+        
+        # Parse content types
+        content_types = None
+        if content_types_param:
+            content_types = [ct.strip() for ct in content_types_param.split(',') if ct.strip()]
+        
+        # Get project if specified
+        project = None
+        if project_id:
+            try:
+                project = Project.objects.get(pk=project_id)
+                # Check permissions - user must be owner, member, or admin
+                user = request.user
+                if user.role != 'admin':
+                    if project.owner != user and not project.members.filter(id=user.id).exists():
+                        return Response(
+                            {'error': 'You do not have permission to search in this project.'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+            except (Project.DoesNotExist, ValueError):
+                return Response(
+                    {'error': 'Invalid project ID.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Perform unified search
+        try:
+            results = SearchService.search_unified(
+                query=query,
+                content_types=content_types,
+                project=project,
+                user=request.user,
+                limit=int(limit) if limit else None
+            )
+            
+            return Response({
+                'query': query,
+                'results': results,
+                'total_count': len(results)
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'error': f'Search failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class SavedSearchViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing saved searches.
+    
+    Users can save frequently used search queries for quick access.
+    """
+    serializer_class = SavedSearchSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = SavedSearch.objects.none()  # Default queryset for schema generation
+    
+    def get_queryset(self):
+        """Return saved searches for the current user only."""
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return SavedSearch.objects.none()
+        
+        queryset = SavedSearch.objects.filter(user=user)
+        
+        # Filter by project if provided
+        project_id = self.request.query_params.get('project', None)
+        if project_id:
+            try:
+                queryset = queryset.filter(project_id=project_id)
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        return queryset.select_related('user', 'project').order_by('-last_used_at', '-created_at')
+    
+    def perform_create(self, serializer):
+        """Set user on saved search creation and handle duplicate names."""
+        user = self.request.user
+        name = serializer.validated_data.get('name')
+        
+        # Check if a saved search with the same name already exists for this user
+        existing_search = SavedSearch.objects.filter(user=user, name=name).first()
+        if existing_search:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                'name': [f'A saved search with the name "{name}" already exists. Please choose a different name.']
+            })
+        
+        serializer.save(user=user)
+    
+    @extend_schema(
+        description="Execute a saved search",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'])
+    def execute(self, request, pk=None):
+        """Execute a saved search and mark it as used."""
+        from apps.projects.services.search import SearchService
+        
+        saved_search = self.get_object()
+        
+        # Mark as used
+        saved_search.mark_used()
+        
+        # Execute the search
+        results = SearchService.search_unified(
+            query=saved_search.query,
+            content_types=saved_search.content_types if saved_search.content_types else None,
+            filters=saved_search.filters if saved_search.filters else {},
+            project=saved_search.project,
+            user=request.user
+        )
+        
+        return Response({
+            'saved_search': SavedSearchSerializer(saved_search).data,
+            'results': results,
+            'total_count': len(results)
+        })

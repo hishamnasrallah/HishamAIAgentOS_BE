@@ -100,6 +100,12 @@ class CommandTemplate(models.Model):
     estimated_cost = models.FloatField(default=0.0, help_text="Estimated cost per execution")
     estimated_duration = models.IntegerField(default=0, help_text="Estimated duration in seconds")
     
+    # Execution statistics (updated automatically via signals)
+    success_rate = models.FloatField(default=100.0, help_text="Percentage of successful executions (0-100)")
+    avg_execution_time = models.FloatField(default=0.0, help_text="Average execution time in seconds")
+    total_successes = models.IntegerField(default=0, help_text="Total number of successful executions")
+    total_failures = models.IntegerField(default=0, help_text="Total number of failed executions")
+    
     # Metadata
     tags = models.JSONField(default=list, blank=True)
     version = models.CharField(max_length=20, default='1.0.0')
@@ -134,11 +140,51 @@ class CommandTemplate(models.Model):
         indexes = [
             models.Index(fields=['slug']),
             models.Index(fields=['category', '-usage_count']),
+            models.Index(fields=['-success_rate', '-usage_count'], name='cmd_tmpl_success_idx'),
+            models.Index(fields=['category', 'is_active', '-success_rate'], name='cmd_cat_act_success_idx'),
         ]
         ordering = ['category', 'name']
     
     def __str__(self):
         return self.name
+    
+    def recalculate_statistics(self):
+        """Recalculate execution statistics from executions."""
+        executions = self.executions.all()
+        total = executions.count()
+        
+        if total == 0:
+            self.success_rate = 100.0
+            self.avg_execution_time = 0.0
+            self.total_successes = 0
+            self.total_failures = 0
+        else:
+            successful = executions.filter(status='completed').count()
+            failed = executions.filter(status='failed').count()
+            
+            self.total_successes = successful
+            self.total_failures = failed
+            self.success_rate = (successful / total) * 100.0 if total > 0 else 100.0
+            
+            # Calculate average execution time from completed executions
+            completed_executions = executions.filter(status='completed')
+            if completed_executions.exists():
+                total_time_ms = sum(e.execution_time_ms for e in completed_executions)
+                self.avg_execution_time = (total_time_ms / completed_executions.count()) / 1000.0  # Convert to seconds
+            else:
+                self.avg_execution_time = 0.0
+        
+        # Update usage_count
+        self.usage_count = total
+        
+        # Save without triggering signals to avoid recursion
+        CommandTemplate.objects.filter(id=self.id).update(
+            success_rate=self.success_rate,
+            avg_execution_time=self.avg_execution_time,
+            total_successes=self.total_successes,
+            total_failures=self.total_failures,
+            usage_count=self.usage_count
+        )
 
 
 class CommandExecution(models.Model):

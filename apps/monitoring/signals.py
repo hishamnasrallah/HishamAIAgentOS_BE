@@ -68,16 +68,18 @@ def set_tracking_fields(sender, instance, **kwargs):
         
         # Set created_by and updated_by if model has these fields
         if hasattr(instance, 'created_by') or hasattr(instance, 'updated_by'):
-            is_new = not (hasattr(instance, 'pk') and instance.pk)
-            
-            # Set created_by for new instances
-            if is_new and hasattr(instance, 'created_by') and current_user:
-                if instance.created_by is None:  # Only set if not already set
-                    instance.created_by = current_user
-            
-            # Set updated_by for all saves (new and existing)
-            if hasattr(instance, 'updated_by') and current_user:
-                instance.updated_by = current_user
+            # Only proceed if current_user is authenticated (not AnonymousUser)
+            if current_user and hasattr(current_user, 'is_authenticated') and current_user.is_authenticated:
+                is_new = not (hasattr(instance, 'pk') and instance.pk)
+                
+                # Set created_by for new instances
+                if is_new and hasattr(instance, 'created_by'):
+                    if instance.created_by is None:  # Only set if not already set
+                        instance.created_by = current_user
+                
+                # Set updated_by for all saves (new and existing)
+                if hasattr(instance, 'updated_by'):
+                    instance.updated_by = current_user
         
         # Capture old values for updates (for audit logging)
         if hasattr(instance, 'pk') and instance.pk:
@@ -151,6 +153,9 @@ def audit_model_save(sender, instance, created, **kwargs):
             from apps.monitoring.middleware import _thread_locals
             if hasattr(_thread_locals, 'user'):
                 user = getattr(_thread_locals, 'user', None)
+                # Check if user is anonymous or not authenticated
+                if user and (not hasattr(user, 'is_authenticated') or not user.is_authenticated):
+                    user = None
             if hasattr(_thread_locals, 'request_ip'):
                 request_ip = getattr(_thread_locals, 'request_ip', None)
             if hasattr(_thread_locals, 'request_user_agent'):
@@ -282,6 +287,9 @@ def audit_model_delete(sender, instance, **kwargs):
             from apps.monitoring.middleware import _thread_locals
             if hasattr(_thread_locals, 'user'):
                 user = getattr(_thread_locals, 'user', None)
+                # Check if user is anonymous or not authenticated
+                if user and (not hasattr(user, 'is_authenticated') or not user.is_authenticated):
+                    user = None
             if hasattr(_thread_locals, 'request_ip'):
                 request_ip = getattr(_thread_locals, 'request_ip', None)
             if hasattr(_thread_locals, 'request_user_agent'):

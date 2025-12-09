@@ -69,6 +69,23 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'two_factor_enabled': user.two_factor_enabled,
         }
         
+        # Add user to online presence
+        try:
+            from apps.core.presence_views import _online_users
+            from django.utils import timezone
+            user_id = str(user.id)
+            request = self.context.get('request') if hasattr(self, 'context') else None
+            _online_users[user_id] = {
+                'last_seen': timezone.now(),
+                'current_page': request.path if request else '/',
+                'status': 'online',
+            }
+        except Exception as e:
+            # Don't break login if presence update fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to add user presence on login: {e}", exc_info=True)
+        
         # Audit successful login
         try:
             from apps.monitoring.audit import audit_logger
