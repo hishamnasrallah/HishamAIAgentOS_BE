@@ -8,7 +8,7 @@ from .views import (
     ProjectViewSet, SprintViewSet, UserStoryViewSet, TaskViewSet, EpicViewSet, BugViewSet, IssueViewSet, TimeLogViewSet,
     WatcherViewSet, ProjectConfigurationViewSet, MentionViewSet, StoryCommentViewSet,
     StoryDependencyViewSet, StoryAttachmentViewSet, NotificationViewSet, ActivityViewSet, EditHistoryViewSet,
-    SearchViewSet, SavedSearchViewSet
+    SearchViewSet, SavedSearchViewSet, StatusChangeApprovalViewSet
 )
 
 # Create router for nested resources
@@ -31,6 +31,7 @@ router.register(r'activities', ActivityViewSet, basename='activity')
 router.register(r'edit-history', EditHistoryViewSet, basename='edithistory')
 router.register(r'search', SearchViewSet, basename='search')
 router.register(r'saved-searches', SavedSearchViewSet, basename='savedsearch')
+router.register(r'status-change-approvals', StatusChangeApprovalViewSet, basename='statuschangeapproval')
 
 # Create explicit URL patterns for projects to avoid conflicts
 urlpatterns = [

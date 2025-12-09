@@ -274,6 +274,13 @@ class UserStory(models.Model):
         help_text="Tags for categorizing and filtering stories"
     )
     
+    # Custom fields - values based on project configuration
+    custom_fields = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Custom field values based on project configuration"
+    )
+    
     # User tracking
     created_by = models.ForeignKey(
         'authentication.User',
@@ -424,6 +431,13 @@ class Task(models.Model):
         default=list,
         blank=True,
         help_text="Color-coded labels for visual grouping (e.g., [{'name': 'Urgent', 'color': '#red'}])"
+    )
+    
+    # Custom fields - values based on project configuration
+    custom_fields = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Custom field values based on project configuration"
     )
     
     # Component/module
@@ -645,6 +659,14 @@ class Bug(models.Model):
         blank=True,
         help_text="Color-coded labels for visual grouping"
     )
+    
+    # Custom fields - values based on project configuration
+    custom_fields = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Custom field values based on project configuration"
+    )
+    
     component = models.CharField(
         max_length=100,
         blank=True,
@@ -876,6 +898,14 @@ class Issue(models.Model):
         blank=True,
         help_text="Color-coded labels for visual grouping"
     )
+    
+    # Custom fields - values based on project configuration
+    custom_fields = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Custom field values based on project configuration"
+    )
+    
     component = models.CharField(
         max_length=100,
         blank=True,
@@ -2174,4 +2204,134 @@ class SavedSearch(models.Model):
         self.last_used_at = timezone.now()
         self.usage_count += 1
         self.save(update_fields=['last_used_at', 'usage_count'])
+
+
+class StatusChangeApproval(models.Model):
+    """Approval request for status changes when approval workflow is enabled."""
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('cancelled', 'Cancelled'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Generic foreign key to work item (Story, Task, Bug, Issue)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.UUIDField()
+    work_item = GenericForeignKey('content_type', 'object_id')
+    
+    # Status change details
+    old_status = models.CharField(max_length=50)
+    new_status = models.CharField(max_length=50)
+    reason = models.TextField(blank=True, help_text="Reason for status change")
+    
+    # Approval workflow
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    requested_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.CASCADE,
+        related_name='requested_approvals',
+        help_text="User who requested the status change"
+    )
+    approver = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approvals_to_review',
+        help_text="User who should approve this request"
+    )
+    approved_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_requests',
+        help_text="User who approved/rejected the request"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, help_text="Reason for rejection if rejected")
+    
+    # Project reference for filtering
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='status_change_approvals',
+        help_text="Project this approval belongs to"
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'status_change_approvals'
+        verbose_name = 'Status Change Approval'
+        verbose_name_plural = 'Status Change Approvals'
+        indexes = [
+            models.Index(fields=['project', 'status']),
+            models.Index(fields=['content_type', 'object_id']),
+            models.Index(fields=['requested_by', 'status']),
+            models.Index(fields=['approver', 'status']),
+        ]
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Approval {self.id} - {self.old_status} → {self.new_status} ({self.status})"
+    
+    def approve(self, approver, comment: str = ''):
+        """Approve this status change request."""
+        from django.utils import timezone
+        self.status = 'approved'
+        self.approved_by = approver
+        self.approved_at = timezone.now()
+        if comment:
+            self.rejection_reason = comment  # Reuse field for approval comment
+        self.save(update_fields=['status', 'approved_by', 'approved_at', 'rejection_reason', 'updated_at'])
+        
+        # Apply the status change to the work item
+        self._apply_status_change()
+    
+    def reject(self, approver, reason: str):
+        """Reject this status change request."""
+        from django.utils import timezone
+        self.status = 'rejected'
+        self.approved_by = approver
+        self.approved_at = timezone.now()
+        self.rejection_reason = reason
+        self.save(update_fields=['status', 'approved_by', 'approved_at', 'rejection_reason', 'updated_at'])
+    
+    def cancel(self):
+        """Cancel this approval request."""
+        self.status = 'cancelled'
+        self.save(update_fields=['status', 'updated_at'])
+    
+    def _apply_status_change(self):
+        """Apply the approved status change to the work item."""
+        if self.status != 'approved':
+            return
+        
+        work_item = self.work_item
+        if not work_item:
+            return
+        
+        # Update the status
+        work_item.status = self.new_status
+        work_item.save(update_fields=['status', 'updated_at'])
+        
+        # Create activity log
+        from apps.projects.models import Activity, UserStory, Task, Bug, Issue
+        Activity.objects.create(
+            project=self.project,
+            activity_type='status_change_approved',
+            description=f"Status changed from {self.old_status} to {self.new_status} (approved)",
+            user=self.approved_by,
+            story=work_item if isinstance(work_item, UserStory) else None,
+            task=work_item if isinstance(work_item, Task) else None,
+            bug=work_item if isinstance(work_item, Bug) else None,
+            issue=work_item if isinstance(work_item, Issue) else None,
+        )
 

@@ -15,12 +15,15 @@ from apps.projects.models import (
     ProjectConfiguration,
     UserStory,
     Task,
+    Bug,
+    Issue,
     Epic,
     Sprint,
     Notification,
     Mention,
     StoryComment
 )
+from datetime import date
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -54,10 +57,16 @@ class NotificationService:
     def _should_send_notification(
         self,
         event_type: str,
-        recipient: User
+        recipient: User,
+        notification_type: str = 'in_app'
     ) -> bool:
         """
         Check if notification should be sent based on project settings and user preferences.
+        
+        Args:
+            event_type: Type of event (e.g., 'on_status_change', 'on_assignment')
+            recipient: User who should receive the notification
+            notification_type: 'email' or 'in_app'
         
         Returns True if:
         1. Project notification settings allow it
@@ -67,19 +76,41 @@ class NotificationService:
         # Check project-level settings
         if self.config:
             settings = self.config.notification_settings or {}
-            event_setting = settings.get(event_type, {})
             
-            if not event_setting.get('enabled', True):
+            # Check global notification settings
+            if notification_type == 'email' and not settings.get('email_enabled', True):
                 return False
+            if notification_type == 'in_app' and not settings.get('in_app_enabled', True):
+                return False
+            
+            # Check event-specific settings
+            event_setting = settings.get(event_type, {})
+            if isinstance(event_setting, dict):
+                if not event_setting.get('enabled', True):
+                    return False
+            elif isinstance(event_setting, bool):
+                if not event_setting:
+                    return False
+            
+            # Check specific notification type settings
+            if notification_type == 'email' and not settings.get('mention_notifications', True):
+                if event_type in ['on_mention', 'mention']:
+                    return False
+            if notification_type == 'in_app' and not settings.get('status_change_notifications', True):
+                if event_type in ['on_status_change', 'status_change']:
+                    return False
+            if notification_type == 'in_app' and not settings.get('assignment_notifications', True):
+                if event_type in ['on_assignment', 'assignment']:
+                    return False
         
         # Check user preferences (if they have opted out)
-        user_prefs = recipient.notification_preferences or {}
+        user_prefs = getattr(recipient, 'notification_preferences', None) or {}
         if not user_prefs.get('enabled', True):
             return False
         
         # Check event-specific user preferences
         event_pref = user_prefs.get(event_type, {})
-        if event_pref.get('enabled') is False:
+        if isinstance(event_pref, dict) and event_pref.get('enabled') is False:
             return False
         
         return True
@@ -292,6 +323,37 @@ class NotificationService:
         return notification
     
     @transaction.atomic
+    def notify_epic_owner_assignment(
+        self,
+        epic: Epic,
+        old_owner: Optional[User],
+        new_owner: User,
+        assigned_by: User
+    ) -> Optional[Notification]:
+        """Create notification for epic owner assignment."""
+        if not self._should_send_notification('on_assignment', new_owner):
+            return None
+        
+        notification = Notification.objects.create(
+            recipient=new_owner,
+            notification_type='assignment',
+            title=f"You were assigned as owner of '{epic.title}'",
+            message=f"{assigned_by.get_full_name() or assigned_by.email} assigned you as owner of epic '{epic.title}'",
+            project=epic.project,
+            story=None,  # Epic doesn't have a story
+            metadata={
+                'assigned_by': str(assigned_by.id),
+                'old_owner': str(old_owner.id) if old_owner else None,
+                'epic_id': str(epic.id),
+                'epic_title': epic.title
+            },
+            created_by=assigned_by
+        )
+        
+        logger.info(f"Created epic owner assignment notification {notification.id} for user {new_owner.email}")
+        return notification
+    
+    @transaction.atomic
     def notify_story_created(
         self,
         story: UserStory,
@@ -428,6 +490,157 @@ class NotificationService:
         
         logger.info(f"Created {len(notifications)} automation notifications for story {story.id}")
         return notifications
+    
+    @transaction.atomic
+    def send_notification(
+        self,
+        item: Any,
+        notification_type: str,
+        recipients: List[User],
+        message: str,
+        user: Optional[User] = None
+    ) -> List[Notification]:
+        """
+        Generic method to send notifications (used by automation service).
+        
+        Args:
+            item: The work item (UserStory, Task, Bug, Issue)
+            notification_type: Type of notification ('email', 'in_app', etc.)
+            recipients: List of users to notify
+            message: Notification message
+            user: User who triggered the notification (optional)
+            
+        Returns:
+            List of created notifications
+        """
+        notifications = []
+        
+        if not recipients:
+            logger.warning(f"No recipients provided for notification on {item.__class__.__name__} {item.id}")
+            return notifications
+        
+        # Determine event type from item type
+        event_type = 'on_automation_triggered'
+        if hasattr(item, 'status'):
+            event_type = 'on_status_change'
+        elif hasattr(item, 'assigned_to'):
+            event_type = 'on_assignment'
+        
+        # Get project from item
+        project = None
+        if hasattr(item, 'project'):
+            project = item.project
+        elif hasattr(item, 'story') and item.story:
+            project = item.story.project
+        
+        for recipient in recipients:
+            if not recipient:
+                continue
+                
+            # Check if notification should be sent
+            if not self._should_send_notification(event_type, recipient, notification_type):
+                continue
+            
+            try:
+                # Create notification
+                notification = Notification.objects.create(
+                    recipient=recipient,
+                    notification_type=notification_type,
+                    title=message[:100] if message else 'Notification',  # Truncate title
+                    message=message or 'You have a new notification',
+                    project=project,
+                    story=item if isinstance(item, UserStory) else None,
+                    created_by=user
+                )
+                notifications.append(notification)
+            except Exception as e:
+                logger.error(f"Error creating notification for recipient {recipient.id}: {str(e)}", exc_info=True)
+        
+        logger.info(f"Created {len(notifications)} notifications via automation for {item.__class__.__name__} {item.id}")
+        return notifications
+    
+    @transaction.atomic
+    def notify_due_date_approaching(
+        self,
+        item: Any,  # UserStory, Task, Bug, or Issue
+        days_until_due: int,
+        due_date: date
+    ) -> Optional[Notification]:
+        """
+        Create notification for due date approaching.
+        
+        Args:
+            item: Work item (UserStory, Task, Bug, or Issue)
+            days_until_due: Number of days until due date
+            due_date: The due date
+        """
+        # Get assignee or project members
+        recipients = []
+        
+        if hasattr(item, 'assigned_to') and item.assigned_to:
+            recipients.append(item.assigned_to)
+        
+        # Also notify project members if configured
+        project = None
+        if hasattr(item, 'project'):
+            project = item.project
+        elif hasattr(item, 'story') and item.story:
+            project = item.story.project
+        
+        if not recipients and project:
+            # If no assignee, notify project owner
+            if project.owner:
+                recipients.append(project.owner)
+        
+        if not recipients:
+            logger.debug(f"No recipients for due date notification for {item.__class__.__name__} {item.id}")
+            return None
+        
+        notifications = []
+        for recipient in recipients:
+            if not self._should_send_notification('on_due_date_approaching', recipient):
+                continue
+            
+            # Determine item type and title
+            item_type = item.__class__.__name__.lower()
+            if isinstance(item, UserStory):
+                item_title = f"Story '{item.title}'"
+            elif isinstance(item, Task):
+                item_title = f"Task '{item.title}'"
+            elif isinstance(item, Bug):
+                item_title = f"Bug '{item.title}'"
+            elif isinstance(item, Issue):
+                item_title = f"Issue '{item.title}'"
+            else:
+                item_title = f"Item '{getattr(item, 'title', 'Untitled')}'"
+            
+            # Create message based on days until due
+            if days_until_due == 0:
+                message = f"{item_title} is due today"
+            elif days_until_due == 1:
+                message = f"{item_title} is due tomorrow"
+            else:
+                message = f"{item_title} is due in {days_until_due} days"
+            
+            notification = Notification.objects.create(
+                recipient=recipient,
+                notification_type='due_date',
+                title=f"Due date approaching: {item_title}",
+                message=message,
+                project=project,
+                story=item if isinstance(item, UserStory) else None,
+                metadata={
+                    'item_type': item_type,
+                    'item_id': str(item.id),
+                    'due_date': due_date.isoformat(),
+                    'days_until_due': days_until_due
+                },
+                created_by=None  # System-generated
+            )
+            notifications.append(notification)
+        
+        logger.info(f"Created {len(notifications)} due date approaching notifications for {item.__class__.__name__} {item.id}")
+        return notifications[0] if notifications else None
 
 
 def get_notification_service(project: Optional[Any] = None) -> NotificationService:

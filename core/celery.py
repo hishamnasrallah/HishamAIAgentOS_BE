@@ -31,6 +31,14 @@ app.conf.beat_schedule = {
         'task': 'apps.authentication.tasks.cleanup_expired_tokens',
         'schedule': crontab(hour=3, minute=0),  # Run at 3 AM daily
     },
+    'auto-close-sprints': {
+        'task': 'apps.projects.tasks.auto_close_sprints',
+        'schedule': crontab(hour=0, minute=0),  # Run at midnight daily
+    },
+    'check-due-dates-approaching': {
+        'task': 'apps.projects.tasks.check_due_dates_approaching',
+        'schedule': crontab(hour=9, minute=0),  # Run at 9 AM daily
+    },
 }
 
 @app.task(bind=True, ignore_result=True)

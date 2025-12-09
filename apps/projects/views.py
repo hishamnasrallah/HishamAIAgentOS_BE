@@ -16,7 +16,8 @@ import json
 
 from apps.projects.models import (
     Project, Sprint, UserStory, Epic, Task, Bug, Issue, TimeLog, ProjectConfiguration, 
-    Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch
+    Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch,
+    StatusChangeApproval
 )
 # Alias for backward compatibility
 Story = UserStory
@@ -44,6 +45,7 @@ from apps.projects.serializers import (
     EditHistorySerializer,
     SavedSearchSerializer
 )
+from apps.projects.serializers_approval import StatusChangeApprovalSerializer
 from apps.projects.services.story_generator import story_generator
 from apps.projects.services.sprint_planner import sprint_planner
 from apps.projects.services.estimation_engine import estimation_engine
@@ -78,6 +80,30 @@ def filter_by_tags(queryset, tags_list, tags_field='tags'):
         return queryset.filter(tag_filters)
 
 
+def filter_by_labels(queryset, label_names, labels_field='labels'):
+    """
+    Filter queryset by label names in a database-agnostic way.
+    Labels are stored as JSONField: [{'name': 'Urgent', 'color': '#red'}, ...]
+    """
+    from django.db import connection
+    
+    if connection.vendor == 'sqlite':
+        # For SQLite, use icontains on JSON string
+        label_filters = Q()
+        for label_name in label_names:
+            # Check if JSON string contains the label name
+            label_filters |= Q(**{f'{labels_field}__icontains': label_name})
+        return queryset.filter(label_filters)
+    else:
+        # For PostgreSQL, use JSON path queries
+        label_filters = Q()
+        for label_name in label_names:
+            # Check if any label object has this name
+            # Using JSON path: labels[*].name
+            label_filters |= Q(**{f'{labels_field}__contains': [{'name': label_name}]})
+        return queryset.filter(label_filters)
+
+
 class ProjectViewSet(viewsets.ModelViewSet):
     """
     Project management ViewSet with AI capabilities.
@@ -107,8 +133,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             queryset = Project.objects.all()
         else:
             queryset = Project.objects.filter(
-                models.Q(owner=user) | models.Q(members__id=user.id)
-            ).distinct()
+            models.Q(owner=user) | models.Q(members__id=user.id)
+        ).distinct()
         
         # Tag filtering
         tags_param = self.request.query_params.get('tags', None)
@@ -380,6 +406,42 @@ class SprintViewSet(viewsets.ModelViewSet):
             models.Q(project__owner=user) | models.Q(project__members__id=user.id)
         ).distinct().select_related('project', 'project__owner').prefetch_related('project__members')
     
+    def perform_create(self, serializer):
+        """Set default sprint values from project configuration."""
+        from datetime import datetime, timedelta
+        from django.utils import timezone
+        
+        project = serializer.validated_data.get('project')
+        if project:
+            try:
+                config = project.configuration
+                if config:
+                    # Use default sprint duration if not provided
+                    if 'start_date' in serializer.validated_data and 'end_date' not in serializer.validated_data:
+                        start_date = serializer.validated_data['start_date']
+                        duration_days = config.default_sprint_duration_days or 14
+                        end_date = start_date + timedelta(days=duration_days - 1)
+                        serializer.validated_data['end_date'] = end_date
+                    
+                    # Use default sprint start day if dates not provided
+                    if 'start_date' not in serializer.validated_data:
+                        sprint_start_day = config.sprint_start_day or 0  # 0 = Monday
+                        today = timezone.now().date()
+                        days_until_start = (sprint_start_day - today.weekday()) % 7
+                        if days_until_start == 0:
+                            days_until_start = 7  # Next week if today is the start day
+                        start_date = today + timedelta(days=days_until_start)
+                        serializer.validated_data['start_date'] = start_date
+                        
+                        # Set end date based on duration
+                        duration_days = config.default_sprint_duration_days or 14
+                        end_date = start_date + timedelta(days=duration_days - 1)
+                        serializer.validated_data['end_date'] = end_date
+            except ProjectConfiguration.DoesNotExist:
+                pass  # No configuration, use defaults from serializer
+        
+        serializer.save(created_by=self.request.user)
+    
     @extend_schema(
         request=SprintPlanningRequestSerializer,
         description="Auto-plan sprint using AI"
@@ -482,6 +544,7 @@ class StoryViewSet(viewsets.ModelViewSet):
         Admins can see all stories.
         Supports tag filtering via ?tags=tag1,tag2 query parameter.
         Supports project filtering via ?project=uuid query parameter.
+        Supports due date filtering via ?overdue=true, ?due_today=true, ?due_soon=true, ?due_date__gte=YYYY-MM-DD, ?due_date__lte=YYYY-MM-DD
         """
         user = self.request.user
         if not user or not user.is_authenticated:
@@ -492,7 +555,7 @@ class StoryViewSet(viewsets.ModelViewSet):
             queryset = Story.objects.all()
         else:
             queryset = Story.objects.filter(
-                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            models.Q(project__owner=user) | models.Q(project__members__id=user.id)
             ).distinct()
         
         # Project filtering (handle manually to ensure permission checking)
@@ -514,6 +577,47 @@ class StoryViewSet(viewsets.ModelViewSet):
             tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
             if tags_list:
                 queryset = filter_by_tags(queryset, tags_list)
+        
+        # Label filtering
+        labels_param = self.request.query_params.get('labels', None)
+        if labels_param:
+            labels_list = [label.strip() for label in labels_param.split(',') if label.strip()]
+            if labels_list:
+                queryset = filter_by_labels(queryset, labels_list)
+        
+        # Due date filtering
+        today = timezone.now().date()
+        overdue_param = self.request.query_params.get('overdue', None)
+        due_today_param = self.request.query_params.get('due_today', None)
+        due_soon_param = self.request.query_params.get('due_soon', None)
+        due_date_gte = self.request.query_params.get('due_date__gte', None)
+        due_date_lte = self.request.query_params.get('due_date__lte', None)
+        
+        if overdue_param and overdue_param.lower() == 'true':
+            queryset = queryset.filter(due_date__lt=today)
+        elif due_today_param and due_today_param.lower() == 'true':
+            queryset = queryset.filter(due_date=today)
+        elif due_soon_param and due_soon_param.lower() == 'true':
+            # Due within next 3 days
+            from datetime import timedelta
+            soon_date = today + timedelta(days=3)
+            queryset = queryset.filter(due_date__gte=today, due_date__lte=soon_date)
+        
+        if due_date_gte:
+            try:
+                from datetime import datetime
+                gte_date = datetime.strptime(due_date_gte, '%Y-%m-%d').date()
+                queryset = queryset.filter(due_date__gte=gte_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date format, ignore
+        
+        if due_date_lte:
+            try:
+                from datetime import datetime
+                lte_date = datetime.strptime(due_date_lte, '%Y-%m-%d').date()
+                queryset = queryset.filter(due_date__lte=lte_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date format, ignore
         
         return queryset.select_related('project', 'project__owner', 'sprint', 'epic', 'assigned_to', 'created_by').prefetch_related('project__members')
     
@@ -694,6 +798,57 @@ class StoryViewSet(viewsets.ModelViewSet):
         return Response({
             'tags': sorted(list(matching_tags))[:20]  # Limit to 20 suggestions
         }, status=status.HTTP_200_OK)
+    
+    @extend_schema(
+        description="Get component suggestions for stories (autocomplete)",
+        parameters=[{
+            'name': 'q',
+            'in': 'query',
+            'description': 'Search query',
+            'required': False,
+            'schema': {'type': 'string'}
+        }, {
+            'name': 'project',
+            'in': 'query',
+            'description': 'Filter by project ID',
+            'required': False,
+            'schema': {'type': 'string', 'format': 'uuid'}
+        }],
+        responses={200: {'type': 'object', 'properties': {'components': {'type': 'array', 'items': {'type': 'string'}}}}}
+    )
+    @action(detail=False, methods=['get'], url_path='components/autocomplete')
+    def components_autocomplete(self, request):
+        """Get component suggestions for autocomplete."""
+        query = request.query_params.get('q', '').strip().lower()
+        project_id = request.query_params.get('project', None)
+        
+        user = request.user
+        if not user or not user.is_authenticated:
+            return Response({'components': []}, status=status.HTTP_200_OK)
+        
+        # Get accessible stories
+        if user.role == 'admin':
+            stories = Story.objects.all()
+        else:
+            stories = Story.objects.filter(
+                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            ).distinct()
+        
+        # Filter by project if specified
+        if project_id:
+            stories = stories.filter(project_id=project_id)
+        
+        # Collect matching components (non-null, non-empty)
+        matching_components = set()
+        for story in stories:
+            if story.component and story.component.strip():
+                component = story.component.strip()
+                if not query or query in component.lower():
+                    matching_components.add(component)
+        
+        return Response({
+            'components': sorted(list(matching_components))[:20]  # Limit to 20 suggestions
+        }, status=status.HTTP_200_OK)
 
 
 # Backward compatibility - UserStoryViewSet is an alias for StoryViewSet
@@ -727,7 +882,7 @@ class EpicViewSet(viewsets.ModelViewSet):
             queryset = Epic.objects.all()
         else:
             queryset = Epic.objects.filter(
-                models.Q(project__owner=user) | models.Q(project__members__id=user.id)
+            models.Q(project__owner=user) | models.Q(project__members__id=user.id)
             ).distinct()
         
         # Tag filtering
@@ -795,6 +950,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         Filter tasks to only show those from stories in projects where the user is owner or member.
         Admins can see all tasks.
         Supports tag filtering via ?tags=tag1,tag2 query parameter.
+        Supports due date filtering via ?overdue=true, ?due_today=true, ?due_soon=true, ?due_date__gte=YYYY-MM-DD, ?due_date__lte=YYYY-MM-DD
         """
         # Handle schema generation
         if getattr(self, 'swagger_fake_view', False):
@@ -809,7 +965,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             queryset = Task.objects.all()
         else:
             queryset = Task.objects.filter(
-                models.Q(story__project__owner=user) | models.Q(story__project__members__id=user.id)
+            models.Q(story__project__owner=user) | models.Q(story__project__members__id=user.id)
             ).distinct()
         
         # Tag filtering
@@ -818,6 +974,47 @@ class TaskViewSet(viewsets.ModelViewSet):
             tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
             if tags_list:
                 queryset = filter_by_tags(queryset, tags_list)
+        
+        # Label filtering
+        labels_param = self.request.query_params.get('labels', None)
+        if labels_param:
+            labels_list = [label.strip() for label in labels_param.split(',') if label.strip()]
+            if labels_list:
+                queryset = filter_by_labels(queryset, labels_list)
+        
+        # Due date filtering
+        today = timezone.now().date()
+        overdue_param = self.request.query_params.get('overdue', None)
+        due_today_param = self.request.query_params.get('due_today', None)
+        due_soon_param = self.request.query_params.get('due_soon', None)
+        due_date_gte = self.request.query_params.get('due_date__gte', None)
+        due_date_lte = self.request.query_params.get('due_date__lte', None)
+        
+        if overdue_param and overdue_param.lower() == 'true':
+            queryset = queryset.filter(due_date__lt=today)
+        elif due_today_param and due_today_param.lower() == 'true':
+            queryset = queryset.filter(due_date=today)
+        elif due_soon_param and due_soon_param.lower() == 'true':
+            # Due within next 3 days
+            from datetime import timedelta
+            soon_date = today + timedelta(days=3)
+            queryset = queryset.filter(due_date__gte=today, due_date__lte=soon_date)
+        
+        if due_date_gte:
+            try:
+                from datetime import datetime
+                gte_date = datetime.strptime(due_date_gte, '%Y-%m-%d').date()
+                queryset = queryset.filter(due_date__gte=gte_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date format, ignore
+        
+        if due_date_lte:
+            try:
+                from datetime import datetime
+                lte_date = datetime.strptime(due_date_lte, '%Y-%m-%d').date()
+                queryset = queryset.filter(due_date__lte=lte_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date format, ignore
         
         return queryset.select_related('story', 'story__project', 'story__project__owner', 'assigned_to').prefetch_related('story__project__members')
 
@@ -840,6 +1037,7 @@ class BugViewSet(viewsets.ModelViewSet):
         Filter bugs to only show those from projects where the user is owner or member.
         Admins can see all bugs.
         Supports tag filtering via ?tags=tag1,tag2 query parameter.
+        Supports due date filtering via ?overdue=true, ?due_today=true, ?due_soon=true, ?due_date__gte=YYYY-MM-DD, ?due_date__lte=YYYY-MM-DD
         """
         # Handle schema generation
         if getattr(self, 'swagger_fake_view', False):
@@ -863,6 +1061,47 @@ class BugViewSet(viewsets.ModelViewSet):
             tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
             if tags_list:
                 queryset = filter_by_tags(queryset, tags_list)
+        
+        # Label filtering
+        labels_param = self.request.query_params.get('labels', None)
+        if labels_param:
+            labels_list = [label.strip() for label in labels_param.split(',') if label.strip()]
+            if labels_list:
+                queryset = filter_by_labels(queryset, labels_list)
+        
+        # Due date filtering
+        today = timezone.now().date()
+        overdue_param = self.request.query_params.get('overdue', None)
+        due_today_param = self.request.query_params.get('due_today', None)
+        due_soon_param = self.request.query_params.get('due_soon', None)
+        due_date_gte = self.request.query_params.get('due_date__gte', None)
+        due_date_lte = self.request.query_params.get('due_date__lte', None)
+        
+        if overdue_param and overdue_param.lower() == 'true':
+            queryset = queryset.filter(due_date__lt=today)
+        elif due_today_param and due_today_param.lower() == 'true':
+            queryset = queryset.filter(due_date=today)
+        elif due_soon_param and due_soon_param.lower() == 'true':
+            # Due within next 3 days
+            from datetime import timedelta
+            soon_date = today + timedelta(days=3)
+            queryset = queryset.filter(due_date__gte=today, due_date__lte=soon_date)
+        
+        if due_date_gte:
+            try:
+                from datetime import datetime
+                gte_date = datetime.strptime(due_date_gte, '%Y-%m-%d').date()
+                queryset = queryset.filter(due_date__gte=gte_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date format, ignore
+        
+        if due_date_lte:
+            try:
+                from datetime import datetime
+                lte_date = datetime.strptime(due_date_lte, '%Y-%m-%d').date()
+                queryset = queryset.filter(due_date__lte=lte_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date format, ignore
         
         return queryset.select_related(
             'project', 'project__owner', 'reporter', 'assigned_to', 'duplicate_of'
@@ -898,6 +1137,7 @@ class IssueViewSet(viewsets.ModelViewSet):
         Filter issues to only show those from projects where the user is owner or member.
         Admins can see all issues.
         Supports tag filtering via ?tags=tag1,tag2 query parameter.
+        Supports due date filtering via ?overdue=true, ?due_today=true, ?due_soon=true, ?due_date__gte=YYYY-MM-DD, ?due_date__lte=YYYY-MM-DD
         """
         # Handle schema generation
         if getattr(self, 'swagger_fake_view', False):
@@ -921,6 +1161,47 @@ class IssueViewSet(viewsets.ModelViewSet):
             tags_list = [tag.strip() for tag in tags_param.split(',') if tag.strip()]
             if tags_list:
                 queryset = filter_by_tags(queryset, tags_list)
+        
+        # Label filtering
+        labels_param = self.request.query_params.get('labels', None)
+        if labels_param:
+            labels_list = [label.strip() for label in labels_param.split(',') if label.strip()]
+            if labels_list:
+                queryset = filter_by_labels(queryset, labels_list)
+        
+        # Due date filtering
+        today = timezone.now().date()
+        overdue_param = self.request.query_params.get('overdue', None)
+        due_today_param = self.request.query_params.get('due_today', None)
+        due_soon_param = self.request.query_params.get('due_soon', None)
+        due_date_gte = self.request.query_params.get('due_date__gte', None)
+        due_date_lte = self.request.query_params.get('due_date__lte', None)
+        
+        if overdue_param and overdue_param.lower() == 'true':
+            queryset = queryset.filter(due_date__lt=today)
+        elif due_today_param and due_today_param.lower() == 'true':
+            queryset = queryset.filter(due_date=today)
+        elif due_soon_param and due_soon_param.lower() == 'true':
+            # Due within next 3 days
+            from datetime import timedelta
+            soon_date = today + timedelta(days=3)
+            queryset = queryset.filter(due_date__gte=today, due_date__lte=soon_date)
+        
+        if due_date_gte:
+            try:
+                from datetime import datetime
+                gte_date = datetime.strptime(due_date_gte, '%Y-%m-%d').date()
+                queryset = queryset.filter(due_date__gte=gte_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date format, ignore
+        
+        if due_date_lte:
+            try:
+                from datetime import datetime
+                lte_date = datetime.strptime(due_date_lte, '%Y-%m-%d').date()
+                queryset = queryset.filter(due_date__lte=lte_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date format, ignore
         
         return queryset.select_related(
             'project', 'project__owner', 'reporter', 'assigned_to', 'duplicate_of'
@@ -2444,3 +2725,216 @@ class SavedSearchViewSet(viewsets.ModelViewSet):
             'results': results,
             'total_count': len(results)
         })
+
+
+class StatusChangeApprovalViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing status change approval requests.
+    
+    When require_approval_for_status_change is enabled in project configuration,
+    status changes must be approved before being applied.
+    """
+    serializer_class = StatusChangeApprovalSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    queryset = StatusChangeApproval.objects.none()  # Default for schema generation
+    
+    def get_queryset(self):
+        """Filter approvals based on user's role and project membership."""
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return StatusChangeApproval.objects.none()
+        
+        queryset = StatusChangeApproval.objects.select_related(
+            'requested_by', 'approver', 'approved_by', 'project', 'content_type'
+        )
+        
+        # Filter by project if provided
+        project_id = self.request.query_params.get('project', None)
+        if project_id:
+            try:
+                queryset = queryset.filter(project_id=project_id)
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        # Filter by status if provided
+        status_filter = self.request.query_params.get('status', None)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        # Users can see:
+        # 1. Approvals they requested
+        # 2. Approvals they need to approve (as approver)
+        # 3. All approvals if they're project owner or admin
+        if user.is_staff or user.is_superuser:
+            # Admins see all
+            pass
+        else:
+            # Regular users see their own requests and requests they need to approve
+            queryset = queryset.filter(
+                Q(requested_by=user) | Q(approver=user) | Q(project__owner=user)
+            )
+        
+        return queryset.order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Create an approval request."""
+        from django.contrib.contenttypes.models import ContentType
+        
+        # Get work item from request data
+        work_item_type = self.request.data.get('work_item_type')  # 'userstory', 'task', 'bug', 'issue'
+        work_item_id = self.request.data.get('work_item_id')
+        
+        if not work_item_type or not work_item_id:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                'work_item_type': ['This field is required.'],
+                'work_item_id': ['This field is required.']
+            })
+        
+        # Map work item type to model
+        model_map = {
+            'userstory': UserStory,
+            'task': Task,
+            'bug': Bug,
+            'issue': Issue,
+        }
+        
+        model_class = model_map.get(work_item_type.lower())
+        if not model_class:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                'work_item_type': [f'Invalid work item type: {work_item_type}']
+            })
+        
+        # Get work item
+        try:
+            work_item = model_class.objects.get(id=work_item_id)
+        except model_class.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound(f'{work_item_type} with id {work_item_id} not found')
+        
+        # Get project from work item
+        project = work_item.project
+        
+        # Check if approval is required
+        try:
+            config = project.configuration
+            if not config or not config.permission_settings.get('require_approval_for_status_change', False):
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({
+                    'error': ['Approval workflow is not enabled for this project.']
+                })
+        except ProjectConfiguration.DoesNotExist:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                'error': ['Project configuration not found.']
+            })
+        
+        # Determine approver (default to project owner, can be overridden)
+        approver = project.owner
+        if 'approver' in serializer.validated_data and serializer.validated_data['approver']:
+            approver = serializer.validated_data['approver']
+        
+        # Get content type
+        content_type = ContentType.objects.get_for_model(model_class)
+        
+        # Save approval request
+        serializer.save(
+            requested_by=self.request.user,
+            approver=approver,
+            project=project,
+            content_type=content_type,
+            object_id=work_item_id
+        )
+    
+    @extend_schema(
+        description="Approve a status change request",
+        request=None,
+        responses={200: StatusChangeApprovalSerializer}
+    )
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Approve a status change request."""
+        approval = self.get_object()
+        
+        if approval.status != 'pending':
+            return Response(
+                {'error': 'Only pending approvals can be approved.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user is the approver or project owner/admin
+        if approval.approver != request.user and approval.project.owner != request.user and not request.user.is_staff:
+            return Response(
+                {'error': 'You do not have permission to approve this request.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        comment = request.data.get('comment', '')
+        approval.approve(request.user, comment)
+        
+        serializer = self.get_serializer(approval)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        description="Reject a status change request",
+        request={'type': 'object', 'properties': {'reason': {'type': 'string'}}},
+        responses={200: StatusChangeApprovalSerializer}
+    )
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Reject a status change request."""
+        approval = self.get_object()
+        
+        if approval.status != 'pending':
+            return Response(
+                {'error': 'Only pending approvals can be rejected.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user is the approver or project owner/admin
+        if approval.approver != request.user and approval.project.owner != request.user and not request.user.is_staff:
+            return Response(
+                {'error': 'You do not have permission to reject this request.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        reason = request.data.get('reason', '')
+        if not reason:
+            return Response(
+                {'error': 'Rejection reason is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        approval.reject(request.user, reason)
+        
+        serializer = self.get_serializer(approval)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        description="Cancel a status change request",
+        request=None,
+        responses={200: StatusChangeApprovalSerializer}
+    )
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Cancel a status change request (only by requester)."""
+        approval = self.get_object()
+        
+        if approval.status != 'pending':
+            return Response(
+                {'error': 'Only pending approvals can be cancelled.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Only the requester can cancel
+        if approval.requested_by != request.user:
+            return Response(
+                {'error': 'Only the requester can cancel this request.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        approval.cancel()
+        
+        serializer = self.get_serializer(approval)
+        return Response(serializer.data)

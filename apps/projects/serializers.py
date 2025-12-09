@@ -7,7 +7,8 @@ Serializers for AI Project Management endpoints.
 from rest_framework import serializers
 from apps.projects.models import (
     Project, Sprint, UserStory, Epic, Task, Bug, Issue, TimeLog, ProjectConfiguration, 
-    Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch
+    Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch,
+    StatusChangeApproval
 )
 # Alias for backward compatibility
 Story = UserStory
@@ -104,7 +105,7 @@ class SprintSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def validate(self, data):
-        """Validate sprint dates against project dates and check for overlaps."""
+        """Validate sprint dates against project dates, check for overlaps, and validate capacity."""
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         
@@ -165,6 +166,22 @@ class SprintSerializer(serializers.ModelSerializer):
                     'end_date': f'This sprint overlaps with "{overlapping_sprint.name}" ({overlapping_sprint.start_date} - {overlapping_sprint.end_date}).'
                 })
         
+        # Validate sprint capacity if stories are being added
+        if self.instance and 'total_story_points' in data:
+            try:
+                config = project.configuration
+                if config:
+                    max_points = config.max_story_points_per_sprint
+                    allow_overcommitment = config.allow_overcommitment
+                    new_total = data['total_story_points']
+                    
+                    if new_total > max_points and not allow_overcommitment:
+                        raise serializers.ValidationError({
+                            'total_story_points': f'Sprint capacity exceeded: {new_total} story points (max: {max_points}). Enable overcommitment in project settings to allow this.'
+                        })
+            except ProjectConfiguration.DoesNotExist:
+                pass  # No configuration, skip validation
+        
         return data
 
 
@@ -210,10 +227,11 @@ class StorySerializer(serializers.ModelSerializer):
             'due_date': {'required': False, 'allow_null': True},
             'tags': {'required': False, 'allow_null': True},
             'labels': {'required': False, 'allow_null': True},
+            'custom_fields': {'required': False, 'allow_null': True},
         }
     
     def validate_status(self, value):
-        """Validate status against project configuration."""
+        """Validate status against project configuration and state transitions."""
         if not value:
             return value
         
@@ -237,6 +255,10 @@ class StorySerializer(serializers.ModelSerializer):
                         raise serializers.ValidationError(
                             f"Invalid status '{value}'. Valid statuses for this project are: {', '.join(valid_statuses)}"
                         )
+                
+                # Validate state transition if updating
+                if self.instance and self.instance.status:
+                    validate_state_transition(project, self.instance.status, value)
             except ProjectConfiguration.DoesNotExist:
                 pass  # No configuration yet, allow default status
         
@@ -246,6 +268,9 @@ class StorySerializer(serializers.ModelSerializer):
         """Override update to ensure all fields are saved, including null values, and validate."""
         import logging
         logger = logging.getLogger(__name__)
+        
+        # Track old status for automation
+        old_status = instance.status
         logger.info(f"[StorySerializer] Updating story {instance.id}")
         logger.info(f"[StorySerializer] Validated data: {validated_data}")
         
@@ -260,7 +285,6 @@ class StorySerializer(serializers.ModelSerializer):
             
             # Check if status is being changed
             new_status = validated_data.get('status', instance.status)
-            old_status = instance.status
             
             if new_status != old_status:
                 is_valid, error, warnings = validation_service.validate_story_before_status_change(
@@ -281,6 +305,57 @@ class StorySerializer(serializers.ModelSerializer):
                 raise ValidationError(error)
             if warnings:
                 logger.warning(f"[StorySerializer] Validation warnings: {', '.join(warnings)}")
+        
+        # Check if approval is required for status change
+        new_status = validated_data.get('status', instance.status)
+        if old_status != new_status and instance.project:
+            try:
+                config = instance.project.configuration
+                if config and config.permission_settings.get('require_approval_for_status_change', False):
+                    # Approval required - create approval request instead of changing status
+                    from apps.projects.models import StatusChangeApproval
+                    from django.contrib.contenttypes.models import ContentType
+                    from rest_framework.exceptions import ValidationError
+                    
+                    # Check if there's already a pending approval for this status change
+                    content_type = ContentType.objects.get_for_model(instance)
+                    existing_approval = StatusChangeApproval.objects.filter(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        old_status=old_status,
+                        new_status=new_status,
+                        status='pending'
+                    ).first()
+                    
+                    if existing_approval:
+                        raise ValidationError({
+                            'status': [f'An approval request for this status change is already pending (ID: {existing_approval.id})']
+                        })
+                    
+                    # Create approval request
+                    approver = instance.project.owner
+                    approval = StatusChangeApproval.objects.create(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        old_status=old_status,
+                        new_status=new_status,
+                        reason=validated_data.get('approval_reason', ''),
+                        requested_by=request.user if request else None,
+                        approver=approver,
+                        project=instance.project
+                    )
+                    
+                    # Don't change the status - return the instance with original status
+                    # Remove status from validated_data so it doesn't get updated
+                    validated_data.pop('status', None)
+                    
+                    # Return a response indicating approval is required
+                    raise ValidationError({
+                        'status': [f'Status change requires approval. Approval request created (ID: {approval.id})'],
+                        'approval_id': [str(approval.id)]
+                    })
+            except ProjectConfiguration.DoesNotExist:
+                pass  # No configuration, proceed with normal update
         
         # Get raw request data to check for explicitly null fields
         request = self.context.get('request')
@@ -331,6 +406,19 @@ class StorySerializer(serializers.ModelSerializer):
         
         instance.save()
         logger.info(f"[StorySerializer] Story saved. Story points: {instance.story_points}, Assigned to: {instance.assigned_to}, Epic: {instance.epic}, Sprint: {instance.sprint}")
+        
+        # Execute automation rules if status changed
+        if old_status != instance.status and instance.project:
+            from apps.projects.services.automation import AutomationService
+            automation_service = AutomationService(instance.project)
+            user = self.context.get('request').user if self.context.get('request') else None
+            automation_service.execute_rules_for_status_change(
+                instance,
+                old_status,
+                instance.status,
+                user
+            )
+        
         return instance
     
     def create(self, validated_data):
@@ -371,6 +459,18 @@ class StorySerializer(serializers.ModelSerializer):
             # Log warnings
             if warnings:
                 logger.warning(f"[StorySerializer] Validation warnings: {', '.join(warnings)}")
+            
+            # Validate sprint capacity if sprint is provided
+            sprint = validated_data.get('sprint')
+            story_points = validated_data.get('story_points')
+            if sprint and story_points:
+                is_valid, error = validation_service.validate_sprint_capacity(
+                    sprint,
+                    story_points
+                )
+                if not is_valid:
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError({'sprint': error})
         
         instance = super().create(validated_data)
         logger.info(f"[StorySerializer] Story created. Story points: {instance.story_points}, Assigned to: {instance.assigned_to}, Epic: {instance.epic}, Sprint: {instance.sprint}")
@@ -480,10 +580,11 @@ class TaskSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'story': {'required': False, 'allow_null': True},
             'component': {'required': False, 'allow_blank': True},
+            'custom_fields': {'required': False, 'allow_null': True},
         }
     
     def validate_status(self, value):
-        """Validate status against project configuration."""
+        """Validate status against project configuration and state transitions."""
         if not value:
             return value
         
@@ -511,10 +612,91 @@ class TaskSerializer(serializers.ModelSerializer):
                         raise serializers.ValidationError(
                             f"Invalid status '{value}'. Valid statuses for this project are: {', '.join(valid_statuses)}"
                         )
+                
+                # Validate state transition if updating
+                if self.instance and self.instance.status:
+                    validate_state_transition(project, self.instance.status, value)
             except ProjectConfiguration.DoesNotExist:
                 pass  # No configuration yet, allow default status
         
         return value
+    
+    def update(self, instance, validated_data):
+        """Override update to execute automation rules on status changes."""
+        # Track old status for automation
+        old_status = instance.status
+        
+        # Get project from task's story
+        project = None
+        if instance.story:
+            project = instance.story.project
+        
+        # Get request object for approval checks
+        request = self.context.get('request')
+        
+        # Check if approval is required for status change
+        new_status = validated_data.get('status', instance.status)
+        if old_status != new_status and project and request:
+            try:
+                config = project.configuration
+                if config and config.permission_settings.get('require_approval_for_status_change', False):
+                    # Approval required - create approval request
+                    from apps.projects.models import StatusChangeApproval
+                    from django.contrib.contenttypes.models import ContentType
+                    from rest_framework.exceptions import ValidationError
+                    
+                    content_type = ContentType.objects.get_for_model(instance)
+                    existing_approval = StatusChangeApproval.objects.filter(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        old_status=old_status,
+                        new_status=new_status,
+                        status='pending'
+                    ).first()
+                    
+                    if existing_approval:
+                        raise ValidationError({
+                            'status': [f'An approval request for this status change is already pending (ID: {existing_approval.id})']
+                        })
+                    
+                    approver = project.owner
+                    approval_reason = request.data.get('approval_reason', '')
+                    approval = StatusChangeApproval.objects.create(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        old_status=old_status,
+                        new_status=new_status,
+                        reason=approval_reason,
+                        requested_by=request.user,
+                        approver=approver,
+                        project=project
+                    )
+                    
+                    validated_data.pop('status', None)
+                    raise ValidationError({
+                        'status': [f'Status change requires approval. Approval request created (ID: {approval.id})'],
+                        'approval_id': [str(approval.id)],
+                        'approval_required': [True]
+                    })
+            except ProjectConfiguration.DoesNotExist:
+                pass
+        
+        # Call parent update
+        instance = super().update(instance, validated_data)
+        
+        # Execute automation rules if status changed
+        if old_status != instance.status and project:
+            from apps.projects.services.automation import AutomationService
+            automation_service = AutomationService(project)
+            user = self.context.get('request').user if self.context.get('request') else None
+            automation_service.execute_rules_for_status_change(
+                instance,
+                old_status,
+                instance.status,
+                user
+            )
+        
+        return instance
 
 
 class BugSerializer(serializers.ModelSerializer):
@@ -532,10 +714,11 @@ class BugSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at', 'resolved_at', 'closed_at']
         extra_kwargs = {
             'component': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'custom_fields': {'required': False, 'allow_null': True},
         }
     
     def validate_status(self, value):
-        """Validate status against project configuration."""
+        """Validate status against project configuration and state transitions."""
         if not value:
             return value
         
@@ -559,22 +742,130 @@ class BugSerializer(serializers.ModelSerializer):
                         raise serializers.ValidationError(
                             f"Invalid status '{value}'. Valid statuses for this project are: {', '.join(valid_statuses)}"
                         )
+                
+                # Validate state transition if updating
+                if self.instance and self.instance.status:
+                    validate_state_transition(project, self.instance.status, value)
             except ProjectConfiguration.DoesNotExist:
                 pass  # No configuration yet, allow default status
         
         return value
     
     def create(self, validated_data):
-        """Convert null values to empty strings for CharFields."""
+        """Convert null values to empty strings for CharFields and validate."""
         if 'component' in validated_data and validated_data['component'] is None:
             validated_data['component'] = ''
+        
+        # Validate using project validation rules
+        project = validated_data.get('project')
+        if project:
+            from apps.projects.services.validation import get_validation_service
+            validation_service = get_validation_service(project)
+            
+            # Create instance temporarily for validation
+            bug = Bug(**validated_data)
+            is_valid, error, warnings = validation_service.validate_bug_before_status_change(
+                bug,
+                validated_data.get('status', 'new'),
+                None
+            )
+            if not is_valid:
+                raise serializers.ValidationError({'status': error})
+        
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
-        """Convert null values to empty strings for CharFields."""
+        """Convert null values to empty strings for CharFields and validate."""
         if 'component' in validated_data and validated_data['component'] is None:
             validated_data['component'] = ''
-        return super().update(instance, validated_data)
+        
+        # Track old status for automation
+        old_status = instance.status
+        
+        # Get request object for approval checks
+        request = self.context.get('request')
+        
+        # Validate using project validation rules
+        project = instance.project
+        new_status = validated_data.get('status', instance.status)
+        
+        # Check if approval is required for status change
+        if old_status != new_status and project and request:
+            try:
+                config = project.configuration
+                if config and config.permission_settings.get('require_approval_for_status_change', False):
+                    # Approval required - create approval request
+                    from apps.projects.models import StatusChangeApproval
+                    from django.contrib.contenttypes.models import ContentType
+                    from rest_framework.exceptions import ValidationError
+                    
+                    content_type = ContentType.objects.get_for_model(instance)
+                    existing_approval = StatusChangeApproval.objects.filter(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        old_status=old_status,
+                        new_status=new_status,
+                        status='pending'
+                    ).first()
+                    
+                    if existing_approval:
+                        raise ValidationError({
+                            'status': [f'An approval request for this status change is already pending (ID: {existing_approval.id})']
+                        })
+                    
+                    approver = project.owner
+                    approval_reason = request.data.get('approval_reason', '')
+                    approval = StatusChangeApproval.objects.create(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        old_status=old_status,
+                        new_status=new_status,
+                        reason=approval_reason,
+                        requested_by=request.user,
+                        approver=approver,
+                        project=project
+                    )
+                    
+                    validated_data.pop('status', None)
+                    raise ValidationError({
+                        'status': [f'Status change requires approval. Approval request created (ID: {approval.id})'],
+                        'approval_id': [str(approval.id)],
+                        'approval_required': [True]
+                    })
+            except ProjectConfiguration.DoesNotExist:
+                pass
+        
+        if project and 'status' in validated_data:
+            from apps.projects.services.validation import get_validation_service
+            validation_service = get_validation_service(project)
+            
+            new_status = validated_data.get('status', instance.status)
+            
+            if new_status != old_status:
+                is_valid, error, warnings = validation_service.validate_bug_before_status_change(
+                    instance,
+                    new_status,
+                    old_status
+                )
+                if not is_valid:
+                    raise serializers.ValidationError({'status': error})
+        
+        # Call parent update
+        instance = super().update(instance, validated_data)
+        
+        # Execute automation rules if status changed
+        if old_status != instance.status and project:
+            from apps.projects.services.automation import AutomationService
+            automation_service = AutomationService(project)
+            user = self.context.get('request').user if self.context.get('request') else None
+            automation_service.execute_rules_for_status_change(
+                instance,
+                old_status,
+                instance.status,
+                user
+            )
+        
+        return instance
     
     def get_reporter_name(self, obj):
         """Get reporter's full name or email."""
@@ -623,7 +914,7 @@ class IssueSerializer(serializers.ModelSerializer):
         }
     
     def validate_status(self, value):
-        """Validate status against project configuration."""
+        """Validate status against project configuration and state transitions."""
         if not value:
             return value
         
@@ -647,26 +938,132 @@ class IssueSerializer(serializers.ModelSerializer):
                         raise serializers.ValidationError(
                             f"Invalid status '{value}'. Valid statuses for this project are: {', '.join(valid_statuses)}"
                         )
+                
+                # Validate state transition if updating
+                if self.instance and self.instance.status:
+                    validate_state_transition(project, self.instance.status, value)
             except ProjectConfiguration.DoesNotExist:
                 pass  # No configuration yet, allow default status
         
         return value
     
     def create(self, validated_data):
-        """Convert null values to empty strings for CharFields."""
+        """Convert null values to empty strings for CharFields and validate."""
         if 'environment' in validated_data and validated_data['environment'] is None:
             validated_data['environment'] = ''
         if 'component' in validated_data and validated_data['component'] is None:
             validated_data['component'] = ''
+        
+        # Validate using project validation rules
+        project = validated_data.get('project')
+        if project:
+            from apps.projects.services.validation import get_validation_service
+            validation_service = get_validation_service(project)
+            
+            # Create instance temporarily for validation
+            issue = Issue(**validated_data)
+            is_valid, error, warnings = validation_service.validate_issue_before_status_change(
+                issue,
+                validated_data.get('status', 'open'),
+                None
+            )
+            if not is_valid:
+                raise serializers.ValidationError({'status': error})
+        
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
-        """Convert null values to empty strings for CharFields."""
+        """Convert null values to empty strings for CharFields and validate."""
         if 'environment' in validated_data and validated_data['environment'] is None:
             validated_data['environment'] = ''
         if 'component' in validated_data and validated_data['component'] is None:
             validated_data['component'] = ''
-        return super().update(instance, validated_data)
+        
+        # Track old status for automation
+        old_status = instance.status
+        
+        # Get request object for approval checks
+        request = self.context.get('request')
+        
+        # Validate using project validation rules
+        project = instance.project
+        new_status = validated_data.get('status', instance.status)
+        
+        # Check if approval is required for status change
+        if old_status != new_status and project and request:
+            try:
+                config = project.configuration
+                if config and config.permission_settings.get('require_approval_for_status_change', False):
+                    # Approval required - create approval request
+                    from apps.projects.models import StatusChangeApproval
+                    from django.contrib.contenttypes.models import ContentType
+                    from rest_framework.exceptions import ValidationError
+                    
+                    content_type = ContentType.objects.get_for_model(instance)
+                    existing_approval = StatusChangeApproval.objects.filter(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        old_status=old_status,
+                        new_status=new_status,
+                        status='pending'
+                    ).first()
+                    
+                    if existing_approval:
+                        raise ValidationError({
+                            'status': [f'An approval request for this status change is already pending (ID: {existing_approval.id})']
+                        })
+                    
+                    approver = project.owner
+                    approval_reason = request.data.get('approval_reason', '')
+                    approval = StatusChangeApproval.objects.create(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        old_status=old_status,
+                        new_status=new_status,
+                        reason=approval_reason,
+                        requested_by=request.user,
+                        approver=approver,
+                        project=project
+                    )
+                    
+                    validated_data.pop('status', None)
+                    raise ValidationError({
+                        'status': [f'Status change requires approval. Approval request created (ID: {approval.id})'],
+                        'approval_id': [str(approval.id)],
+                        'approval_required': [True]
+                    })
+            except ProjectConfiguration.DoesNotExist:
+                pass
+        
+        if project and 'status' in validated_data:
+            from apps.projects.services.validation import get_validation_service
+            validation_service = get_validation_service(project)
+            
+            if new_status != old_status:
+                is_valid, error, warnings = validation_service.validate_issue_before_status_change(
+                    instance,
+                    new_status,
+                    old_status
+                )
+                if not is_valid:
+                    raise serializers.ValidationError({'status': error})
+        
+        # Call parent update
+        instance = super().update(instance, validated_data)
+        
+        # Execute automation rules if status changed
+        if old_status != instance.status and project:
+            from apps.projects.services.automation import AutomationService
+            automation_service = AutomationService(project)
+            user = self.context.get('request').user if self.context.get('request') else None
+            automation_service.execute_rules_for_status_change(
+                instance,
+                old_status,
+                instance.status,
+                user
+            )
+        
+        return instance
     
     def get_reporter_name(self, obj):
         """Get reporter's full name or email."""

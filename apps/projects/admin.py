@@ -6,7 +6,8 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
     Project, Sprint, Epic, UserStory, Task, Bug, Issue, TimeLog, ProjectConfiguration,
-    Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Activity, EditHistory, Watcher, SavedSearch
+    Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Activity, EditHistory, Watcher, SavedSearch,
+    StatusChangeApproval
 )
 
 
@@ -842,6 +843,79 @@ class EditHistoryAdmin(admin.ModelAdmin):
         
         return format_html('<pre style="white-space: pre-wrap;">{}</pre>', '\n'.join(result))
     all_diffs_display.short_description = 'All Diffs'
+
+
+@admin.register(StatusChangeApproval)
+class StatusChangeApprovalAdmin(admin.ModelAdmin):
+    """Status Change Approval admin interface."""
+    
+    list_display = (
+        'id', 'work_item_type', 'work_item_title', 'old_status', 'new_status', 'status_badge',
+        'requested_by', 'approver', 'project', 'created_at', 'approved_at'
+    )
+    list_filter = ('status', 'created_at', 'approved_at', 'project')
+    search_fields = (
+        'id', 'old_status', 'new_status', 'reason', 'rejection_reason',
+        'requested_by__email', 'requested_by__username',
+        'approver__email', 'approver__username',
+        'project__name'
+    )
+    readonly_fields = ('id', 'created_at', 'updated_at', 'approved_at', 'work_item_type', 'work_item_title')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Approval Information', {
+            'fields': ('status', 'old_status', 'new_status', 'reason', 'rejection_reason')
+        }),
+        ('Work Item', {
+            'fields': ('content_type', 'object_id', 'work_item_type', 'work_item_title')
+        }),
+        ('Workflow', {
+            'fields': ('requested_by', 'approver', 'approved_by', 'approved_at')
+        }),
+        ('Project', {
+            'fields': ('project',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def work_item_type(self, obj):
+        """Get work item type."""
+        return obj.content_type.model if obj.content_type else None
+    work_item_type.short_description = 'Work Item Type'
+    
+    def work_item_title(self, obj):
+        """Get work item title."""
+        try:
+            work_item = obj.work_item
+            if hasattr(work_item, 'title'):
+                return work_item.title
+            elif hasattr(work_item, 'name'):
+                return work_item.name
+            return str(work_item)
+        except:
+            return 'N/A'
+    work_item_title.short_description = 'Work Item'
+    
+    def status_badge(self, obj):
+        """Display status as badge."""
+        colors = {
+            'pending': '#ffc107',
+            'approved': '#28a745',
+            'rejected': '#dc3545',
+            'cancelled': '#6c757d',
+        }
+        color = colors.get(obj.status, '#6c757d')
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 8px; border-radius: 4px; text-transform: capitalize;">{}</span>',
+            color, obj.status
+        )
+    status_badge.short_description = 'Status'
+    status_badge.admin_order_field = 'status'
 
 
 @admin.register(SavedSearch)

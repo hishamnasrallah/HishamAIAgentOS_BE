@@ -1,480 +1,507 @@
 """
-Automation rule execution engine for project workflows.
+Automation service for executing project-level automation rules.
 
-This service evaluates and executes automation rules defined in ProjectConfiguration
-when story/task events occur (create, update, status change, etc.).
+This service processes automation_rules from ProjectConfiguration and executes
+actions based on triggers (e.g., status changes, field updates, etc.).
 """
 
 import logging
 from typing import Dict, List, Any, Optional
-from django.db import transaction
-from django.utils import timezone
+from django.contrib.auth import get_user_model
 
 from apps.projects.models import (
+    Project,
     ProjectConfiguration,
     UserStory,
     Task,
-    Epic,
+    Bug,
+    Issue,
     Sprint
 )
 
+User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
-class AutomationEngine:
+class AutomationService:
     """
-    Engine for executing automation rules.
+    Service for executing automation rules defined in project configuration.
     
-    Automation rules are stored in ProjectConfiguration.automation_rules as a list of rule objects.
-    Each rule has the structure:
-    {
-        "id": "unique_id",
-        "name": "Rule Name",
-        "enabled": true,
-        "trigger": "on_story_create" | "on_story_update" | "on_status_change" | "on_task_complete" | etc.,
-        "conditions": [
-            {"field": "status", "operator": "equals", "value": "todo"},
-            {"field": "priority", "operator": "equals", "value": "high"}
-        ],
-        "actions": [
-            {"type": "set_status", "value": "in_progress"},
-            {"type": "assign_to", "value": "user_id"},
-            {"type": "add_tag", "value": "urgent"},
-            {"type": "set_field", "field": "priority", "value": "critical"}
-        ]
-    }
+    Automation rules can:
+    - Auto-assign based on conditions
+    - Auto-update fields
+    - Send notifications
+    - Create related items
+    - Update status based on conditions
     """
     
-    def __init__(self, project_config: ProjectConfiguration):
-        """Initialize with project configuration."""
-        self.config = project_config
-        self.rules = project_config.automation_rules or []
-    
-    def execute_on_story_create(self, story: UserStory) -> List[Dict[str, Any]]:
-        """Execute automation rules when a story is created."""
-        return self._execute_rules(
-            trigger='on_story_create',
-            story=story,
-            previous_data=None
-        )
-    
-    def execute_on_story_update(
-        self, 
-        story: UserStory, 
-        previous_data: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
-        """Execute automation rules when a story is updated."""
-        return self._execute_rules(
-            trigger='on_story_update',
-            story=story,
-            previous_data=previous_data
-        )
-    
-    def execute_on_status_change(
-        self, 
-        story: UserStory, 
-        old_status: str, 
-        new_status: str
-    ) -> List[Dict[str, Any]]:
-        """Execute automation rules when story status changes."""
-        previous_data = {'status': old_status} if old_status else None
-        return self._execute_rules(
-            trigger='on_status_change',
-            story=story,
-            previous_data=previous_data,
-            context={'old_status': old_status, 'new_status': new_status}
-        )
-    
-    def execute_on_task_complete(self, task: Task, story: UserStory) -> List[Dict[str, Any]]:
-        """Execute automation rules when a task is completed."""
-        return self._execute_rules(
-            trigger='on_task_complete',
-            story=story,
-            previous_data=None,
-            context={'task': task}
-        )
-    
-    def _execute_rules(
-        self,
-        trigger: str,
-        story: UserStory,
-        previous_data: Optional[Dict[str, Any]] = None,
-        context: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Execute all rules matching the trigger and conditions.
-        
-        Returns a list of execution results, each containing:
-        {
-            "rule_id": "rule_id",
-            "rule_name": "Rule Name",
-            "executed": true/false,
-            "actions_applied": [...],
-            "error": "error message" (if any)
-        }
-        """
-        results = []
-        context = context or {}
-        
-        # Filter rules by trigger and enabled status
-        matching_rules = [
-            rule for rule in self.rules
-            if rule.get('enabled', True) and rule.get('trigger') == trigger
-        ]
-        
-        if not matching_rules:
-            return results
-        
-        for rule in matching_rules:
+    def __init__(self, project: Optional[Project] = None):
+        """Initialize with optional project for project-specific rules."""
+        self.project = project
+        self.config = None
+        if project:
             try:
-                # Check if conditions are met
-                if not self._evaluate_conditions(rule.get('conditions', []), story, previous_data, context):
-                    results.append({
-                        'rule_id': rule.get('id'),
-                        'rule_name': rule.get('name', 'Unnamed Rule'),
-                        'executed': False,
-                        'reason': 'Conditions not met',
-                        'actions_applied': []
-                    })
-                    continue
-                
-                # Execute actions
-                actions_applied = self._execute_actions(
-                    rule.get('actions', []),
-                    story,
-                    context
-                )
-                
-                results.append({
-                    'rule_id': rule.get('id'),
-                    'rule_name': rule.get('name', 'Unnamed Rule'),
-                    'executed': True,
-                    'actions_applied': actions_applied
-                })
-                
-                logger.info(
-                    f"Automation rule '{rule.get('name')}' executed on story {story.id}. "
-                    f"Actions applied: {len(actions_applied)}"
-                )
-                
-            except Exception as e:
-                logger.error(
-                    f"Error executing automation rule '{rule.get('name', 'Unknown')}': {e}",
-                    exc_info=True
-                )
-                results.append({
-                    'rule_id': rule.get('id'),
-                    'rule_name': rule.get('name', 'Unnamed Rule'),
-                    'executed': False,
-                    'error': str(e),
-                    'actions_applied': []
-                })
-        
-        return results
+                self.config = project.configuration
+            except ProjectConfiguration.DoesNotExist:
+                logger.warning(f"No configuration found for project {project.id}")
     
-    def _evaluate_conditions(
+    def _get_automation_rules(self) -> List[Dict[str, Any]]:
+        """Get automation rules from project configuration."""
+        if not self.config or not self.config.automation_rules:
+            return []
+        return self.config.automation_rules or []
+    
+    def execute_rules_for_status_change(
         self,
-        conditions: List[Dict[str, Any]],
-        story: UserStory,
-        previous_data: Optional[Dict[str, Any]],
-        context: Dict[str, Any]
-    ) -> bool:
+        item: Any,  # UserStory, Task, Bug, or Issue
+        old_status: str,
+        new_status: str,
+        user: Optional[User] = None
+    ) -> List[Dict[str, Any]]:
         """
-        Evaluate if all conditions are met.
+        Execute automation rules triggered by status changes.
         
-        Conditions are AND-ed together (all must be true).
-        """
-        if not conditions:
-            return True  # No conditions means always execute
-        
-        for condition in conditions:
-            field = condition.get('field')
-            operator = condition.get('operator', 'equals')
-            value = condition.get('value')
+        Args:
+            item: The work item (UserStory, Task, Bug, or Issue)
+            old_status: Previous status
+            new_status: New status
+            user: User who made the change (optional)
             
-            if not field:
+        Returns:
+            List of executed actions with results
+        """
+        if old_status == new_status:
+            return []
+        
+        rules = self._get_automation_rules()
+        executed_actions = []
+        
+        for rule in rules:
+            if not rule.get('enabled', True):
                 continue
             
-            # Get current field value
-            current_value = self._get_field_value(story, field, context)
+            trigger = rule.get('trigger', {})
+            trigger_type = trigger.get('type')
             
-            # Evaluate condition
-            if not self._evaluate_condition(current_value, operator, value):
-                return False
+            # Check if this rule applies to status change
+            if trigger_type == 'status_change':
+                trigger_statuses = trigger.get('statuses', [])
+                trigger_from = trigger.get('from')
+                trigger_to = trigger.get('to')
+                
+                # Check if this status change matches the trigger
+                matches = False
+                if trigger_from and trigger_to:
+                    matches = (old_status == trigger_from and new_status == trigger_to)
+                elif trigger_from:
+                    matches = (old_status == trigger_from)
+                elif trigger_to:
+                    matches = (new_status == trigger_to)
+                elif trigger_statuses:
+                    matches = (old_status in trigger_statuses or new_status in trigger_statuses)
+                
+                if matches:
+                    actions = rule.get('actions', [])
+                    for action in actions:
+                        result = self._execute_action(item, action, user)
+                        if result:
+                            executed_actions.append(result)
         
-        return True
+        return executed_actions
     
-    def _get_field_value(
+    def execute_rules_for_field_update(
         self,
-        story: UserStory,
-        field: str,
-        context: Dict[str, Any]
-    ) -> Any:
-        """Get the value of a field from story or context."""
-        # Handle nested fields (e.g., "epic.title")
-        if '.' in field:
-            parts = field.split('.')
-            obj = story
-            for part in parts:
-                if hasattr(obj, part):
-                    obj = getattr(obj, part)
-                elif isinstance(obj, dict):
-                    obj = obj.get(part)
-                else:
-                    return None
-            return obj
-        
-        # Direct field access
-        if hasattr(story, field):
-            return getattr(story, field)
-        
-        # Context values
-        if field in context:
-            return context[field]
-        
-        # Special fields
-        if field == 'has_tasks':
-            return story.tasks.exists()
-        
-        if field == 'all_tasks_complete':
-            tasks = story.tasks.all()
-            return tasks.exists() and all(task.status == 'done' for task in tasks)
-        
-        if field == 'has_unresolved_dependencies':
-            from apps.projects.models import StoryDependency
-            return StoryDependency.objects.filter(
-                source_story=story,
-                resolved=False
-            ).exists()
-        
-        return None
-    
-    def _evaluate_condition(self, current_value: Any, operator: str, expected_value: Any) -> bool:
-        """Evaluate a single condition."""
-        if operator == 'equals':
-            return current_value == expected_value
-        elif operator == 'not_equals':
-            return current_value != expected_value
-        elif operator == 'contains':
-            if isinstance(current_value, (list, str)):
-                return expected_value in current_value
-            return False
-        elif operator == 'not_contains':
-            if isinstance(current_value, (list, str)):
-                return expected_value not in current_value
-            return True
-        elif operator == 'in':
-            if isinstance(expected_value, list):
-                return current_value in expected_value
-            return False
-        elif operator == 'not_in':
-            if isinstance(expected_value, list):
-                return current_value not in expected_value
-            return True
-        elif operator == 'greater_than':
-            try:
-                return float(current_value) > float(expected_value)
-            except (ValueError, TypeError):
-                return False
-        elif operator == 'less_than':
-            try:
-                return float(current_value) < float(expected_value)
-            except (ValueError, TypeError):
-                return False
-        elif operator == 'is_empty':
-            return not current_value or (isinstance(current_value, (list, str)) and len(current_value) == 0)
-        elif operator == 'is_not_empty':
-            return current_value and (not isinstance(current_value, (list, str)) or len(current_value) > 0)
-        else:
-            logger.warning(f"Unknown operator: {operator}")
-            return False
-    
-    @transaction.atomic
-    def _execute_actions(
-        self,
-        actions: List[Dict[str, Any]],
-        story: UserStory,
-        context: Dict[str, Any]
+        item: Any,
+        field_name: str,
+        old_value: Any,
+        new_value: Any,
+        user: Optional[User] = None
     ) -> List[Dict[str, Any]]:
         """
-        Execute a list of actions on a story.
+        Execute automation rules triggered by field updates.
         
-        Returns a list of applied actions with their results.
+        Args:
+            item: The work item
+            field_name: Name of the field that changed
+            old_value: Previous value
+            new_value: New value
+            user: User who made the change (optional)
+            
+        Returns:
+            List of executed actions with results
         """
-        applied = []
+        if old_value == new_value:
+            return []
         
-        for action in actions:
-            action_type = action.get('type')
-            if not action_type:
+        rules = self._get_automation_rules()
+        executed_actions = []
+        
+        for rule in rules:
+            if not rule.get('enabled', True):
                 continue
             
-            try:
-                result = self._execute_action(action, story, context)
-                applied.append({
-                    'type': action_type,
-                    'success': result.get('success', False),
-                    'message': result.get('message', ''),
-                    'value': action.get('value')
-                })
-            except Exception as e:
-                logger.error(f"Error executing action {action_type}: {e}", exc_info=True)
-                applied.append({
-                    'type': action_type,
-                    'success': False,
-                    'error': str(e),
-                    'value': action.get('value')
-                })
+            trigger = rule.get('trigger', {})
+            trigger_type = trigger.get('type')
+            
+            # Check if this rule applies to field update
+            if trigger_type == 'field_update':
+                trigger_field = trigger.get('field')
+                trigger_conditions = trigger.get('conditions', {})
+                
+                if trigger_field == field_name:
+                    # Check conditions
+                    matches = True
+                    if trigger_conditions:
+                        # Check if new_value matches conditions
+                        if 'equals' in trigger_conditions:
+                            matches = matches and (new_value == trigger_conditions['equals'])
+                        if 'not_equals' in trigger_conditions:
+                            matches = matches and (new_value != trigger_conditions['not_equals'])
+                        if 'contains' in trigger_conditions:
+                            if isinstance(new_value, str):
+                                matches = matches and (trigger_conditions['contains'] in new_value)
+                    
+                    if matches:
+                        actions = rule.get('actions', [])
+                        for action in actions:
+                            result = self._execute_action(item, action, user)
+                            if result:
+                                executed_actions.append(result)
         
-        # Save story if any actions were applied
-        if applied:
-            story.save()
-        
-        return applied
+        return executed_actions
     
     def _execute_action(
         self,
+        item: Any,
         action: Dict[str, Any],
-        story: UserStory,
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute a single action."""
+        user: Optional[User] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Execute a single automation action.
+        
+        Args:
+            item: The work item
+            action: Action configuration
+            user: User who triggered the action (optional)
+            
+        Returns:
+            Result dictionary or None if action failed
+        """
         action_type = action.get('type')
-        value = action.get('value')
         
-        if action_type == 'set_status':
-            story.status = value
-            return {'success': True, 'message': f'Status set to {value}'}
+        try:
+            if action_type == 'assign':
+                return self._action_assign(item, action, user)
+            elif action_type == 'update_field':
+                return self._action_update_field(item, action, user)
+            elif action_type == 'update_status':
+                return self._action_update_status(item, action, user)
+            elif action_type == 'add_label':
+                return self._action_add_label(item, action, user)
+            elif action_type == 'add_tag':
+                return self._action_add_tag(item, action, user)
+            elif action_type == 'notify':
+                return self._action_notify(item, action, user)
+            else:
+                logger.warning(f"Unknown action type: {action_type}")
+                return None
+        except Exception as e:
+            logger.error(f"Error executing action {action_type}: {str(e)}", exc_info=True)
+            return None
+    
+    def _action_assign(
+        self,
+        item: Any,
+        action: Dict[str, Any],
+        user: Optional[User] = None
+    ) -> Dict[str, Any]:
+        """Assign item to a user."""
+        assign_to = action.get('assign_to')
+        if not assign_to:
+            return {'type': 'assign', 'success': False, 'error': 'No assign_to specified'}
         
-        elif action_type == 'assign_to':
-            from apps.authentication.models import User
+        # assign_to can be a user ID, email, or role
+        if isinstance(assign_to, str):
+            # Try to find user by email or ID
             try:
-                if isinstance(value, str):
-                    user = User.objects.get(id=value)
-                else:
-                    user = User.objects.get(id=value)
-                story.assigned_to = user
-                return {'success': True, 'message': f'Assigned to {user.email}'}
+                target_user = User.objects.get(email=assign_to)
             except User.DoesNotExist:
-                return {'success': False, 'message': f'User {value} not found'}
-        
-        elif action_type == 'add_tag':
-            tags = story.tags or []
-            if value not in tags:
-                tags.append(value)
-                story.tags = tags
-                return {'success': True, 'message': f'Tag {value} added'}
-            return {'success': True, 'message': f'Tag {value} already exists'}
-        
-        elif action_type == 'remove_tag':
-            tags = story.tags or []
-            if value in tags:
-                tags.remove(value)
-                story.tags = tags
-                return {'success': True, 'message': f'Tag {value} removed'}
-            return {'success': True, 'message': f'Tag {value} not found'}
-        
-        elif action_type == 'set_field':
-            field = action.get('field')
-            if field and hasattr(story, field):
-                setattr(story, field, value)
-                return {'success': True, 'message': f'Field {field} set to {value}'}
-            return {'success': False, 'message': f'Field {field} not found or not settable'}
-        
-        elif action_type == 'add_to_sprint':
-            try:
-                sprint = Sprint.objects.get(id=value, project=story.project)
-                story.sprint = sprint
-                return {'success': True, 'message': f'Added to sprint {sprint.name}'}
-            except Sprint.DoesNotExist:
-                return {'success': False, 'message': f'Sprint {value} not found'}
-        
-        elif action_type == 'set_priority':
-            if value in ['low', 'medium', 'high', 'critical']:
-                story.priority = value
-                return {'success': True, 'message': f'Priority set to {value}'}
-            return {'success': False, 'message': f'Invalid priority: {value}'}
-        
-        elif action_type == 'set_story_points':
-            try:
-                points = int(value)
-                story.story_points = points
-                return {'success': True, 'message': f'Story points set to {points}'}
-            except (ValueError, TypeError):
-                return {'success': False, 'message': f'Invalid story points: {value}'}
-        
-        elif action_type == 'notify_users':
-            # Trigger notifications via notification service
-            try:
-                from .notifications import get_notification_service
-                notification_service = get_notification_service(story.project)
-                
-                # value can be a list of user IDs or 'all'
-                if value == 'all' or value is None:
-                    # Notify all relevant users (assignee, watchers, etc.)
-                    notifications = notification_service.notify_automation_triggered(
-                        story,
-                        context.get('rule_name', 'Unknown Rule'),
-                        [{'type': action_type, 'value': value}]
-                    )
-                    return {'success': True, 'message': f'{len(notifications)} notifications sent'}
-                else:
-                    # Notify specific users
-                    from apps.authentication.models import User
-                    if isinstance(value, list):
-                        users = User.objects.filter(id__in=value)
-                    else:
-                        users = [User.objects.get(id=value)]
-                    
-                    notifications = []
-                    for user in users:
-                        notif = notification_service.notify_automation_triggered(
-                            story,
-                            context.get('rule_name', 'Unknown Rule'),
-                            [{'type': action_type, 'value': str(user.id)}]
-                        )
-                        notifications.extend(notif)
-                    
-                    return {'success': True, 'message': f'{len(notifications)} notifications sent'}
-            except Exception as e:
-                logger.error(f"Error sending automation notification: {e}", exc_info=True)
-                return {'success': False, 'message': f'Error sending notification: {str(e)}'}
-        
+                try:
+                    target_user = User.objects.get(id=assign_to)
+                except (User.DoesNotExist, ValueError):
+                    return {'type': 'assign', 'success': False, 'error': f'User not found: {assign_to}'}
         else:
-            logger.warning(f"Unknown action type: {action_type}")
-            return {'success': False, 'message': f'Unknown action type: {action_type}'}
+            target_user = assign_to
+        
+        item.assigned_to = target_user
+        item.save(update_fields=['assigned_to', 'updated_at'])
+        
+        return {'type': 'assign', 'success': True, 'assigned_to': target_user.id}
+    
+    def _action_update_field(
+        self,
+        item: Any,
+        action: Dict[str, Any],
+        user: Optional[User] = None
+    ) -> Dict[str, Any]:
+        """Update a field on the item."""
+        field_name = action.get('field')
+        field_value = action.get('value')
+        
+        if not field_name:
+            return {'type': 'update_field', 'success': False, 'error': 'No field specified'}
+        
+        if not hasattr(item, field_name):
+            return {'type': 'update_field', 'success': False, 'error': f'Field not found: {field_name}'}
+        
+        setattr(item, field_name, field_value)
+        item.save(update_fields=[field_name, 'updated_at'])
+        
+        return {'type': 'update_field', 'success': True, 'field': field_name, 'value': field_value}
+    
+    def _action_update_status(
+        self,
+        item: Any,
+        action: Dict[str, Any],
+        user: Optional[User] = None
+    ) -> Dict[str, Any]:
+        """Update item status."""
+        new_status = action.get('status')
+        
+        if not new_status:
+            return {'type': 'update_status', 'success': False, 'error': 'No status specified'}
+        
+        item.status = new_status
+        item.save(update_fields=['status', 'updated_at'])
+        
+        return {'type': 'update_status', 'success': True, 'status': new_status}
+    
+    def _action_add_label(
+        self,
+        item: Any,
+        action: Dict[str, Any],
+        user: Optional[User] = None
+    ) -> Dict[str, Any]:
+        """Add a label to the item."""
+        label_name = action.get('label')
+        label_color = action.get('color', '#808080')
+        
+        if not label_name:
+            return {'type': 'add_label', 'success': False, 'error': 'No label specified'}
+        
+        # Get current labels
+        labels = getattr(item, 'labels', []) or []
+        if not isinstance(labels, list):
+            labels = []
+        
+        # Check if label already exists
+        if not any(l.get('name') == label_name for l in labels):
+            labels.append({'name': label_name, 'color': label_color})
+            item.labels = labels
+            item.save(update_fields=['labels', 'updated_at'])
+        
+        return {'type': 'add_label', 'success': True, 'label': label_name}
+    
+    def _action_add_tag(
+        self,
+        item: Any,
+        action: Dict[str, Any],
+        user: Optional[User] = None
+    ) -> Dict[str, Any]:
+        """Add a tag to the item."""
+        tag = action.get('tag')
+        
+        if not tag:
+            return {'type': 'add_tag', 'success': False, 'error': 'No tag specified'}
+        
+        # Get current tags
+        tags = getattr(item, 'tags', []) or []
+        if not isinstance(tags, list):
+            tags = []
+        
+        # Add tag if not already present
+        if tag not in tags:
+            tags.append(tag)
+            item.tags = tags
+            item.save(update_fields=['tags', 'updated_at'])
+        
+        return {'type': 'add_tag', 'success': True, 'tag': tag}
+    
+    def _action_notify(
+        self,
+        item: Any,
+        action: Dict[str, Any],
+        user: Optional[User] = None
+    ) -> Dict[str, Any]:
+        """Send a notification using the notification service."""
+        try:
+            from apps.projects.services.notifications import NotificationService
+            
+            notification_type = action.get('notification_type', 'status_change')
+            recipients = action.get('recipients', [])
+            message = action.get('message', '')
+            
+            # Get project for notification settings
+            project = None
+            if hasattr(item, 'project'):
+                project = item.project
+            elif hasattr(item, 'story') and item.story:
+                project = item.story.project
+            
+            notification_service = NotificationService(project)
+            
+            # Check notification settings from project configuration
+            if project and self.config:
+                notification_settings = self.config.notification_settings or {}
+                
+                # Check if email notifications are enabled
+                if notification_type == 'email' and not notification_settings.get('email_enabled', True):
+                    return {'type': 'notify', 'success': False, 'note': 'Email notifications disabled'}
+                
+                # Check if in-app notifications are enabled
+                if notification_type == 'in_app' and not notification_settings.get('in_app_enabled', True):
+                    return {'type': 'notify', 'success': False, 'note': 'In-app notifications disabled'}
+            
+            # Convert recipient IDs/emails to User objects if needed
+            user_recipients = []
+            for recipient in recipients:
+                if isinstance(recipient, User):
+                    user_recipients.append(recipient)
+                elif isinstance(recipient, str):
+                    # Try to find user by ID or email
+                    try:
+                        if '@' in recipient:
+                            user_obj = User.objects.get(email=recipient)
+                        else:
+                            user_obj = User.objects.get(id=recipient)
+                        user_recipients.append(user_obj)
+                    except User.DoesNotExist:
+                        logger.warning(f"Recipient not found: {recipient}")
+                else:
+                    logger.warning(f"Invalid recipient type: {type(recipient)}")
+            
+            if not user_recipients:
+                return {'type': 'notify', 'success': False, 'error': 'No valid recipients'}
+            
+            # Send notification
+            result = notification_service.send_notification(
+                item=item,
+                notification_type=notification_type,
+                recipients=user_recipients,
+                message=message,
+                user=user
+            )
+            
+            return {'type': 'notify', 'success': True, 'result': result, 'notifications_created': len(result)}
+        except Exception as e:
+            logger.error(f"Error sending notification: {str(e)}", exc_info=True)
+            return {'type': 'notify', 'success': False, 'error': str(e)}
 
 
 def execute_automation_rules(
-    trigger: str,
-    story: UserStory,
-    previous_data: Optional[Dict[str, Any]] = None,
+    trigger_type: str,
+    item: Any,  # UserStory, Task, Bug, or Issue
     context: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Convenience function to execute automation rules for a story.
+    Convenience function to execute automation rules for a given trigger.
     
-    Usage:
-        execute_automation_rules('on_story_create', story)
-        execute_automation_rules('on_status_change', story, context={'old_status': 'todo', 'new_status': 'in_progress'})
+    This function provides a simple interface for signals and other code to
+    execute automation rules without needing to instantiate AutomationService.
+    
+    Args:
+        trigger_type: Type of trigger ('on_story_create', 'on_status_change', 
+                      'on_story_update', 'on_task_complete', etc.)
+        item: The work item (UserStory, Task, Bug, or Issue)
+        context: Optional context dictionary with additional information
+                 (e.g., {'old_status': 'todo', 'new_status': 'in_progress'})
+    
+    Returns:
+        List of executed actions with results
     """
+    context = context or {}
+    
+    # Get project from item
+    project = None
+    if hasattr(item, 'project'):
+        project = item.project
+    elif hasattr(item, 'story') and item.story:
+        project = item.story.project
+    
+    if not project:
+        logger.warning(f"Cannot execute automation rules: item has no project")
+        return []
+    
+    service = AutomationService(project)
+    executed_actions = []
+    
     try:
-        config = story.project.configuration
-        engine = AutomationEngine(config)
+        if trigger_type == 'on_story_create':
+            # Execute rules for story creation
+            # This would need a method in AutomationService for creation triggers
+            # For now, we'll check for status_change rules that trigger on creation
+            rules = service._get_automation_rules()
+            for rule in rules:
+                if not rule.get('enabled', True):
+                    continue
+                trigger = rule.get('trigger', {})
+                if trigger.get('type') == 'on_create':
+                    actions = rule.get('actions', [])
+                    for action in actions:
+                        result = service._execute_action(item, action, None)
+                        if result:
+                            executed_actions.append(result)
         
-        if trigger == 'on_story_create':
-            return engine.execute_on_story_create(story)
-        elif trigger == 'on_story_update':
-            return engine.execute_on_story_update(story, previous_data)
-        elif trigger == 'on_status_change':
-            old_status = context.get('old_status') if context else None
-            new_status = context.get('new_status') if context else None
-            return engine.execute_on_status_change(story, old_status, new_status)
+        elif trigger_type == 'on_status_change':
+            # Execute rules for status change
+            old_status = context.get('old_status')
+            new_status = context.get('new_status')
+            if old_status and new_status:
+                executed_actions = service.execute_rules_for_status_change(
+                    item, old_status, new_status, None
+                )
+        
+        elif trigger_type == 'on_story_update':
+            # Execute rules for story update
+            # Check for field update triggers
+            previous_state = context.get('previous_state', {})
+            current_status = getattr(item, 'status', None)
+            previous_status = previous_state.get('status')
+            
+            if previous_status and current_status and previous_status != current_status:
+                executed_actions = service.execute_rules_for_status_change(
+                    item, previous_status, current_status, None
+                )
+            
+            # Check for assignee changes
+            current_assignee = getattr(item, 'assigned_to_id', None)
+            previous_assignee = previous_state.get('assigned_to')
+            if previous_assignee != current_assignee:
+                executed_actions.extend(service.execute_rules_for_field_update(
+                    item, 'assigned_to', previous_assignee, current_assignee, None
+                ))
+        
+        elif trigger_type == 'on_task_complete':
+            # Execute rules for task completion
+            task = context.get('task')
+            if task and hasattr(item, 'status'):
+                # Check if all tasks are complete and update story status
+                rules = service._get_automation_rules()
+                for rule in rules:
+                    if not rule.get('enabled', True):
+                        continue
+                    trigger = rule.get('trigger', {})
+                    if trigger.get('type') == 'on_task_complete':
+                        actions = rule.get('actions', [])
+                        for action in actions:
+                            result = service._execute_action(item, action, None)
+                            if result:
+                                executed_actions.append(result)
+        
         else:
-            return engine._execute_rules(trigger, story, previous_data, context or {})
-    except ProjectConfiguration.DoesNotExist:
-        logger.warning(f"No configuration found for project {story.project.id}")
-        return []
+            logger.warning(f"Unknown trigger type: {trigger_type}")
+    
     except Exception as e:
-        logger.error(f"Error executing automation rules: {e}", exc_info=True)
-        return []
-
+        logger.error(f"Error executing automation rules for {trigger_type}: {str(e)}", exc_info=True)
+    
+    return executed_actions

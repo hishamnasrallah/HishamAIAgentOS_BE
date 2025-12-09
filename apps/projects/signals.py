@@ -5,7 +5,7 @@ Django signals for Project Management app.
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
-from .models import Project, ProjectConfiguration, UserStory, Mention, StoryComment, Task
+from .models import Project, ProjectConfiguration, UserStory, Mention, StoryComment, Task, Epic
 from .services.automation import execute_automation_rules
 from .services.notifications import get_notification_service
 import logging
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Store previous state for status change detection
 _story_previous_state = {}
+_epic_previous_state = {}
 
 
 @receiver(post_save, sender=Project)
@@ -298,6 +299,74 @@ def extract_comment_mentions(sender, instance, created, **kwargs):
         
     except Exception as e:
         logger.error(f"Error extracting mentions from comment {instance.id}: {e}", exc_info=True)
+
+
+@receiver(pre_save, sender=Epic)
+def store_epic_previous_state(sender, instance, **kwargs):
+    """Store previous state of epic before save to detect owner changes."""
+    if instance.pk:
+        try:
+            old_instance = Epic.objects.get(pk=instance.pk)
+            _epic_previous_state[instance.pk] = {
+                'owner': old_instance.owner_id,
+                'status': old_instance.status,
+            }
+        except Epic.DoesNotExist:
+            pass
+
+
+@receiver(post_save, sender=Epic)
+def handle_epic_owner_assignment(sender, instance, created, **kwargs):
+    """
+    Send notification when epic owner is assigned or changed.
+    """
+    try:
+        previous_state = _epic_previous_state.get(instance.pk, {})
+        old_owner_id = previous_state.get('owner')
+        new_owner_id = instance.owner_id if instance.owner else None
+        
+        # Only send notification if owner changed and new owner exists
+        if new_owner_id and new_owner_id != old_owner_id:
+            notification_service = get_notification_service(instance.project)
+            
+            # Get current user (who made the change)
+            current_user = None
+            try:
+                from apps.monitoring.middleware import _thread_locals
+                if hasattr(_thread_locals, 'user'):
+                    current_user = getattr(_thread_locals, 'user', None)
+                    if current_user and hasattr(current_user, 'is_authenticated') and not current_user.is_authenticated:
+                        current_user = None
+            except Exception:
+                pass
+            
+            if not current_user and hasattr(instance, 'updated_by') and instance.updated_by:
+                current_user = instance.updated_by
+            elif not current_user and hasattr(instance, 'created_by') and instance.created_by:
+                current_user = instance.created_by
+            
+            # Get old owner if exists
+            old_owner = None
+            if old_owner_id:
+                try:
+                    old_owner = User.objects.get(id=old_owner_id)
+                except User.DoesNotExist:
+                    pass
+            
+            # Send notification to new owner
+            if instance.owner:
+                try:
+                    notification_service.notify_epic_owner_assignment(
+                        epic=instance,
+                        old_owner=old_owner,
+                        new_owner=instance.owner,
+                        assigned_by=current_user or instance.owner
+                    )
+                    logger.info(f"Sent owner assignment notification for epic {instance.id} to {instance.owner.email}")
+                except Exception as e:
+                    logger.error(f"Error sending epic owner assignment notification: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"Error handling epic owner assignment for epic {instance.id}: {e}", exc_info=True)
 
 
 @receiver(post_save, sender=Task)

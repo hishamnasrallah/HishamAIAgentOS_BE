@@ -13,7 +13,9 @@ from apps.projects.models import (
     Project,
     ProjectConfiguration,
     UserStory,
-    Task
+    Task,
+    Bug,
+    Issue
 )
 
 User = get_user_model()
@@ -143,17 +145,24 @@ class ValidationRuleEnforcementService:
                 errors.append(f"Description must be at least {min_length} characters long")
         
         # Check story points against scale
-        if self.config and story_data.get('story_points'):
+        if self.config and story_data.get('story_points') is not None:
             points = story_data['story_points']
             scale = self.config.story_point_scale or []
             if scale and points not in scale:
-                warnings.append(
-                    f"Story points ({points}) not in allowed scale: {scale}"
+                errors.append(
+                    f"Story points ({points}) must be one of the allowed values: {scale}"
+                )
+            
+            # Check min story points
+            min_points = self.config.min_story_points_per_story
+            if min_points is not None and points < min_points:
+                errors.append(
+                    f"Story points ({points}) must be at least {min_points}"
                 )
             
             # Check max story points
             max_points = self.config.max_story_points_per_story
-            if points > max_points:
+            if max_points is not None and points > max_points:
                 errors.append(
                     f"Story points ({points}) exceed maximum allowed ({max_points})"
                 )
@@ -192,18 +201,27 @@ class ValidationRuleEnforcementService:
         # Check story points
         if 'story_points' in updated_data and self.config:
             points = updated_data['story_points']
-            scale = self.config.story_point_scale or []
-            if scale and points not in scale:
-                warnings.append(
-                    f"Story points ({points}) not in allowed scale: {scale}"
-                )
-            
-            # Check max story points
-            max_points = self.config.max_story_points_per_story
-            if points > max_points:
-                errors.append(
-                    f"Story points ({points}) exceed maximum allowed ({max_points})"
-                )
+            # Skip validation if points is None (optional field)
+            if points is not None:
+                scale = self.config.story_point_scale or []
+                if scale and points not in scale:
+                    errors.append(
+                        f"Story points ({points}) must be one of the allowed values: {scale}"
+                    )
+                
+                # Check min story points
+                min_points = self.config.min_story_points_per_story
+                if min_points is not None and points < min_points:
+                    errors.append(
+                        f"Story points ({points}) must be at least {min_points}"
+                    )
+                
+                # Check max story points
+                max_points = self.config.max_story_points_per_story
+                if max_points is not None and points > max_points:
+                    errors.append(
+                        f"Story points ({points}) exceed maximum allowed ({max_points})"
+                    )
         
         # Check description length if being updated
         if 'description' in updated_data:
@@ -246,6 +264,102 @@ class ValidationRuleEnforcementService:
                 return False, f"Sprint capacity exceeded: {total_points} story points (max: {max_points})"
         
         return True, None
+    
+    def validate_bug_before_status_change(
+        self,
+        bug: Bug,
+        new_status: str,
+        old_status: Optional[str] = None
+    ) -> Tuple[bool, Optional[str], List[str]]:
+        """
+        Validate bug before status change.
+        
+        Returns: (is_valid, error_message, warnings)
+        """
+        errors = []
+        warnings = []
+        
+        # Check if moving to 'in_progress'
+        if new_status == 'in_progress' and old_status != 'in_progress':
+            # Check assignee requirement
+            if self._get_validation_rule('require_assignee_before_in_progress'):
+                if not bug.assigned_to:
+                    errors.append("An assignee is required before moving to 'In Progress'")
+        
+        # Check description length
+        min_length = self._get_validation_rule('require_description_min_length')
+        if min_length and min_length > 0:
+            if not bug.description or len(bug.description.strip()) < min_length:
+                errors.append(f"Description must be at least {min_length} characters long")
+        
+        if errors:
+            return False, '; '.join(errors), warnings
+        
+        return True, None, warnings
+    
+    def validate_issue_before_status_change(
+        self,
+        issue: Issue,
+        new_status: str,
+        old_status: Optional[str] = None
+    ) -> Tuple[bool, Optional[str], List[str]]:
+        """
+        Validate issue before status change.
+        
+        Returns: (is_valid, error_message, warnings)
+        """
+        errors = []
+        warnings = []
+        
+        # Check if moving to 'in_progress'
+        if new_status == 'in_progress' and old_status != 'in_progress':
+            # Check assignee requirement
+            if self._get_validation_rule('require_assignee_before_in_progress'):
+                if not issue.assigned_to:
+                    errors.append("An assignee is required before moving to 'In Progress'")
+        
+        # Check description length
+        min_length = self._get_validation_rule('require_description_min_length')
+        if min_length and min_length > 0:
+            if not issue.description or len(issue.description.strip()) < min_length:
+                errors.append(f"Description must be at least {min_length} characters long")
+        
+        if errors:
+            return False, '; '.join(errors), warnings
+        
+        return True, None, warnings
+    
+    def validate_task_before_status_change(
+        self,
+        task: Task,
+        new_status: str,
+        old_status: Optional[str] = None
+    ) -> Tuple[bool, Optional[str], List[str]]:
+        """
+        Validate task before status change.
+        
+        Returns: (is_valid, error_message, warnings)
+        """
+        errors = []
+        warnings = []
+        
+        # Check if moving to 'in_progress'
+        if new_status == 'in_progress' and old_status != 'in_progress':
+            # Check assignee requirement
+            if self._get_validation_rule('require_assignee_before_in_progress'):
+                if not task.assigned_to:
+                    errors.append("An assignee is required before moving to 'In Progress'")
+        
+        # Check description length
+        min_length = self._get_validation_rule('require_description_min_length')
+        if min_length and min_length > 0:
+            if not task.description or len(task.description.strip()) < min_length:
+                errors.append(f"Description must be at least {min_length} characters long")
+        
+        if errors:
+            return False, '; '.join(errors), warnings
+        
+        return True, None, warnings
 
 
 def get_validation_service(project: Optional[Project] = None) -> ValidationRuleEnforcementService:
