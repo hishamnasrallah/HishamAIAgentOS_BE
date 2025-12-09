@@ -13,6 +13,52 @@ from apps.projects.models import (
 Story = UserStory
 
 
+def validate_state_transition(project, old_status: str, new_status: str) -> None:
+    """
+    Validate that a state transition is allowed according to project configuration.
+    
+    Args:
+        project: Project instance
+        old_status: Current status
+        new_status: Desired new status
+        
+    Raises:
+        serializers.ValidationError: If transition is not allowed
+    """
+    if not project or not old_status or not new_status or old_status == new_status:
+        return  # No transition or no project
+    
+    try:
+        config = project.configuration
+        if not config or not config.state_transitions:
+            return  # No configuration or no transitions defined, allow all
+        
+        transitions = config.state_transitions
+        allowed_transitions = transitions.get(old_status, [])
+        
+        # If transitions are defined for the old status, new status must be in the list
+        if allowed_transitions and new_status not in allowed_transitions:
+            # Check if new_status is a final state (always allowed)
+            if config.custom_states:
+                new_state_config = next(
+                    (s for s in config.custom_states if s.get('id') == new_status),
+                    None
+                )
+                if new_state_config and new_state_config.get('is_final'):
+                    return  # Final states are always allowed
+            
+            # Check if old_status allows all transitions (empty list means all allowed)
+            if allowed_transitions == []:
+                return  # Empty list means all transitions allowed
+            
+            raise serializers.ValidationError(
+                f"Cannot transition from '{old_status}' to '{new_status}'. "
+                f"Allowed transitions from '{old_status}': {', '.join(allowed_transitions) if allowed_transitions else 'none'}"
+            )
+    except ProjectConfiguration.DoesNotExist:
+        pass  # No configuration, allow transition
+
+
 class ProjectSerializer(serializers.ModelSerializer):
     """Project serializer."""
     
