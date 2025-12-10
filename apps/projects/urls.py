@@ -8,7 +8,11 @@ from .views import (
     ProjectViewSet, SprintViewSet, UserStoryViewSet, TaskViewSet, EpicViewSet, BugViewSet, IssueViewSet, TimeLogViewSet,
     WatcherViewSet, ProjectConfigurationViewSet, MentionViewSet, StoryCommentViewSet,
     StoryDependencyViewSet, StoryAttachmentViewSet, NotificationViewSet, ActivityViewSet, EditHistoryViewSet,
-    SearchViewSet, SavedSearchViewSet, StatusChangeApprovalViewSet
+    SearchViewSet, SavedSearchViewSet, StatusChangeApprovalViewSet, StatisticsViewSet, ProjectLabelPresetViewSet,
+    MilestoneViewSet, TicketReferenceViewSet, StoryLinkViewSet, CardTemplateViewSet, BoardTemplateViewSet,
+    SearchHistoryViewSet, FilterPresetViewSet, TimeBudgetViewSet, OvertimeRecordViewSet, QuickFiltersViewSet,
+    CardCoverImageViewSet, CardChecklistViewSet, CardVoteViewSet, StoryArchiveViewSet, StoryVersionViewSet,
+    WebhookViewSet, StoryCloneViewSet, GitHubIntegrationViewSet, JiraIntegrationViewSet, SlackIntegrationViewSet
 )
 
 # Create router for nested resources
@@ -32,6 +36,28 @@ router.register(r'edit-history', EditHistoryViewSet, basename='edithistory')
 router.register(r'search', SearchViewSet, basename='search')
 router.register(r'saved-searches', SavedSearchViewSet, basename='savedsearch')
 router.register(r'status-change-approvals', StatusChangeApprovalViewSet, basename='statuschangeapproval')
+router.register(r'statistics', StatisticsViewSet, basename='statistics')
+router.register(r'label-presets', ProjectLabelPresetViewSet, basename='labelpreset')
+router.register(r'milestones', MilestoneViewSet, basename='milestone')
+router.register(r'ticket-references', TicketReferenceViewSet, basename='ticketreference')
+router.register(r'story-links', StoryLinkViewSet, basename='storylink')
+router.register(r'card-templates', CardTemplateViewSet, basename='cardtemplate')
+router.register(r'board-templates', BoardTemplateViewSet, basename='boardtemplate')
+router.register(r'search-history', SearchHistoryViewSet, basename='searchhistory')
+router.register(r'filter-presets', FilterPresetViewSet, basename='filterpreset')
+router.register(r'time-budgets', TimeBudgetViewSet, basename='timebudget')
+router.register(r'overtime-records', OvertimeRecordViewSet, basename='overtimerecord')
+router.register(r'quick-filters', QuickFiltersViewSet, basename='quickfilters')
+router.register(r'card-cover-images', CardCoverImageViewSet, basename='cardcoverimage')
+router.register(r'card-checklists', CardChecklistViewSet, basename='cardchecklist')
+router.register(r'card-votes', CardVoteViewSet, basename='cardvote')
+router.register(r'story-archives', StoryArchiveViewSet, basename='storyarchive')
+router.register(r'story-versions', StoryVersionViewSet, basename='storyversion')
+router.register(r'webhooks', WebhookViewSet, basename='webhook')
+router.register(r'story-clones', StoryCloneViewSet, basename='storyclone')
+router.register(r'github-integrations', GitHubIntegrationViewSet, basename='githubintegration')
+router.register(r'jira-integrations', JiraIntegrationViewSet, basename='jiraintegration')
+router.register(r'slack-integrations', SlackIntegrationViewSet, basename='slackintegration')
 
 # Create explicit URL patterns for projects to avoid conflicts
 urlpatterns = [

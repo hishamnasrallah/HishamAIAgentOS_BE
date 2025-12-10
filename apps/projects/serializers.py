@@ -5,13 +5,103 @@ Serializers for AI Project Management endpoints.
 """
 
 from rest_framework import serializers
+import re
 from apps.projects.models import (
     Project, Sprint, UserStory, Epic, Task, Bug, Issue, TimeLog, ProjectConfiguration, 
     Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch,
-    StatusChangeApproval
+    StatusChangeApproval, ProjectLabelPreset, Milestone, TicketReference, StoryLink, CardTemplate, BoardTemplate,
+    SearchHistory, FilterPreset, TimeBudget, OvertimeRecord, CardCoverImage, CardChecklist, CardVote,
+    StoryArchive, StoryVersion, Webhook, StoryClone, GitHubIntegration, JiraIntegration, SlackIntegration
 )
 # Alias for backward compatibility
 Story = UserStory
+
+
+# Validation helper functions
+def validate_label_structure(value):
+    """Validate labels structure and content. Returns validated labels list."""
+    if value is None:
+        return []
+    
+    if not isinstance(value, list):
+        raise serializers.ValidationError("Labels must be a list")
+    
+    MAX_LABEL_NAME_LENGTH = 100
+    LABEL_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9\s\-_]+$')
+    HEX_COLOR_PATTERN = re.compile(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$')
+    
+    label_names = []
+    validated_labels = []
+    
+    for label in value:
+        if not isinstance(label, dict):
+            raise serializers.ValidationError("Each label must be a dictionary")
+        
+        name = label.get('name')
+        if not name or not isinstance(name, str):
+            raise serializers.ValidationError("Label name is required and must be a string")
+        
+        name = name.strip()
+        if len(name) == 0:
+            raise serializers.ValidationError("Label name cannot be empty")
+        
+        if len(name) > MAX_LABEL_NAME_LENGTH:
+            raise serializers.ValidationError(f"Label name cannot exceed {MAX_LABEL_NAME_LENGTH} characters")
+        
+        # Validate format (alphanumeric, spaces, hyphens, underscores)
+        if not LABEL_NAME_PATTERN.match(name):
+            raise serializers.ValidationError(
+                "Label name can only contain letters, numbers, spaces, hyphens, and underscores"
+            )
+        
+        # Validate color if provided
+        color = label.get('color')
+        if color:
+            if not isinstance(color, str):
+                raise serializers.ValidationError("Label color must be a string")
+            if not HEX_COLOR_PATTERN.match(color):
+                raise serializers.ValidationError("Label color must be a valid hex color (#RRGGBB or #RGB)")
+            # Normalize to uppercase
+            color = color.upper()
+        
+        # Check for duplicates (case-insensitive)
+        if name.lower() in [n.lower() for n in label_names]:
+            raise serializers.ValidationError(f"Duplicate label name: {name}")
+        
+        label_names.append(name.lower())
+        validated_labels.append({
+            'name': name,
+            'color': color or '#808080'  # Default color if not provided
+        })
+    
+    return validated_labels
+
+
+def validate_component_name(value):
+    """Validate component name. Returns validated component name."""
+    if not value:
+        return ''  # Empty string for null/empty values
+    
+    if not isinstance(value, str):
+        raise serializers.ValidationError("Component must be a string")
+    
+    value = value.strip()
+    
+    if len(value) == 0:
+        return ''  # Empty string
+    
+    MAX_COMPONENT_LENGTH = 100
+    if len(value) > MAX_COMPONENT_LENGTH:
+        raise serializers.ValidationError(f"Component name cannot exceed {MAX_COMPONENT_LENGTH} characters")
+    
+    # Validate format (alphanumeric, spaces, hyphens, underscores)
+    COMPONENT_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9\s\-_]+$')
+    if not COMPONENT_NAME_PATTERN.match(value):
+        raise serializers.ValidationError(
+            "Component name can only contain letters, numbers, spaces, hyphens, and underscores"
+        )
+    
+    return value
 
 
 def validate_state_transition(project, old_status: str, new_status: str) -> None:
@@ -207,16 +297,16 @@ class StorySerializer(serializers.ModelSerializer):
     """Story serializer."""
     
     epic_name = serializers.CharField(source='epic.title', read_only=True, allow_null=True)
-    sprint_name = serializers.CharField(source='sprint.name', read_only=True, allow_null=True)
     
     class Meta:
         model = Story
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at', 'generated_by_ai', 'generation_workflow', 'created_by']
         extra_kwargs = {
+            'number': {'required': False, 'allow_blank': True},
             'title': {'required': False},
-            'description': {'required': False},
-            'acceptance_criteria': {'required': False},
+            'description': {'required': False, 'allow_blank': True},
+            'acceptance_criteria': {'required': False, 'allow_blank': True},
             'story_points': {'required': False, 'allow_null': True},
             'status': {'required': False},
             'priority': {'required': False},
@@ -229,6 +319,41 @@ class StorySerializer(serializers.ModelSerializer):
             'labels': {'required': False, 'allow_null': True},
             'custom_fields': {'required': False, 'allow_null': True},
         }
+    
+    def to_representation(self, instance):
+        """Override to include nested user data for assigned_to and epic data."""
+        representation = super().to_representation(instance)
+        
+        # Replace assigned_to ID with full user object
+        if instance.assigned_to:
+            from apps.authentication.serializers import UserSerializer
+            representation['assigned_to'] = UserSerializer(instance.assigned_to).data
+        else:
+            representation['assigned_to'] = None
+        
+        # Replace epic ID with full epic object (title, id, etc.)
+        if instance.epic:
+            representation['epic'] = {
+                'id': str(instance.epic.id),
+                'title': instance.epic.title,
+                'status': instance.epic.status,
+            }
+        else:
+            representation['epic'] = None
+        
+        return representation
+    
+    def validate_acceptance_criteria(self, value):
+        """Convert empty strings to None for acceptance_criteria."""
+        if value == '' or (isinstance(value, str) and value.strip() == ''):
+            return None
+        return value
+    
+    def validate_description(self, value):
+        """Convert empty strings to None for description."""
+        if value == '' or (isinstance(value, str) and value.strip() == ''):
+            return None
+        return value
     
     def validate_status(self, value):
         """Validate status against project configuration and state transitions."""
@@ -263,6 +388,14 @@ class StorySerializer(serializers.ModelSerializer):
                 pass  # No configuration yet, allow default status
         
         return value
+    
+    def validate_labels(self, value):
+        """Validate labels structure and content."""
+        return validate_label_structure(value)
+    
+    def validate_component(self, value):
+        """Validate component name."""
+        return validate_component_name(value)
     
     def update(self, instance, validated_data):
         """Override update to ensure all fields are saved, including null values, and validate."""
@@ -621,6 +754,14 @@ class TaskSerializer(serializers.ModelSerializer):
         
         return value
     
+    def validate_labels(self, value):
+        """Validate labels structure and content."""
+        return validate_label_structure(value)
+    
+    def validate_component(self, value):
+        """Validate component name."""
+        return validate_component_name(value)
+    
     def update(self, instance, validated_data):
         """Override update to execute automation rules on status changes."""
         # Track old status for automation
@@ -750,6 +891,14 @@ class BugSerializer(serializers.ModelSerializer):
                 pass  # No configuration yet, allow default status
         
         return value
+    
+    def validate_labels(self, value):
+        """Validate labels structure and content."""
+        return validate_label_structure(value)
+    
+    def validate_component(self, value):
+        """Validate component name."""
+        return validate_component_name(value)
     
     def create(self, validated_data):
         """Convert null values to empty strings for CharFields and validate."""
@@ -946,6 +1095,14 @@ class IssueSerializer(serializers.ModelSerializer):
                 pass  # No configuration yet, allow default status
         
         return value
+    
+    def validate_labels(self, value):
+        """Validate labels structure and content."""
+        return validate_label_structure(value)
+    
+    def validate_component(self, value):
+        """Validate component name."""
+        return validate_component_name(value)
     
     def create(self, validated_data):
         """Convert null values to empty strings for CharFields and validate."""
@@ -1313,6 +1470,29 @@ class StoryAttachmentSerializer(serializers.ModelSerializer):
         model = StoryAttachment
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'uploaded_by']
+        extra_kwargs = {
+            'file_name': {'required': False},
+            'file_size': {'required': False},
+            'file_type': {'required': False},
+        }
+    
+    def create(self, validated_data):
+        """Extract file metadata from uploaded file."""
+        file = validated_data.get('file')
+        if file:
+            # Extract metadata from file
+            validated_data['file_name'] = file.name
+            validated_data['file_size'] = file.size
+            validated_data['file_type'] = file.content_type or 'application/octet-stream'
+        
+        # Set uploaded_by to current user
+        request = self.context.get('request')
+        if request and request.user:
+            validated_data['uploaded_by'] = request.user
+            validated_data['created_by'] = request.user
+            validated_data['updated_by'] = request.user
+        
+        return super().create(validated_data)
     
     def get_file_url(self, obj):
         """Get file URL."""
@@ -1477,3 +1657,389 @@ class SavedSearchSerializer(serializers.ModelSerializer):
         if obj.user:
             return obj.user.get_full_name() or obj.user.email
         return None
+
+
+class ProjectLabelPresetSerializer(serializers.ModelSerializer):
+    """Serializer for ProjectLabelPreset."""
+    
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    updated_by_name = serializers.CharField(source='updated_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = ProjectLabelPreset
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def validate_color(self, value):
+        """Validate hex color format."""
+        HEX_COLOR_PATTERN = re.compile(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$')
+        if value and not HEX_COLOR_PATTERN.match(value):
+            raise serializers.ValidationError("Color must be a valid hex color code (e.g., #3b82f6 or #3bf)")
+        return value.upper() if value else value
+    
+    def validate_name(self, value):
+        """Validate label name."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Label name cannot be empty")
+        MAX_LABEL_NAME_LENGTH = 100
+        if len(value.strip()) > MAX_LABEL_NAME_LENGTH:
+            raise serializers.ValidationError(f"Label name cannot exceed {MAX_LABEL_NAME_LENGTH} characters")
+        LABEL_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9\s\-_]+$')
+        if not LABEL_NAME_PATTERN.match(value.strip()):
+            raise serializers.ValidationError(
+                "Label name can only contain letters, numbers, spaces, hyphens, and underscores"
+            )
+        return value.strip()
+
+
+class MilestoneSerializer(serializers.ModelSerializer):
+    """Serializer for Milestone."""
+    class Meta:
+        model = Milestone
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'project': {'required': True},
+            'name': {'required': True},
+        }
+    
+    def validate_progress_percentage(self, value):
+        """Validate progress percentage is between 0 and 100."""
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Progress percentage must be between 0 and 100.")
+        return value
+
+
+class TicketReferenceSerializer(serializers.ModelSerializer):
+    """Serializer for TicketReference."""
+    work_item_type = serializers.CharField(source='content_type.model', read_only=True)
+    
+    class Meta:
+        model = TicketReference
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_synced_at']
+        extra_kwargs = {
+            'project': {'required': True},
+            'system': {'required': True},
+            'ticket_id': {'required': True},
+        }
+    
+    def validate_ticket_url(self, value):
+        """Validate ticket URL format."""
+        if value and not value.startswith(('http://', 'https://')):
+            raise serializers.ValidationError("Ticket URL must be a valid HTTP/HTTPS URL.")
+        return value
+
+
+class StoryLinkSerializer(serializers.ModelSerializer):
+    """Serializer for StoryLink."""
+    source_story_title = serializers.CharField(source='source_story.title', read_only=True)
+    target_story_title = serializers.CharField(source='target_story.title', read_only=True)
+    
+    class Meta:
+        model = StoryLink
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'project': {'required': True},
+            'source_story': {'required': True},
+            'target_story': {'required': True},
+            'link_type': {'required': True},
+        }
+    
+    def validate(self, attrs):
+        """Validate that source and target stories are different."""
+        source_story = attrs.get('source_story')
+        target_story = attrs.get('target_story')
+        
+        if source_story and target_story:
+            if source_story.id == target_story.id:
+                raise serializers.ValidationError({
+                    'target_story': "Source and target stories cannot be the same."
+                })
+            
+            # Ensure both stories belong to the same project
+            if source_story.project_id != target_story.project_id:
+                raise serializers.ValidationError({
+                    'target_story': "Source and target stories must belong to the same project."
+                })
+        
+        return attrs
+
+
+class CardTemplateSerializer(serializers.ModelSerializer):
+    """Serializer for CardTemplate."""
+    project_name = serializers.CharField(source='project.name', read_only=True, allow_null=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = CardTemplate
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'usage_count']
+        extra_kwargs = {
+            'name': {'required': True},
+        }
+    
+    def validate_scope(self, value):
+        """Validate scope based on project."""
+        if value == 'global' and self.initial_data.get('project'):
+            raise serializers.ValidationError("Global templates cannot be associated with a project.")
+        if value == 'project' and not self.initial_data.get('project'):
+            raise serializers.ValidationError("Project templates must be associated with a project.")
+        return value
+    
+    def validate_color(self, value):
+        """Validate color is a valid hex code."""
+        if value and not re.match(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', value):
+            raise serializers.ValidationError("Color must be a valid hex color (#RRGGBB or #RGB).")
+        return value.upper() if value else value
+
+
+class TimeBudgetSerializer(serializers.ModelSerializer):
+    """Serializer for TimeBudget."""
+    spent_hours = serializers.ReadOnlyField()
+    remaining_hours = serializers.ReadOnlyField()
+    utilization_percentage = serializers.ReadOnlyField()
+    is_over_budget = serializers.ReadOnlyField()
+    is_warning_threshold_reached = serializers.ReadOnlyField()
+    project_name = serializers.CharField(source='project.name', read_only=True, allow_null=True)
+    sprint_name = serializers.CharField(source='sprint.name', read_only=True, allow_null=True)
+    story_title = serializers.CharField(source='story.title', read_only=True, allow_null=True)
+    task_title = serializers.CharField(source='task.title', read_only=True, allow_null=True)
+    epic_title = serializers.CharField(source='epic.title', read_only=True, allow_null=True)
+    user_email = serializers.CharField(source='user.email', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = TimeBudget
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'spent_hours', 'remaining_hours', 
+                           'utilization_percentage', 'is_over_budget', 'is_warning_threshold_reached']
+    
+    def validate_budget_hours(self, value):
+        """Validate budget hours is positive."""
+        if value <= 0:
+            raise serializers.ValidationError("Budget hours must be greater than 0.")
+        return value
+    
+    def validate_warning_threshold(self, value):
+        """Validate warning threshold is between 0 and 100."""
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Warning threshold must be between 0 and 100.")
+        return value
+
+
+class OvertimeRecordSerializer(serializers.ModelSerializer):
+    """Serializer for OvertimeRecord."""
+    budget_scope = serializers.CharField(source='time_budget.get_scope_display', read_only=True)
+    budget_hours = serializers.DecimalField(source='time_budget.budget_hours', read_only=True, max_digits=10, decimal_places=2)
+    
+    class Meta:
+        model = OvertimeRecord
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'alert_sent', 'alert_sent_at']
+
+
+class CardCoverImageSerializer(serializers.ModelSerializer):
+    """Serializer for CardCoverImage."""
+    
+    class Meta:
+        model = CardCoverImage
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at']
+
+
+class CardChecklistSerializer(serializers.ModelSerializer):
+    """Serializer for CardChecklist."""
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = CardChecklist
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def validate_items(self, value):
+        """Validate checklist items structure."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Items must be a list.")
+        for item in value:
+            if not isinstance(item, dict):
+                raise serializers.ValidationError("Each item must be a dictionary.")
+            if 'text' not in item:
+                raise serializers.ValidationError("Each item must have a 'text' field.")
+        return value
+
+
+class CardVoteSerializer(serializers.ModelSerializer):
+    """Serializer for CardVote."""
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    
+    class Meta:
+        model = CardVote
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at']
+
+
+class StoryArchiveSerializer(serializers.ModelSerializer):
+    """Serializer for StoryArchive."""
+    story_title = serializers.CharField(source='story.title', read_only=True)
+    archived_by_name = serializers.CharField(source='archived_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = StoryArchive
+        fields = '__all__'
+        read_only_fields = ['id', 'archived_at']
+
+
+class StoryVersionSerializer(serializers.ModelSerializer):
+    """Serializer for StoryVersion."""
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    story_title = serializers.CharField(source='story.title', read_only=True)
+    
+    class Meta:
+        model = StoryVersion
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at']
+
+
+class WebhookSerializer(serializers.ModelSerializer):
+    """Serializer for Webhook."""
+    project_name = serializers.CharField(source='project.name', read_only=True, allow_null=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = Webhook
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def validate_events(self, value):
+        """Validate events list."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Events must be a list.")
+        valid_events = [choice[0] for choice in Webhook.EVENT_CHOICES]
+        for event in value:
+            if event not in valid_events:
+                raise serializers.ValidationError(f"Invalid event: {event}. Valid events: {', '.join(valid_events)}")
+        return value
+
+
+class StoryCloneSerializer(serializers.ModelSerializer):
+    """Serializer for StoryClone."""
+    original_story_title = serializers.CharField(source='original_story.title', read_only=True)
+    cloned_story_title = serializers.CharField(source='cloned_story.title', read_only=True)
+    cloned_by_name = serializers.CharField(source='cloned_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = StoryClone
+        fields = '__all__'
+        read_only_fields = ['id', 'cloned_at']
+
+
+class GitHubIntegrationSerializer(serializers.ModelSerializer):
+    """Serializer for GitHubIntegration."""
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = GitHubIntegration
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'access_token': {'write_only': True},  # Don't expose token in responses
+        }
+
+
+class JiraIntegrationSerializer(serializers.ModelSerializer):
+    """Serializer for JiraIntegration."""
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = JiraIntegration
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'api_token': {'write_only': True},  # Don't expose token in responses
+        }
+
+
+class SlackIntegrationSerializer(serializers.ModelSerializer):
+    """Serializer for SlackIntegration."""
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = SlackIntegration
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'webhook_url': {'write_only': False},  # Webhook URL can be visible
+            'bot_token': {'write_only': True},  # Don't expose token in responses
+        }
+
+
+class BoardTemplateSerializer(serializers.ModelSerializer):
+    """Serializer for BoardTemplate."""
+    project_name = serializers.CharField(source='project.name', read_only=True, allow_null=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = BoardTemplate
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'usage_count']
+        extra_kwargs = {
+            'name': {'required': True},
+        }
+    
+    def validate_scope(self, value):
+        """Validate scope based on project."""
+        if value == 'global' and self.initial_data.get('project'):
+            raise serializers.ValidationError("Global templates cannot be associated with a project.")
+        if value == 'project' and not self.initial_data.get('project'):
+            raise serializers.ValidationError("Project templates must be associated with a project.")
+        return value
+
+
+class SearchHistorySerializer(serializers.ModelSerializer):
+    """Serializer for SearchHistory."""
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    project_name = serializers.CharField(source='project.name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = SearchHistory
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at']
+        extra_kwargs = {
+            'user': {'required': True},
+            'query': {'required': True},
+        }
+
+
+class FilterPresetSerializer(serializers.ModelSerializer):
+    """Serializer for FilterPreset."""
+    project_name = serializers.CharField(source='project.name', read_only=True, allow_null=True)
+    user_email = serializers.CharField(source='user.email', read_only=True, allow_null=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = FilterPreset
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'usage_count']
+        extra_kwargs = {
+            'name': {'required': True},
+        }
+    
+    def validate(self, data):
+        """Validate that either project or user is set, but not both for shared presets."""
+        project = data.get('project')
+        user = data.get('user')
+        is_shared = data.get('is_shared', False)
+        
+        if is_shared and user:
+            raise serializers.ValidationError("Shared presets cannot be associated with a specific user.")
+        if not is_shared and not user:
+            raise serializers.ValidationError("User-specific presets must have a user.")
+        
+        return data

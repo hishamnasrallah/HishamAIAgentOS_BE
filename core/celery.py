@@ -39,6 +39,14 @@ app.conf.beat_schedule = {
         'task': 'apps.projects.tasks.check_due_dates_approaching',
         'schedule': crontab(hour=9, minute=0),  # Run at 9 AM daily
     },
+    'send-pending-email-notifications': {
+        'task': 'apps.projects.tasks.send_pending_email_notifications',
+        'schedule': crontab(minute='*/15'),  # Run every 15 minutes
+    },
+    'execute-scheduled-automation-rules': {
+        'task': 'apps.projects.tasks.execute_scheduled_automation_rules',
+        'schedule': crontab(hour='*/1', minute=0),  # Run every hour to check for scheduled triggers
+    },
 }
 
 @app.task(bind=True, ignore_result=True)

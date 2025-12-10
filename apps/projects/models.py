@@ -156,6 +156,14 @@ class Epic(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='epics')
     
+    # Work item number (e.g., EPIC-12)
+    number = models.CharField(
+        max_length=50,
+        blank=True,
+        db_index=True,
+        help_text="Unique work item number within project"
+    )
+    
     title = models.CharField(max_length=300)
     description = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planned')
@@ -208,6 +216,8 @@ class Epic(models.Model):
         verbose_name_plural = 'Epics'
         indexes = [
             models.Index(fields=['project', 'status']),
+            models.Index(fields=['owner']),
+            models.Index(fields=['project', 'owner']),
         ]
     
     def __str__(self):
@@ -236,9 +246,17 @@ class UserStory(models.Model):
     epic = models.ForeignKey(Epic, on_delete=models.SET_NULL, null=True, blank=True, related_name='stories')
     sprint = models.ForeignKey(Sprint, on_delete=models.SET_NULL, null=True, blank=True, related_name='stories')
     
+    # Work item number (e.g., STORY-123) - project-specific, auto-incremented
+    number = models.CharField(
+        max_length=50,
+        blank=True,
+        db_index=True,
+        help_text="Unique work item number within project (e.g., STORY-123)"
+    )
+    
     title = models.CharField(max_length=300)
-    description = models.TextField()
-    acceptance_criteria = models.TextField()
+    description = models.TextField(blank=True, null=True)
+    acceptance_criteria = models.TextField(blank=True, null=True)
     
     # Status is now dynamic - validated against ProjectConfiguration.custom_states
     status = models.CharField(max_length=50, default=DEFAULT_STATUS, help_text="Workflow state (validated against project configuration)")
@@ -309,6 +327,12 @@ class UserStory(models.Model):
         indexes = [
             models.Index(fields=['project', 'status']),
             models.Index(fields=['sprint', 'status']),
+            models.Index(fields=['due_date']),
+            models.Index(fields=['project', 'due_date']),
+            models.Index(fields=['component']),
+            models.Index(fields=['project', 'component']),
+            models.Index(fields=['story_type']),
+            models.Index(fields=['project', 'story_type']),
         ]
     
     def __str__(self):
@@ -382,6 +406,14 @@ class Task(models.Model):
         blank=True,
         related_name='subtasks',
         help_text="Parent task for sub-tasks"
+    )
+    
+    # Work item number (e.g., TASK-45)
+    number = models.CharField(
+        max_length=50,
+        blank=True,
+        db_index=True,
+        help_text="Unique work item number within project"
     )
     
     title = models.CharField(max_length=300)
@@ -483,6 +515,8 @@ class Task(models.Model):
             models.Index(fields=['story', 'status']),
             models.Index(fields=['parent_task', 'status']),
             models.Index(fields=['assigned_to', 'status']),
+            models.Index(fields=['due_date']),
+            models.Index(fields=['component']),
         ]
     
     def __str__(self):
@@ -578,6 +612,14 @@ class Bug(models.Model):
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='bugs')
+    
+    # Work item number (e.g., BUG-789)
+    number = models.CharField(
+        max_length=50,
+        blank=True,
+        db_index=True,
+        help_text="Unique work item number within project"
+    )
     
     title = models.CharField(max_length=300)
     description = models.TextField()
@@ -721,6 +763,10 @@ class Bug(models.Model):
             models.Index(fields=['project', 'priority']),
             models.Index(fields=['assigned_to', 'status']),
             models.Index(fields=['reporter', 'status']),
+            models.Index(fields=['due_date']),
+            models.Index(fields=['project', 'due_date']),
+            models.Index(fields=['component']),
+            models.Index(fields=['project', 'component']),
         ]
         ordering = ['-created_at']
     
@@ -812,6 +858,14 @@ class Issue(models.Model):
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='issues')
+    
+    # Work item number (e.g., ISSUE-456)
+    number = models.CharField(
+        max_length=50,
+        blank=True,
+        db_index=True,
+        help_text="Unique work item number within project"
+    )
     
     title = models.CharField(max_length=300)
     description = models.TextField()
@@ -960,6 +1014,10 @@ class Issue(models.Model):
             models.Index(fields=['project', 'priority']),
             models.Index(fields=['assigned_to', 'status']),
             models.Index(fields=['reporter', 'status']),
+            models.Index(fields=['due_date']),
+            models.Index(fields=['project', 'due_date']),
+            models.Index(fields=['component']),
+            models.Index(fields=['project', 'component']),
         ]
         ordering = ['-created_at']
     
@@ -1221,6 +1279,33 @@ class ProjectConfiguration(models.Model):
         default=list,
         blank=True,
         help_text="Board column configuration (order, visibility, etc.)"
+    )
+    
+    # Work Item Number Prefixes
+    story_prefix = models.CharField(
+        max_length=20,
+        default='STORY-',
+        help_text="Prefix for story numbers (e.g., STORY-)"
+    )
+    task_prefix = models.CharField(
+        max_length=20,
+        default='TASK-',
+        help_text="Prefix for task numbers (e.g., TASK-)"
+    )
+    bug_prefix = models.CharField(
+        max_length=20,
+        default='BUG-',
+        help_text="Prefix for bug numbers (e.g., BUG-)"
+    )
+    issue_prefix = models.CharField(
+        max_length=20,
+        default='ISSUE-',
+        help_text="Prefix for issue numbers (e.g., ISSUE-)"
+    )
+    epic_prefix = models.CharField(
+        max_length=20,
+        default='EPIC-',
+        help_text="Prefix for epic numbers (e.g., EPIC-)"
     )
     
     # Story Point Configuration
@@ -1538,6 +1623,17 @@ class StoryComment(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
+    def extract_mentions(self):
+        """Extract @mentions from comment content."""
+        mentions = []
+        if not self.content:
+            return mentions
+        pattern = r'@(\w+(?:\.\w+)?)'
+        matches = re.findall(pattern, self.content)
+        for match in matches:
+            mentions.append(match)
+        return mentions
     
     class Meta:
         db_table = 'story_comments'
@@ -2206,6 +2302,362 @@ class SavedSearch(models.Model):
         self.save(update_fields=['last_used_at', 'usage_count'])
 
 
+class SearchHistory(models.Model):
+    """Search history for tracking user search queries."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.CASCADE,
+        related_name='search_history',
+        help_text="User who performed this search"
+    )
+    query = models.TextField(help_text="Search query string")
+    filters = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Search filters applied"
+    )
+    content_types = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Content types searched"
+    )
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='search_history',
+        null=True,
+        blank=True,
+        help_text="Project context (if any)"
+    )
+    result_count = models.IntegerField(default=0, help_text="Number of results found")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    
+    class Meta:
+        db_table = 'search_history'
+        verbose_name = 'Search History'
+        verbose_name_plural = 'Search Histories'
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['project', '-created_at']),
+        ]
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f'{self.user.email} - {self.query[:50]}...'
+
+
+class FilterPreset(models.Model):
+    """Saved filter presets for quick filtering."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='filter_presets',
+        null=True,
+        blank=True,
+        help_text="Project this preset belongs to (null for global presets)"
+    )
+    user = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.CASCADE,
+        related_name='filter_presets',
+        null=True,
+        blank=True,
+        help_text="User who created this preset (null for shared presets)"
+    )
+    name = models.CharField(max_length=200, help_text="Preset name")
+    description = models.TextField(blank=True, help_text="Preset description")
+    filters = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Filter rules (array of FilterRule objects)"
+    )
+    is_shared = models.BooleanField(default=False, help_text="Whether this preset is shared with team")
+    is_default = models.BooleanField(default=False, help_text="Whether this is a default preset")
+    usage_count = models.IntegerField(default=0, help_text="Number of times this preset has been used")
+    
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_filter_presets',
+        verbose_name='Created By'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'filter_presets'
+        verbose_name = 'Filter Preset'
+        verbose_name_plural = 'Filter Presets'
+        indexes = [
+            models.Index(fields=['project', 'is_shared']),
+            models.Index(fields=['user', 'is_shared']),
+        ]
+        ordering = ['is_default', 'name']
+    
+    def __str__(self):
+        return self.name
+
+
+class ProjectLabelPreset(models.Model):
+    """Project-level label presets for standardization."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='label_presets',
+        help_text="Project this label preset belongs to"
+    )
+    name = models.CharField(max_length=100, help_text="Label name")
+    color = models.CharField(
+        max_length=7,
+        default='#3b82f6',
+        help_text="Hex color code (e.g., #3b82f6)"
+    )
+    description = models.TextField(blank=True, help_text="Optional description of the label")
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Whether this is a default label for the project"
+    )
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_label_presets',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_label_presets',
+        verbose_name='Updated By'
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'project_label_presets'
+        verbose_name = 'Project Label Preset'
+        verbose_name_plural = 'Project Label Presets'
+        indexes = [
+            models.Index(fields=['project', 'is_default']),
+            models.Index(fields=['project', 'name']),
+        ]
+        ordering = ['is_default', 'name']
+        unique_together = [['project', 'name']]
+    
+    def __str__(self):
+        return f'{self.project.name} - {self.name}'
+
+
+class Milestone(models.Model):
+    """Project milestone for tracking major deliverables and deadlines."""
+    
+    STATUS_CHOICES = [
+        ('planned', 'Planned'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='milestones')
+    
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planned')
+    
+    # Dates
+    target_date = models.DateField(null=True, blank=True)
+    completed_date = models.DateField(null=True, blank=True)
+    
+    # Progress tracking
+    progress_percentage = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Progress percentage (0-100)"
+    )
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_milestones',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_milestones',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'milestones'
+        verbose_name = 'Milestone'
+        verbose_name_plural = 'Milestones'
+        indexes = [
+            models.Index(fields=['project', 'status']),
+            models.Index(fields=['project', 'target_date']),
+        ]
+        ordering = ['project', 'target_date']
+    
+    def __str__(self):
+        return f'{self.project.name} - {self.name}'
+
+
+class TicketReference(models.Model):
+    """External ticket references (GitHub issues, Jira tickets, etc.)."""
+    
+    SYSTEM_CHOICES = [
+        ('github', 'GitHub'),
+        ('jira', 'Jira'),
+        ('gitlab', 'GitLab'),
+        ('linear', 'Linear'),
+        ('asana', 'Asana'),
+        ('trello', 'Trello'),
+        ('other', 'Other'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ticket_references')
+    
+    # Reference to work item (generic foreign key)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.UUIDField()
+    work_item = GenericForeignKey('content_type', 'object_id')
+    
+    # External ticket details
+    system = models.CharField(max_length=20, choices=SYSTEM_CHOICES)
+    ticket_id = models.CharField(max_length=200, help_text="External ticket ID (e.g., issue number, ticket key)")
+    ticket_url = models.URLField(max_length=500, blank=True, help_text="URL to the external ticket")
+    title = models.CharField(max_length=300, blank=True, help_text="Title of the external ticket")
+    status = models.CharField(max_length=50, blank=True, help_text="Status in external system")
+    
+    # Sync metadata
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    sync_enabled = models.BooleanField(default=True, help_text="Enable automatic syncing with external system")
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_ticket_references',
+        verbose_name='Created By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'ticket_references'
+        verbose_name = 'Ticket Reference'
+        verbose_name_plural = 'Ticket References'
+        unique_together = [['content_type', 'object_id', 'system', 'ticket_id']]
+        indexes = [
+            models.Index(fields=['project', 'system']),
+            models.Index(fields=['content_type', 'object_id']),
+        ]
+    
+    def __str__(self):
+        return f'{self.get_system_display()} #{self.ticket_id}'
+
+
+class StoryLink(models.Model):
+    """Links between stories (blocks, relates to, duplicates, etc.)."""
+    
+    LINK_TYPE_CHOICES = [
+        ('blocks', 'Blocks'),
+        ('blocked_by', 'Blocked By'),
+        ('relates_to', 'Relates To'),
+        ('duplicates', 'Duplicates'),
+        ('duplicated_by', 'Duplicated By'),
+        ('parent', 'Parent'),
+        ('child', 'Child'),
+        ('depends_on', 'Depends On'),
+        ('required_by', 'Required By'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='story_links')
+    
+    # Source story
+    source_story = models.ForeignKey(
+        UserStory,
+        on_delete=models.CASCADE,
+        related_name='outgoing_links',
+        help_text="Story that has the link"
+    )
+    
+    # Target story
+    target_story = models.ForeignKey(
+        UserStory,
+        on_delete=models.CASCADE,
+        related_name='incoming_links',
+        help_text="Story that is linked to"
+    )
+    
+    # Link type
+    link_type = models.CharField(max_length=20, choices=LINK_TYPE_CHOICES)
+    description = models.TextField(blank=True, help_text="Optional description of the link")
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_story_links',
+        verbose_name='Created By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'story_links'
+        verbose_name = 'Story Link'
+        verbose_name_plural = 'Story Links'
+        unique_together = [['source_story', 'target_story', 'link_type']]
+        indexes = [
+            models.Index(fields=['project', 'link_type']),
+            models.Index(fields=['source_story']),
+            models.Index(fields=['target_story']),
+        ]
+    
+    def __str__(self):
+        return f'{self.source_story.title} {self.get_link_type_display()} {self.target_story.title}'
+    
+    def clean(self):
+        """Validate that source and target are different stories."""
+        from django.core.exceptions import ValidationError
+        if self.source_story_id and self.target_story_id:
+            if self.source_story_id == self.target_story_id:
+                raise ValidationError("Source and target stories cannot be the same.")
+
+
 class StatusChangeApproval(models.Model):
     """Approval request for status changes when approval workflow is enabled."""
     
@@ -2334,4 +2786,651 @@ class StatusChangeApproval(models.Model):
             bug=work_item if isinstance(work_item, Bug) else None,
             issue=work_item if isinstance(work_item, Issue) else None,
         )
+
+
+class CardTemplate(models.Model):
+    """Template for creating cards/stories with predefined fields."""
+    
+    SCOPE_CHOICES = [
+        ('project', 'Project'),
+        ('global', 'Global'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='card_templates',
+        null=True,
+        blank=True,
+        help_text="Project this template belongs to (null for global templates)"
+    )
+    
+    name = models.CharField(max_length=200, help_text="Template name")
+    description = models.TextField(blank=True, help_text="Template description")
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default='project', help_text="Template scope")
+    
+    # Template fields - JSON structure with default values
+    template_fields = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Template field values (title, description, acceptance_criteria, story_type, priority, etc.)"
+    )
+    
+    # Template metadata
+    icon = models.CharField(max_length=50, blank=True, help_text="Icon identifier (e.g., 'bug', 'feature', 'task')")
+    color = models.CharField(max_length=7, blank=True, help_text="Template color (hex code)")
+    is_default = models.BooleanField(default=False, help_text="Whether this is a default template")
+    usage_count = models.IntegerField(default=0, help_text="Number of times this template has been used")
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_card_templates',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_card_templates',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'card_templates'
+        verbose_name = 'Card Template'
+        verbose_name_plural = 'Card Templates'
+        indexes = [
+            models.Index(fields=['project', 'scope']),
+            models.Index(fields=['scope', 'is_default']),
+        ]
+        ordering = ['scope', 'is_default', 'name']
+    
+    def __str__(self):
+        scope_label = 'Global' if self.scope == 'global' else self.project.name if self.project else 'Unknown'
+        return f'{scope_label} - {self.name}'
+
+
+class BoardTemplate(models.Model):
+    """Template for board configurations (columns, swimlanes, filters, etc.)."""
+    
+    SCOPE_CHOICES = [
+        ('project', 'Project'),
+        ('global', 'Global'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='board_templates',
+        null=True,
+        blank=True,
+        help_text="Project this template belongs to (null for global templates)"
+    )
+    
+    name = models.CharField(max_length=200, help_text="Template name")
+    description = models.TextField(blank=True, help_text="Template description")
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default='project', help_text="Template scope")
+    
+    # Board configuration template
+    board_config = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Board configuration (columns, swimlanes, filters, grouping, etc.)"
+    )
+    
+    # Template metadata
+    icon = models.CharField(max_length=50, blank=True, help_text="Icon identifier")
+    is_default = models.BooleanField(default=False, help_text="Whether this is a default template")
+    usage_count = models.IntegerField(default=0, help_text="Number of times this template has been used")
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_board_templates',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_board_templates',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'board_templates'
+        verbose_name = 'Board Template'
+        verbose_name_plural = 'Board Templates'
+        indexes = [
+            models.Index(fields=['project', 'scope']),
+            models.Index(fields=['scope', 'is_default']),
+        ]
+        ordering = ['scope', 'is_default', 'name']
+    
+    def __str__(self):
+        scope_label = 'Global' if self.scope == 'global' else self.project.name if self.project else 'Unknown'
+        return f'{scope_label} - {self.name}'
+
+
+# ============================================================================
+# Nice to Have Features Models
+# ============================================================================
+
+class CardCoverImage(models.Model):
+    """Cover image for cards (stories, tasks, etc.)."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Generic relation to any work item
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.UUIDField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+    
+    image = models.ImageField(
+        upload_to='card_covers/',
+        help_text="Cover image for the card"
+    )
+    thumbnail = models.ImageField(
+        upload_to='card_covers/thumbnails/',
+        null=True,
+        blank=True,
+        help_text="Thumbnail version of the cover image"
+    )
+    
+    is_primary = models.BooleanField(default=True, help_text="Primary cover image")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'card_cover_images'
+        verbose_name = 'Card Cover Image'
+        verbose_name_plural = 'Card Cover Images'
+        indexes = [
+            models.Index(fields=['content_type', 'object_id']),
+        ]
+
+
+class CardChecklist(models.Model):
+    """Checklist items for cards."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Generic relation to any work item
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.UUIDField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+    
+    title = models.CharField(max_length=200, help_text="Checklist title")
+    items = models.JSONField(
+        default=list,
+        help_text="List of checklist items: [{'id': 'uuid', 'text': 'string', 'completed': bool, 'order': int}]"
+    )
+    
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_checklists'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'card_checklists'
+        verbose_name = 'Card Checklist'
+        verbose_name_plural = 'Card Checklists'
+        indexes = [
+            models.Index(fields=['content_type', 'object_id']),
+        ]
+
+
+class CardVote(models.Model):
+    """Votes on cards (stories, tasks, etc.)."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Generic relation to any work item
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.UUIDField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+    
+    user = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.CASCADE,
+        related_name='card_votes'
+    )
+    
+    vote_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('upvote', 'Upvote'),
+            ('downvote', 'Downvote'),
+        ],
+        default='upvote'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'card_votes'
+        verbose_name = 'Card Vote'
+        verbose_name_plural = 'Card Votes'
+        unique_together = [['content_type', 'object_id', 'user']]
+        indexes = [
+            models.Index(fields=['content_type', 'object_id']),
+            models.Index(fields=['user']),
+        ]
+
+
+class StoryArchive(models.Model):
+    """Archived stories."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    story = models.OneToOneField(
+        UserStory,
+        on_delete=models.CASCADE,
+        related_name='archive'
+    )
+    
+    archived_at = models.DateTimeField(auto_now_add=True)
+    archived_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='archived_stories'
+    )
+    reason = models.TextField(blank=True, help_text="Reason for archiving")
+    
+    class Meta:
+        db_table = 'story_archives'
+        verbose_name = 'Story Archive'
+        verbose_name_plural = 'Story Archives'
+        indexes = [
+            models.Index(fields=['archived_at']),
+        ]
+
+
+class StoryVersion(models.Model):
+    """Version history for stories."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    story = models.ForeignKey(
+        UserStory,
+        on_delete=models.CASCADE,
+        related_name='versions'
+    )
+    
+    version_number = models.IntegerField(help_text="Version number")
+    title = models.CharField(max_length=300)
+    description = models.TextField(blank=True, null=True)
+    acceptance_criteria = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=50)
+    priority = models.CharField(max_length=20)
+    story_points = models.IntegerField(null=True, blank=True)
+    
+    # Store full story data as JSON for complete history
+    story_data = models.JSONField(
+        default=dict,
+        help_text="Complete story data at this version"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_story_versions'
+    )
+    
+    class Meta:
+        db_table = 'story_versions'
+        verbose_name = 'Story Version'
+        verbose_name_plural = 'Story Versions'
+        unique_together = [['story', 'version_number']]
+        indexes = [
+            models.Index(fields=['story', '-version_number']),
+        ]
+        ordering = ['story', '-version_number']
+
+
+class Webhook(models.Model):
+    """Webhook configuration for external integrations."""
+    
+    EVENT_CHOICES = [
+        ('story.created', 'Story Created'),
+        ('story.updated', 'Story Updated'),
+        ('story.deleted', 'Story Deleted'),
+        ('sprint.created', 'Sprint Created'),
+        ('sprint.completed', 'Sprint Completed'),
+        ('task.completed', 'Task Completed'),
+        ('comment.added', 'Comment Added'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='webhooks',
+        null=True,
+        blank=True
+    )
+    
+    name = models.CharField(max_length=200, help_text="Webhook name")
+    url = models.URLField(help_text="Webhook URL")
+    events = models.JSONField(
+        default=list,
+        help_text="List of events to trigger webhook"
+    )
+    secret = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Secret for webhook signature"
+    )
+    
+    is_active = models.BooleanField(default=True)
+    
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_webhooks'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'webhooks'
+        verbose_name = 'Webhook'
+        verbose_name_plural = 'Webhooks'
+        indexes = [
+            models.Index(fields=['project', 'is_active']),
+        ]
+
+
+class StoryClone(models.Model):
+    """Record of cloned stories."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    original_story = models.ForeignKey(
+        UserStory,
+        on_delete=models.CASCADE,
+        related_name='clones',
+        help_text="Original story that was cloned"
+    )
+    cloned_story = models.OneToOneField(
+        UserStory,
+        on_delete=models.CASCADE,
+        related_name='clone_source',
+        help_text="The cloned story"
+    )
+    
+    cloned_at = models.DateTimeField(auto_now_add=True)
+    cloned_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cloned_stories'
+    )
+    
+    class Meta:
+        db_table = 'story_clones'
+        verbose_name = 'Story Clone'
+        verbose_name_plural = 'Story Clones'
+        indexes = [
+            models.Index(fields=['original_story']),
+        ]
+    
+    def __str__(self):
+        return f"Clone: {self.original_story.title} -> {self.cloned_story.title}"
+
+
+class GitHubIntegration(models.Model):
+    """GitHub integration configuration for a project."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='project_github_integrations')
+    
+    repository_owner = models.CharField(max_length=255, help_text="GitHub repository owner")
+    repository_name = models.CharField(max_length=255, help_text="GitHub repository name")
+    access_token = models.CharField(max_length=500, help_text="GitHub access token (encrypted)")
+    
+    is_active = models.BooleanField(default=True, help_text="Is this integration active?")
+    sync_issues = models.BooleanField(default=True, help_text="Sync GitHub issues")
+    sync_commits = models.BooleanField(default=False, help_text="Sync GitHub commits")
+    sync_pull_requests = models.BooleanField(default=False, help_text="Sync pull requests")
+    
+    created_by = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_project_github_integrations')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
+    class Meta:
+        db_table = 'project_github_integrations'
+        verbose_name = 'GitHub Integration'
+        verbose_name_plural = 'GitHub Integrations'
+        unique_together = [['project', 'repository_owner', 'repository_name']]
+        indexes = [
+            models.Index(fields=['project', 'is_active']),
+        ]
+    
+    def __str__(self):
+        return f"GitHub: {self.repository_owner}/{self.repository_name}"
+
+
+class JiraIntegration(models.Model):
+    """Jira integration configuration for a project."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='project_jira_integrations')
+    
+    base_url = models.URLField(help_text="Jira base URL (e.g., https://yourcompany.atlassian.net)")
+    project_key = models.CharField(max_length=50, help_text="Jira project key")
+    email = models.EmailField(help_text="Jira email")
+    api_token = models.CharField(max_length=500, help_text="Jira API token (encrypted)")
+    
+    is_active = models.BooleanField(default=True, help_text="Is this integration active?")
+    sync_issues = models.BooleanField(default=True, help_text="Sync Jira issues")
+    auto_create = models.BooleanField(default=False, help_text="Auto-create Jira issues for stories")
+    
+    created_by = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_project_jira_integrations')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
+    class Meta:
+        db_table = 'project_jira_integrations'
+        verbose_name = 'Jira Integration'
+        verbose_name_plural = 'Jira Integrations'
+        unique_together = [['project', 'base_url', 'project_key']]
+        indexes = [
+            models.Index(fields=['project', 'is_active']),
+        ]
+    
+    def __str__(self):
+        return f"Jira: {self.project_key} at {self.base_url}"
+
+
+class SlackIntegration(models.Model):
+    """Slack integration configuration for a project."""
+    
+    NOTIFICATION_EVENTS = [
+        ('story_created', 'Story Created'),
+        ('story_updated', 'Story Updated'),
+        ('story_completed', 'Story Completed'),
+        ('story_assigned', 'Story Assigned'),
+        ('comment_added', 'Comment Added'),
+        ('sprint_started', 'Sprint Started'),
+        ('sprint_completed', 'Sprint Completed'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='project_slack_integrations')
+    
+    webhook_url = models.URLField(blank=True, null=True, help_text="Slack webhook URL")
+    bot_token = models.CharField(max_length=500, blank=True, null=True, help_text="Slack bot token (encrypted)")
+    channel = models.CharField(max_length=255, blank=True, help_text="Default Slack channel")
+    
+    is_active = models.BooleanField(default=True, help_text="Is this integration active?")
+    notification_events = models.JSONField(default=list, help_text="Events to send notifications for")
+    
+    created_by = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_project_slack_integrations')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
+    class Meta:
+        db_table = 'project_slack_integrations'
+        verbose_name = 'Slack Integration'
+        verbose_name_plural = 'Slack Integrations'
+        indexes = [
+            models.Index(fields=['project', 'is_active']),
+        ]
+    
+    def __str__(self):
+        return f"Slack: {self.project.name} ({self.channel or 'webhook'})"
+
+
+class TimeBudget(models.Model):
+    """Time budget for tracking allocated time against various project entities."""
+    
+    SCOPE_CHOICES = [
+        ('project', 'Project'),
+        ('sprint', 'Sprint'),
+        ('story', 'Story'),
+        ('task', 'Task'),
+        ('epic', 'Epic'),
+        ('user', 'User'),
+    ]
+    
+    PERIOD_CHOICES = [
+        ('one_time', 'One Time'),
+        ('daily', 'Daily'),
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+        ('quarterly', 'Quarterly'),
+        ('yearly', 'Yearly'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='time_budgets', null=True, blank=True)
+    sprint = models.ForeignKey(Sprint, on_delete=models.CASCADE, related_name='time_budgets', null=True, blank=True)
+    story = models.ForeignKey(UserStory, on_delete=models.CASCADE, related_name='time_budgets', null=True, blank=True)
+    task = models.ForeignKey('Task', on_delete=models.CASCADE, related_name='time_budgets', null=True, blank=True)
+    epic = models.ForeignKey(Epic, on_delete=models.CASCADE, related_name='time_budgets', null=True, blank=True)
+    user = models.ForeignKey('authentication.User', on_delete=models.CASCADE, related_name='time_budgets', null=True, blank=True)
+    
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, help_text="What this budget applies to")
+    period = models.CharField(max_length=20, choices=PERIOD_CHOICES, default='one_time', help_text="Budget period")
+    
+    budget_hours = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], help_text="Total budgeted hours")
+    warning_threshold = models.DecimalField(max_digits=5, decimal_places=2, default=80.0, validators=[MinValueValidator(0), MaxValueValidator(100)], help_text="Warning threshold percentage")
+    
+    period_start = models.DateField(null=True, blank=True, help_text="Start date of budget period")
+    period_end = models.DateField(null=True, blank=True, help_text="End date of budget period")
+    
+    is_active = models.BooleanField(default=True, help_text="Is this budget active?")
+    auto_alert = models.BooleanField(default=True, help_text="Automatically create overtime records when exceeded")
+    
+    # Calculated fields (updated by TimeBudgetService)
+    spent_hours = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Total hours spent (calculated)")
+    remaining_hours = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Remaining hours (calculated)")
+    utilization_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Utilization percentage (calculated)")
+    is_over_budget = models.BooleanField(default=False, help_text="Is over budget? (calculated)")
+    is_warning_threshold_reached = models.BooleanField(default=False, help_text="Has warning threshold been reached? (calculated)")
+    
+    created_by = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_time_budgets')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
+    class Meta:
+        db_table = 'time_budgets'
+        verbose_name = 'Time Budget'
+        verbose_name_plural = 'Time Budgets'
+        indexes = [
+            models.Index(fields=['project', 'scope']),
+            models.Index(fields=['sprint', 'scope']),
+            models.Index(fields=['story', 'scope']),
+            models.Index(fields=['task', 'scope']),
+            models.Index(fields=['epic', 'scope']),
+            models.Index(fields=['user', 'scope']),
+            models.Index(fields=['is_active']),
+        ]
+    
+    def __str__(self):
+        scope_obj = self.get_scope_object()
+        scope_name = str(scope_obj) if scope_obj else self.get_scope_display()
+        return f"Time Budget: {scope_name} ({self.budget_hours}h)"
+    
+    def get_scope_object(self):
+        """Get the object this budget applies to."""
+        if self.scope == 'project' and self.project:
+            return self.project
+        elif self.scope == 'sprint' and self.sprint:
+            return self.sprint
+        elif self.scope == 'story' and self.story:
+            return self.story
+        elif self.scope == 'task' and self.task:
+            return self.task
+        elif self.scope == 'epic' and self.epic:
+            return self.epic
+        elif self.scope == 'user' and self.user:
+            return self.user
+        return None
+
+
+class OvertimeRecord(models.Model):
+    """Record of when a time budget was exceeded."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    time_budget = models.ForeignKey(TimeBudget, on_delete=models.CASCADE, related_name='overtime_records')
+    
+    overtime_hours = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], help_text="Hours over budget")
+    overtime_percentage = models.DecimalField(max_digits=5, decimal_places=2, help_text="Percentage over budget")
+    
+    period_start = models.DateField(help_text="Start of period when overtime occurred")
+    period_end = models.DateField(help_text="End of period when overtime occurred")
+    
+    alert_sent = models.BooleanField(default=False, help_text="Has alert been sent?")
+    alert_sent_at = models.DateTimeField(null=True, blank=True, help_text="When was alert sent?")
+    
+    resolved = models.BooleanField(default=False, help_text="Has this overtime been resolved?")
+    resolved_at = models.DateTimeField(null=True, blank=True, help_text="When was this resolved?")
+    resolved_by = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='resolved_overtime_records')
+    resolution_notes = models.TextField(blank=True, help_text="Notes on how overtime was resolved")
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
+    class Meta:
+        db_table = 'overtime_records'
+        verbose_name = 'Overtime Record'
+        verbose_name_plural = 'Overtime Records'
+        indexes = [
+            models.Index(fields=['time_budget', 'resolved']),
+            models.Index(fields=['period_start', 'period_end']),
+            models.Index(fields=['alert_sent']),
+        ]
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Overtime: {self.time_budget} (+{self.overtime_hours}h)"
 

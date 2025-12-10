@@ -5,6 +5,7 @@ from rest_framework import serializers
 from .models import (
     GitHubIntegration,
     SlackIntegration,
+    JiraIntegration,
     EmailNotificationSettings,
     WebhookEndpoint,
     WebhookDelivery
@@ -63,6 +64,35 @@ class SlackIntegrationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at', 'last_used_at']
         extra_kwargs = {
             'bot_token': {'write_only': True},
+        }
+
+
+class JiraIntegrationSerializer(serializers.ModelSerializer):
+    """Serializer for Jira integration."""
+    
+    class Meta:
+        model = JiraIntegration
+        fields = [
+            'id',
+            'user',
+            'project',
+            'jira_url',
+            'username',
+            'api_token',
+            'project_key',
+            'auto_create_issues',
+            'auto_sync_status',
+            'sync_comments',
+            'issue_type',
+            'priority_mapping',
+            'is_active',
+            'last_sync_at',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_sync_at']
+        extra_kwargs = {
+            'api_token': {'write_only': True},
         }
 
 

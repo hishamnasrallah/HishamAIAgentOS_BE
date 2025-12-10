@@ -7,6 +7,7 @@ API endpoints for AI-powered project management features.
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 from drf_spectacular.utils import extend_schema
 from django.db import models
 from django.db.models import Q
@@ -17,7 +18,9 @@ import json
 from apps.projects.models import (
     Project, Sprint, UserStory, Epic, Task, Bug, Issue, TimeLog, ProjectConfiguration, 
     Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch,
-    StatusChangeApproval
+    StatusChangeApproval, ProjectLabelPreset, Milestone, TicketReference, StoryLink, CardTemplate, BoardTemplate,
+    SearchHistory, FilterPreset, TimeBudget, OvertimeRecord, CardCoverImage, CardChecklist, CardVote,
+    StoryArchive, StoryVersion, Webhook, StoryClone
 )
 # Alias for backward compatibility
 Story = UserStory
@@ -43,15 +46,44 @@ from apps.projects.serializers import (
     NotificationSerializer,
     ActivitySerializer,
     EditHistorySerializer,
-    SavedSearchSerializer
+    SavedSearchSerializer,
+    ProjectLabelPresetSerializer,
+    MilestoneSerializer,
+    TicketReferenceSerializer,
+    StoryLinkSerializer,
+    CardTemplateSerializer,
+    BoardTemplateSerializer,
+    SearchHistorySerializer,
+    FilterPresetSerializer,
+    TimeBudgetSerializer,
+    OvertimeRecordSerializer,
+    CardCoverImageSerializer,
+    CardChecklistSerializer,
+    CardVoteSerializer,
+    StoryArchiveSerializer,
+    StoryVersionSerializer,
+    WebhookSerializer,
+    StoryCloneSerializer,
+    GitHubIntegrationSerializer,
+    JiraIntegrationSerializer,
+    SlackIntegrationSerializer
 )
 from apps.projects.serializers_approval import StatusChangeApprovalSerializer
 from apps.projects.services.story_generator import story_generator
 from apps.projects.services.sprint_planner import sprint_planner
 from apps.projects.services.estimation_engine import estimation_engine
 from apps.projects.services.analytics import analytics
+from apps.projects.services.reports_service import ReportsService
+from apps.projects.services.enhanced_filtering import EnhancedFilteringService
+from apps.projects.services.bulk_operations import BulkOperationsService
 from apps.authentication.permissions import IsProjectMember, IsProjectMemberOrReadOnly, IsProjectOwner
 from apps.authentication.serializers import UserSerializer
+
+
+# Rate limiting for autocomplete endpoints
+class AutocompleteThrottle(UserRateThrottle):
+    """Throttle autocomplete endpoints to prevent abuse."""
+    rate = '100/hour'  # Limit to 100 requests per hour per user
 
 
 def filter_by_tags(queryset, tags_list, tags_field='tags'):
@@ -84,22 +116,61 @@ def filter_by_labels(queryset, label_names, labels_field='labels'):
     """
     Filter queryset by label names in a database-agnostic way.
     Labels are stored as JSONField: [{'name': 'Urgent', 'color': '#red'}, ...]
+    
+    Args:
+        queryset: Django queryset to filter
+        label_names: List of label names to filter by
+        labels_field: Name of the JSONField containing labels
+    
+    Returns:
+        Filtered queryset
     """
     from django.db import connection
+    from django.core.exceptions import ValidationError
+    import re
     
+    if not label_names:
+        return queryset.none()
+    
+    # Validate and sanitize label names
+    sanitized_labels = []
+    MAX_LABEL_NAME_LENGTH = 100
+    LABEL_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9\s\-_]+$')
+    
+    for label_name in label_names:
+        if not isinstance(label_name, str):
+            continue
+        
+        # Sanitize: strip whitespace and limit length
+        sanitized = label_name.strip()[:MAX_LABEL_NAME_LENGTH]
+        
+        if not sanitized or len(sanitized) < 1:
+            continue
+        
+        # Validate format (alphanumeric, spaces, hyphens, underscores only)
+        if not LABEL_NAME_PATTERN.match(sanitized):
+            continue  # Skip invalid label names
+        
+        sanitized_labels.append(sanitized)
+    
+    if not sanitized_labels:
+        return queryset.none()
+    
+    # Database-specific filtering
     if connection.vendor == 'sqlite':
-        # For SQLite, use icontains on JSON string
+        # For SQLite, use JSON string matching (safer than icontains)
         label_filters = Q()
-        for label_name in label_names:
-            # Check if JSON string contains the label name
-            label_filters |= Q(**{f'{labels_field}__icontains': label_name})
+        for label_name in sanitized_labels:
+            # Escape special JSON characters
+            escaped_name = label_name.replace('"', '\\"').replace('\\', '\\\\')
+            # Match JSON structure: "name":"label_name"
+            label_filters |= Q(**{f'{labels_field}__icontains': f'"name":"{escaped_name}"'})
         return queryset.filter(label_filters)
     else:
-        # For PostgreSQL, use JSON path queries
+        # For PostgreSQL, use JSONB containment operator
         label_filters = Q()
-        for label_name in label_names:
-            # Check if any label object has this name
-            # Using JSON path: labels[*].name
+        for label_name in sanitized_labels:
+            # Use JSONB containment: labels @> [{"name": "label_name"}]
             label_filters |= Q(**{f'{labels_field}__contains': [{'name': label_name}]})
         return queryset.filter(label_filters)
 
@@ -305,6 +376,151 @@ class ProjectViewSet(viewsets.ModelViewSet):
             {'message': 'Member removed successfully', 'user_id': str(user.id)},
             status=status.HTTP_200_OK
         )
+    
+    @extend_schema(
+        description="Get statistics for a specific member in the project",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['get'], url_path='members/(?P<user_id>[^/.]+)/statistics')
+    def member_statistics(self, request, pk=None, user_id=None):
+        """Get statistics for a specific member."""
+        from apps.authentication.models import User
+        from django.db.models import Count, Sum, Q
+        from datetime import datetime, timedelta
+        
+        project = self.get_object()
+        
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Verify user is a member or owner
+        if project.owner != user and not project.members.filter(id=user.id).exists():
+            return Response(
+                {'error': 'User is not a member of this project'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get time range (default: last 30 days)
+        days = int(request.query_params.get('days', 30))
+        since_date = timezone.now() - timedelta(days=days)
+        
+        # Stories assigned
+        stories_assigned = UserStory.objects.filter(project=project, assigned_to=user).count()
+        stories_completed = UserStory.objects.filter(project=project, assigned_to=user, status='done').count()
+        
+        # Tasks assigned
+        tasks_assigned = Task.objects.filter(story__project=project, assigned_to=user).count()
+        tasks_completed = Task.objects.filter(story__project=project, assigned_to=user, status='done').count()
+        
+        # Bugs assigned
+        bugs_assigned = Bug.objects.filter(project=project, assigned_to=user).count()
+        bugs_resolved = Bug.objects.filter(project=project, assigned_to=user, status='resolved').count()
+        
+        # Issues assigned
+        issues_assigned = Issue.objects.filter(project=project, assigned_to=user).count()
+        issues_resolved = Issue.objects.filter(project=project, assigned_to=user, status='resolved').count()
+        
+        # Time logs
+        time_logs = TimeLog.objects.filter(
+            Q(story__project=project) | Q(task__story__project=project),
+            user=user,
+            created_at__gte=since_date
+        )
+        total_hours = time_logs.aggregate(total=Sum('hours'))['total'] or 0
+        time_logs_count = time_logs.count()
+        
+        # Recent activity (last 10)
+        from apps.projects.models import Activity
+        recent_activities = Activity.objects.filter(
+            project=project,
+            user=user
+        ).order_by('-created_at')[:10]
+        
+        # If no activities found with project filter, try to find activities through related work items
+        if not recent_activities.exists():
+            # Get activities through stories, tasks, bugs, issues
+            story_ids = list(UserStory.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
+            task_ids = list(Task.objects.filter(story__project=project, assigned_to=user).values_list('id', flat=True))
+            bug_ids = list(Bug.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
+            issue_ids = list(Issue.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
+            
+            from django.contrib.contenttypes.models import ContentType
+            story_ct = ContentType.objects.get_for_model(UserStory)
+            task_ct = ContentType.objects.get_for_model(Task)
+            bug_ct = ContentType.objects.get_for_model(Bug)
+            issue_ct = ContentType.objects.get_for_model(Issue)
+            
+            recent_activities = Activity.objects.filter(
+                Q(project=project, user=user) |
+                Q(content_type=story_ct, object_id__in=story_ids, user=user) |
+                Q(content_type=task_ct, object_id__in=task_ids, user=user) |
+                Q(content_type=bug_ct, object_id__in=bug_ids, user=user) |
+                Q(content_type=issue_ct, object_id__in=issue_ids, user=user)
+            ).order_by('-created_at')[:10]
+        
+        from apps.projects.serializers import ActivitySerializer
+        activity_serializer = ActivitySerializer(recent_activities, many=True)
+        
+        # Comments
+        from apps.projects.models import StoryComment
+        comments_count = StoryComment.objects.filter(
+            story__project=project,
+            created_by=user,
+            created_at__gte=since_date
+        ).count()
+        
+        # Epics owned
+        epics_owned = Epic.objects.filter(project=project, owner=user).count()
+        
+        return Response({
+            'user_id': str(user.id),
+            'user': {
+                'id': str(user.id),
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'username': user.username,
+            },
+            'statistics': {
+                'stories': {
+                    'assigned': stories_assigned,
+                    'completed': stories_completed,
+                    'completion_rate': round((stories_completed / stories_assigned * 100) if stories_assigned > 0 else 0, 1)
+                },
+                'tasks': {
+                    'assigned': tasks_assigned,
+                    'completed': tasks_completed,
+                    'completion_rate': round((tasks_completed / tasks_assigned * 100) if tasks_assigned > 0 else 0, 1)
+                },
+                'bugs': {
+                    'assigned': bugs_assigned,
+                    'resolved': bugs_resolved,
+                    'resolution_rate': round((bugs_resolved / bugs_assigned * 100) if bugs_assigned > 0 else 0, 1)
+                },
+                'issues': {
+                    'assigned': issues_assigned,
+                    'resolved': issues_resolved,
+                    'resolution_rate': round((issues_resolved / issues_assigned * 100) if issues_assigned > 0 else 0, 1)
+                },
+                'time_tracking': {
+                    'total_hours': round(total_hours, 2),
+                    'time_logs_count': time_logs_count,
+                    'average_per_log': round(total_hours / time_logs_count, 2) if time_logs_count > 0 else 0
+                },
+                'engagement': {
+                    'comments': comments_count,
+                    'epics_owned': epics_owned,
+                    'activities': recent_activities.count()
+                }
+            },
+            'recent_activities': activity_serializer.data,
+            'period_days': days
+        }, status=status.HTTP_200_OK)
     
     @extend_schema(
         description="Get all tags used in projects accessible to the user",
@@ -513,12 +729,77 @@ class SprintViewSet(viewsets.ModelViewSet):
         sprint = self.get_object()
         
         try:
-            health_data = asyncio.run(analytics.calculate_sprint_health(
-                sprint_id=str(sprint.id)
-            ))
-            
+            from apps.projects.services.sprint_automation_service import SprintAutomationService
+            health_data = SprintAutomationService.check_sprint_health(str(sprint.id))
             return Response(health_data, status=status.HTTP_200_OK)
-            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @extend_schema(
+        description="Auto-assign stories to sprint"
+    )
+    @action(detail=True, methods=['post'], url_path='auto-assign')
+    def auto_assign(self, request, pk=None):
+        """Automatically assign stories to sprint."""
+        sprint = self.get_object()
+        
+        try:
+            from apps.projects.services.sprint_automation_service import SprintAutomationService
+            result = SprintAutomationService.auto_assign_stories_to_sprint(
+                str(sprint.project.id),
+                str(sprint.id)
+            )
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @extend_schema(
+        description="Auto-close expired sprints"
+    )
+    @action(detail=False, methods=['post'])
+    def auto_close(self, request):
+        """Automatically close expired sprints."""
+        try:
+            from apps.projects.services.sprint_automation_service import SprintAutomationService
+            project_id = request.data.get('project')
+            closed = SprintAutomationService.auto_close_sprints(project_id)
+            return Response({
+                'closed_count': len(closed),
+                'closed_sprints': closed
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @extend_schema(
+        description="Auto-create next sprint"
+    )
+    @action(detail=False, methods=['post'])
+    def auto_create(self, request):
+        """Automatically create the next sprint."""
+        try:
+            from apps.projects.services.sprint_automation_service import SprintAutomationService
+            project_id = request.data.get('project')
+            if not project_id:
+                return Response(
+                    {'error': 'project is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            result = SprintAutomationService.auto_create_sprint(project_id)
+            if result:
+                return Response(result, status=status.HTTP_201_CREATED)
+            return Response(
+                {'error': 'Failed to create sprint'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             return Response(
                 {'error': str(e)},
@@ -730,13 +1011,13 @@ class StoryViewSet(viewsets.ModelViewSet):
         if not user or not user.is_authenticated:
             return Response({'tags': []}, status=status.HTTP_200_OK)
         
-        # Get accessible stories
+        # Get accessible stories with optimized queries
         if user.role == 'admin':
-            stories = Story.objects.all()
+            stories = Story.objects.all().only('tags')
         else:
             stories = Story.objects.filter(
                 models.Q(project__owner=user) | models.Q(project__members__id=user.id)
-            ).distinct()
+            ).distinct().only('tags')
         
         # Collect all tags
         all_tags = set()
@@ -765,7 +1046,7 @@ class StoryViewSet(viewsets.ModelViewSet):
         }],
         responses={200: {'type': 'object', 'properties': {'tags': {'type': 'array', 'items': {'type': 'string'}}}}}
     )
-    @action(detail=False, methods=['get'], url_path='tags/autocomplete')
+    @action(detail=False, methods=['get'], url_path='tags/autocomplete', throttle_classes=[AutocompleteThrottle])
     def tags_autocomplete(self, request):
         """Get tag suggestions for autocomplete."""
         query = request.query_params.get('q', '').strip().lower()
@@ -775,13 +1056,13 @@ class StoryViewSet(viewsets.ModelViewSet):
         if not user or not user.is_authenticated:
             return Response({'tags': []}, status=status.HTTP_200_OK)
         
-        # Get accessible stories
+        # Get accessible stories with optimized queries (only fetch tags field)
         if user.role == 'admin':
-            stories = Story.objects.all()
+            stories = Story.objects.all().only('tags')
         else:
             stories = Story.objects.filter(
                 models.Q(project__owner=user) | models.Q(project__members__id=user.id)
-            ).distinct()
+            ).distinct().only('tags')
         
         # Filter by project if specified
         if project_id:
@@ -849,6 +1130,125 @@ class StoryViewSet(viewsets.ModelViewSet):
         return Response({
             'components': sorted(list(matching_components))[:20]  # Limit to 20 suggestions
         }, status=status.HTTP_200_OK)
+    
+    @extend_schema(
+        description="Bulk update status for multiple stories",
+        request={'type': 'object', 'properties': {
+            'items': {'type': 'array', 'items': {'type': 'object'}},
+            'status': {'type': 'string'}
+        }},
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-update-status')
+    def bulk_update_status(self, request):
+        """Bulk update status for stories."""
+        items = request.data.get('items', [])
+        new_status = request.data.get('status')
+        
+        if not items or not new_status:
+            return Response(
+                {'error': 'items and status are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Add type to items
+        items_with_type = [{'id': item.get('id'), 'type': 'story'} for item in items]
+        result = BulkOperationsService.bulk_update_status(items_with_type, new_status, request.user)
+        return Response(result)
+    
+    @extend_schema(
+        description="Bulk assign stories to a user",
+        request={'type': 'object', 'properties': {
+            'items': {'type': 'array', 'items': {'type': 'object'}},
+            'assignee_id': {'type': 'string', 'format': 'uuid'}
+        }},
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-assign')
+    def bulk_assign(self, request):
+        """Bulk assign stories to a user."""
+        items = request.data.get('items', [])
+        assignee_id = request.data.get('assignee_id')
+        
+        if not items or not assignee_id:
+            return Response(
+                {'error': 'items and assignee_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        items_with_type = [{'id': item.get('id'), 'type': 'story'} for item in items]
+        result = BulkOperationsService.bulk_assign(items_with_type, assignee_id, request.user)
+        return Response(result)
+    
+    @extend_schema(
+        description="Bulk add labels to stories",
+        request={'type': 'object', 'properties': {
+            'items': {'type': 'array', 'items': {'type': 'object'}},
+            'labels': {'type': 'array', 'items': {'type': 'string'}}
+        }},
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-add-labels')
+    def bulk_add_labels(self, request):
+        """Bulk add labels to stories."""
+        items = request.data.get('items', [])
+        labels = request.data.get('labels', [])
+        
+        if not items or not labels:
+            return Response(
+                {'error': 'items and labels are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        items_with_type = [{'id': item.get('id'), 'type': 'story'} for item in items]
+        result = BulkOperationsService.bulk_add_labels(items_with_type, labels, request.user)
+        return Response(result)
+    
+    @extend_schema(
+        description="Bulk delete stories",
+        request={'type': 'object', 'properties': {
+            'items': {'type': 'array', 'items': {'type': 'object'}}
+        }},
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-delete')
+    def bulk_delete(self, request):
+        """Bulk delete stories."""
+        items = request.data.get('items', [])
+        
+        if not items:
+            return Response(
+                {'error': 'items are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        items_with_type = [{'id': item.get('id'), 'type': 'story'} for item in items]
+        result = BulkOperationsService.bulk_delete(items_with_type, request.user)
+        return Response(result)
+    
+    @extend_schema(
+        description="Bulk move stories to a sprint",
+        request={'type': 'object', 'properties': {
+            'items': {'type': 'array', 'items': {'type': 'object'}},
+            'sprint_id': {'type': 'string', 'format': 'uuid'}
+        }},
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['post'], url_path='bulk-move-to-sprint')
+    def bulk_move_to_sprint(self, request):
+        """Bulk move stories to a sprint."""
+        items = request.data.get('items', [])
+        sprint_id = request.data.get('sprint_id')
+        
+        if not items or not sprint_id:
+            return Response(
+                {'error': 'items and sprint_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        items_with_type = [{'id': item.get('id'), 'type': 'story'} for item in items]
+        result = BulkOperationsService.bulk_move_to_sprint(items_with_type, sprint_id, request.user)
+        return Response(result)
 
 
 # Backward compatibility - UserStoryViewSet is an alias for StoryViewSet
@@ -1649,22 +2049,27 @@ class StoryCommentViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Return comments for a story."""
+        # For detail actions (update, delete, react, etc.), don't filter by story
+        # This allows accessing comments by ID directly
+        if self.action in ['update', 'partial_update', 'destroy', 'retrieve', 'react']:
+            return StoryComment.objects.filter(deleted=False)
+        
+        # For list actions, filter by story
         story_id = self.request.query_params.get('story', None)
         if not story_id:
-            return StoryComment.objects.none()
+            return StoryComment.objects.filter(deleted=False)
         
         queryset = StoryComment.objects.filter(
             story_id=story_id,
             deleted=False
         )
         
-        # Filter by parent for threading
+        # Filter by parent for threading (if parent param is provided)
         parent_id = self.request.query_params.get('parent', None)
         if parent_id:
             queryset = queryset.filter(parent_id=parent_id)
-        else:
-            # Top-level comments only
-            queryset = queryset.filter(parent__isnull=True)
+        # If no parent filter, return all comments (including replies) for the story
+        # The frontend will organize them into a tree structure
         
         return queryset.order_by('created_at')
     
@@ -2448,6 +2853,87 @@ class EditHistoryViewSet(viewsets.ReadOnlyModelViewSet):
             )
 
 
+class QuickFiltersViewSet(viewsets.ViewSet):
+    """
+    ViewSet for quick filters - predefined filter configurations.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        description="Get available quick filters",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='')
+    def available(self, request):
+        """Get list of available quick filters."""
+        project_id = request.query_params.get('project')
+        
+        # Default quick filters
+        default_filters = [
+            {
+                'id': 'my-tasks',
+                'name': 'My Tasks',
+                'filters': [{'field': 'assignee', 'operator': 'equals', 'value': 'me'}],
+                'icon': 'user'
+            },
+            {
+                'id': 'overdue',
+                'name': 'Overdue',
+                'filters': [{'field': 'due_date', 'operator': 'is_overdue', 'value': ''}],
+                'icon': 'alert-circle'
+            },
+            {
+                'id': 'due-today',
+                'name': 'Due Today',
+                'filters': [{'field': 'due_date', 'operator': 'due_today', 'value': ''}],
+                'icon': 'calendar'
+            },
+            {
+                'id': 'high-priority',
+                'name': 'High Priority',
+                'filters': [{'field': 'priority', 'operator': 'equals', 'value': 'high'}],
+                'icon': 'flag'
+            },
+            {
+                'id': 'unassigned',
+                'name': 'Unassigned',
+                'filters': [{'field': 'assignee', 'operator': 'is_null', 'value': ''}],
+                'icon': 'user-x'
+            },
+            {
+                'id': 'blocked',
+                'name': 'Blocked',
+                'filters': [{'field': 'dependencies', 'operator': 'blocked_by', 'value': ''}],
+                'icon': 'lock'
+            },
+        ]
+        
+        # Get project-specific quick filters from FilterPreset
+        project_filters = []
+        if project_id:
+            from apps.projects.models import FilterPreset
+            presets = FilterPreset.objects.filter(
+                project_id=project_id,
+                is_default=True
+            )[:5]  # Limit to 5 project-specific filters
+            
+            for preset in presets:
+                project_filters.append({
+                    'id': f'preset-{preset.id}',
+                    'name': preset.name,
+                    'filters': preset.filters,
+                    'icon': 'filter',
+                    'is_preset': True,
+                    'preset_id': str(preset.id),
+                })
+        
+        return Response({
+            'default_filters': default_filters,
+            'project_filters': project_filters,
+            'all_filters': default_filters + project_filters,
+        }, status=status.HTTP_200_OK)
+
+
 class SearchViewSet(viewsets.ViewSet):
     """
     Advanced search ViewSet.
@@ -2497,7 +2983,52 @@ class SearchViewSet(viewsets.ViewSet):
         ],
         responses={200: {'type': 'object'}}
     )
-    @action(detail=False, methods=['get'], url_path='')
+    def list(self, request):
+        """List/search endpoint - delegates to search method."""
+        return self.search(request)
+    
+    @extend_schema(
+        description="Perform advanced search across multiple content types",
+        parameters=[
+            {
+                'name': 'q',
+                'in': 'query',
+                'required': True,
+                'schema': {'type': 'string'},
+                'description': 'Search query (supports operators: AND, OR, NOT, quotes, field:value)'
+            },
+            {
+                'name': 'content_types',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'array', 'items': {'type': 'string'}},
+                'description': 'Content types to search (e.g., userstory,task,bug)'
+            },
+            {
+                'name': 'project',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'string', 'format': 'uuid'},
+                'description': 'Project ID to limit search to'
+            },
+            {
+                'name': 'status',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'string'},
+                'description': 'Filter by status'
+            },
+            {
+                'name': 'limit',
+                'in': 'query',
+                'required': False,
+                'schema': {'type': 'integer'},
+                'description': 'Limit results per content type'
+            },
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='search')
     def search(self, request):
         """
         Perform advanced search.
@@ -2556,10 +3087,28 @@ class SearchViewSet(viewsets.ViewSet):
             limit=int(limit) if limit else None
         )
         
+        total_count = sum(len(items) for items in results.values())
+        
+        # Save search history
+        if query.strip():
+            try:
+                SearchHistory.objects.create(
+                    user=request.user,
+                    query=query,
+                    filters=filters,
+                    content_types=content_types or [],
+                    project=project,
+                    result_count=total_count
+                )
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error saving search history: {e}")
+        
         return Response({
             'query': query,
             'results': results,
-            'total_count': sum(len(items) for items in results.values())
+            'total_count': total_count
         })
     
     @extend_schema(
@@ -2639,6 +3188,22 @@ class SearchViewSet(viewsets.ViewSet):
                 user=request.user,
                 limit=int(limit) if limit else None
             )
+            
+            # Save search history
+            if query.strip():
+                try:
+                    SearchHistory.objects.create(
+                        user=request.user,
+                        query=query,
+                        filters={},
+                        content_types=content_types or [],
+                        project=project,
+                        result_count=len(results)
+                    )
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error saving search history: {e}")
             
             return Response({
                 'query': query,
@@ -2725,6 +3290,690 @@ class SavedSearchViewSet(viewsets.ModelViewSet):
             'results': results,
             'total_count': len(results)
         })
+
+
+class SearchHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for viewing search history.
+    Users can view their recent search queries.
+    """
+    serializer_class = SearchHistorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return search history for the current user only."""
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return SearchHistory.objects.none()
+        
+        queryset = SearchHistory.objects.filter(user=user)
+        
+        # Filter by project if provided
+        project_id = self.request.query_params.get('project', None)
+        if project_id:
+            try:
+                queryset = queryset.filter(project_id=project_id)
+            except (ValueError, TypeError):
+                queryset = queryset.none()
+        
+        # Limit to last 50 searches
+        return queryset.select_related('user', 'project').order_by('-created_at')[:50]
+    
+    @extend_schema(
+        description="Clear search history",
+        responses={204: None}
+    )
+    @action(detail=False, methods=['delete'])
+    def clear(self, request):
+        """Clear all search history for the current user."""
+        user = request.user
+        project_id = request.query_params.get('project', None)
+        
+        queryset = SearchHistory.objects.filter(user=user)
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        
+        count = queryset.delete()[0]
+        return Response({'deleted_count': count}, status=status.HTTP_200_OK)
+
+
+class FilterPresetViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing filter presets.
+    Users can create, update, and delete filter presets for quick filtering.
+    """
+    serializer_class = FilterPresetSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return filter presets accessible to the user."""
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return FilterPreset.objects.none()
+        
+        # Get project from URL or query params
+        project_id = self.kwargs.get('project_pk') or self.request.query_params.get('project')
+        
+        queryset = FilterPreset.objects.all()
+        
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        else:
+            # Global presets or user's personal presets
+            queryset = queryset.filter(
+                models.Q(project__isnull=True) | models.Q(user=user) | models.Q(is_shared=True)
+            )
+        
+        # Filter by user if specified
+        user_filter = self.request.query_params.get('user')
+        if user_filter:
+            queryset = queryset.filter(user_id=user_filter)
+        
+        return queryset.select_related('project', 'user', 'created_by').order_by('is_default', 'name')
+    
+    def perform_create(self, serializer):
+        """Set user and project on filter preset creation."""
+        project_id = self.kwargs.get('project_pk') or self.request.data.get('project')
+        user = self.request.user
+        
+        if project_id:
+            try:
+                project = Project.objects.get(pk=project_id)
+                self.check_object_permissions(self.request, project)
+                serializer.save(project=project, user=user, created_by=user)
+            except Project.DoesNotExist:
+                raise status.HTTP_404_NOT_FOUND
+        else:
+            serializer.save(user=user, created_by=user)
+    
+    @extend_schema(
+        description="Apply a filter preset",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'])
+    def apply(self, request, pk=None):
+        """Apply a filter preset and increment usage count."""
+        preset = self.get_object()
+        preset.usage_count += 1
+        preset.save(update_fields=['usage_count'])
+        
+        return Response({
+            'filters': preset.filters,
+            'preset_name': preset.name
+        }, status=status.HTTP_200_OK)
+
+
+class TimeBudgetViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing time budgets.
+    """
+    serializer_class = TimeBudgetSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return time budgets for the project."""
+        project_id = self.request.query_params.get('project')
+        sprint_id = self.request.query_params.get('sprint')
+        user_id = self.request.query_params.get('user')
+        
+        queryset = TimeBudget.objects.all()
+        
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        if sprint_id:
+            queryset = queryset.filter(sprint_id=sprint_id)
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        
+        return queryset.select_related('project', 'sprint', 'story', 'task', 'epic', 'user').order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Set created_by on budget creation."""
+        serializer.save(created_by=self.request.user)
+    
+    @extend_schema(
+        description="Check budgets and create overtime records",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['post'])
+    def check_budgets(self, request):
+        """Check all active budgets and create overtime records."""
+        from apps.projects.services.time_budget_service import TimeBudgetService
+        
+        project_id = request.data.get('project')
+        sprint_id = request.data.get('sprint')
+        
+        exceeded = TimeBudgetService.check_budgets(project_id, sprint_id)
+        
+        return Response({
+            'exceeded_count': len(exceeded),
+            'exceeded_budgets': [
+                {
+                    'budget_id': str(b['budget'].id),
+                    'spent_hours': b['spent_hours'],
+                    'budget_hours': b['budget_hours'],
+                    'overtime_hours': b['overtime_hours'],
+                }
+                for b in exceeded
+            ]
+        }, status=status.HTTP_200_OK)
+    
+    @extend_schema(
+        description="Get budget summary",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get summary of all budgets."""
+        from apps.projects.services.time_budget_service import TimeBudgetService
+        
+        project_id = request.query_params.get('project')
+        sprint_id = request.query_params.get('sprint')
+        
+        summary = TimeBudgetService.get_budget_summary(project_id, sprint_id)
+        
+        return Response(summary, status=status.HTTP_200_OK)
+
+
+class OvertimeRecordViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for viewing overtime records.
+    """
+    serializer_class = OvertimeRecordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return overtime records."""
+        project_id = self.request.query_params.get('project')
+        user_id = self.request.query_params.get('user')
+        
+        queryset = OvertimeRecord.objects.all()
+        
+        if project_id:
+            queryset = queryset.filter(time_budget__project_id=project_id)
+        if user_id:
+            queryset = queryset.filter(time_budget__user_id=user_id)
+        
+        return queryset.select_related('time_budget').order_by('-created_at')
+    
+    @extend_schema(
+        description="Get overtime history",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'])
+    def history(self, request):
+        """Get overtime history."""
+        from apps.projects.services.time_budget_service import TimeBudgetService
+        
+        project_id = request.query_params.get('project')
+        user_id = request.query_params.get('user')
+        limit = int(request.query_params.get('limit', 50))
+        
+        history = TimeBudgetService.get_overtime_history(project_id, user_id, limit)
+        
+        return Response(history, status=status.HTTP_200_OK)
+
+
+class CardCoverImageViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing card cover images."""
+    serializer_class = CardCoverImageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return cover images for the user's accessible work items."""
+        content_type = self.request.query_params.get('content_type')
+        object_id = self.request.query_params.get('object_id')
+        
+        queryset = CardCoverImage.objects.all()
+        
+        if content_type and object_id:
+            queryset = queryset.filter(content_type__model=content_type, object_id=object_id)
+        
+        return queryset.order_by('-is_primary', '-created_at')
+
+
+class CardChecklistViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing card checklists."""
+    serializer_class = CardChecklistSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return checklists for the user's accessible work items."""
+        content_type = self.request.query_params.get('content_type')
+        object_id = self.request.query_params.get('object_id')
+        
+        queryset = CardChecklist.objects.all()
+        
+        if content_type and object_id:
+            queryset = queryset.filter(content_type__model=content_type, object_id=object_id)
+        
+        return queryset.select_related('created_by').order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Set created_by on checklist creation."""
+        serializer.save(created_by=self.request.user)
+
+
+class CardVoteViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing card votes."""
+    serializer_class = CardVoteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return votes for the user's accessible work items."""
+        content_type = self.request.query_params.get('content_type')
+        object_id = self.request.query_params.get('object_id')
+        user_id = self.request.query_params.get('user')
+        
+        queryset = CardVote.objects.all()
+        
+        if content_type and object_id:
+            queryset = queryset.filter(content_type__model=content_type, object_id=object_id)
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        
+        return queryset.select_related('user').order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Set user on vote creation."""
+        serializer.save(user=self.request.user)
+    
+    @extend_schema(
+        description="Get vote summary for a work item",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get vote summary (upvotes, downvotes, total)."""
+        content_type = request.query_params.get('content_type')
+        object_id = request.query_params.get('object_id')
+        
+        if not content_type or not object_id:
+            return Response(
+                {'error': 'content_type and object_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        votes = CardVote.objects.filter(
+            content_type__model=content_type,
+            object_id=object_id
+        )
+        
+        upvotes = votes.filter(vote_type='upvote').count()
+        downvotes = votes.filter(vote_type='downvote').count()
+        total = votes.count()
+        
+        # Check if current user has voted
+        user_vote = None
+        if request.user.is_authenticated:
+            user_vote_obj = votes.filter(user=request.user).first()
+            if user_vote_obj:
+                user_vote = user_vote_obj.vote_type
+        
+        return Response({
+            'upvotes': upvotes,
+            'downvotes': downvotes,
+            'total': total,
+            'user_vote': user_vote,
+        }, status=status.HTTP_200_OK)
+
+
+class StoryArchiveViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing archived stories."""
+    serializer_class = StoryArchiveSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return archived stories for accessible projects."""
+        project_id = self.request.query_params.get('project')
+        
+        queryset = StoryArchive.objects.all()
+        
+        if project_id:
+            queryset = queryset.filter(story__project_id=project_id)
+        
+        return queryset.select_related('story', 'archived_by').order_by('-archived_at')
+    
+    def perform_create(self, serializer):
+        """Set archived_by on archive creation."""
+        serializer.save(archived_by=self.request.user)
+    
+    @extend_schema(
+        description="Restore an archived story",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        """Restore an archived story."""
+        archive = self.get_object()
+        archive.delete()  # Deleting archive restores the story
+        return Response({'message': 'Story restored successfully'}, status=status.HTTP_200_OK)
+
+
+class StoryVersionViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for viewing story versions."""
+    serializer_class = StoryVersionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return story versions."""
+        story_id = self.request.query_params.get('story')
+        
+        queryset = StoryVersion.objects.all()
+        
+        if story_id:
+            queryset = queryset.filter(story_id=story_id)
+        
+        return queryset.select_related('story', 'created_by').order_by('-version_number')
+
+
+class WebhookViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing webhooks."""
+    serializer_class = WebhookSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return webhooks for accessible projects."""
+        project_id = self.request.query_params.get('project')
+        
+        queryset = Webhook.objects.all()
+        
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        
+        return queryset.select_related('project', 'created_by').filter(is_active=True).order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Set created_by on webhook creation."""
+        serializer.save(created_by=self.request.user)
+    
+    @extend_schema(
+        description="Test a webhook",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'])
+    def test(self, request, pk=None):
+        """Test a webhook by sending a test event."""
+        webhook = self.get_object()
+        
+        # Send test webhook
+        try:
+            import requests
+            import json
+            import hmac
+            import hashlib
+            import time
+            
+            payload = {
+                'event': 'webhook.test',
+                'timestamp': time.time(),
+                'data': {'message': 'Test webhook'}
+            }
+            
+            headers = {'Content-Type': 'application/json'}
+            
+            # Add signature if secret is set
+            if webhook.secret:
+                signature = hmac.new(
+                    webhook.secret.encode(),
+                    json.dumps(payload).encode(),
+                    hashlib.sha256
+                ).hexdigest()
+                headers['X-Webhook-Signature'] = f'sha256={signature}'
+            
+            response = requests.post(webhook.url, json=payload, headers=headers, timeout=5)
+            
+            return Response({
+                'status_code': response.status_code,
+                'success': 200 <= response.status_code < 300,
+                'message': 'Webhook test completed'
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': f'Webhook test failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class StoryCloneViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for viewing story clones."""
+    serializer_class = StoryCloneSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return story clones."""
+        story_id = self.request.query_params.get('story')
+        
+        queryset = StoryClone.objects.all()
+        
+        if story_id:
+            queryset = queryset.filter(original_story_id=story_id)
+        
+        return queryset.select_related('original_story', 'cloned_story', 'cloned_by').order_by('-cloned_at')
+
+
+class GitHubIntegrationViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing GitHub integrations."""
+    serializer_class = GitHubIntegrationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return GitHub integrations for accessible projects."""
+        project_id = self.request.query_params.get('project')
+        
+        queryset = GitHubIntegration.objects.all()
+        
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        
+        return queryset.select_related('project', 'created_by').filter(is_active=True).order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Set created_by on integration creation."""
+        serializer.save(created_by=self.request.user)
+    
+    @extend_schema(
+        description="Verify GitHub connection",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'])
+    def verify(self, request, pk=None):
+        """Verify GitHub connection."""
+        integration = self.get_object()
+        
+        try:
+            from apps.projects.services.github_integration_service import GitHubIntegrationService
+            result = GitHubIntegrationService.verify_connection(
+                integration.access_token,
+                integration.repository_owner,
+                integration.repository_name
+            )
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @extend_schema(
+        description="Get GitHub issues",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['get'])
+    def issues(self, request, pk=None):
+        """Get issues from GitHub repository."""
+        integration = self.get_object()
+        state = request.query_params.get('state', 'open')
+        limit = int(request.query_params.get('limit', 50))
+        
+        try:
+            from apps.projects.services.github_integration_service import GitHubIntegrationService
+            issues = GitHubIntegrationService.get_issues(
+                integration.access_token,
+                integration.repository_owner,
+                integration.repository_name,
+                state,
+                limit
+            )
+            return Response({'issues': issues}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class JiraIntegrationViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing Jira integrations."""
+    serializer_class = JiraIntegrationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return Jira integrations for accessible projects."""
+        project_id = self.request.query_params.get('project')
+        
+        queryset = JiraIntegration.objects.all()
+        
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        
+        return queryset.select_related('project', 'created_by').filter(is_active=True).order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Set created_by on integration creation."""
+        serializer.save(created_by=self.request.user)
+    
+    @extend_schema(
+        description="Verify Jira connection",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'])
+    def verify(self, request, pk=None):
+        """Verify Jira connection."""
+        integration = self.get_object()
+        
+        try:
+            from apps.projects.services.jira_integration_service import JiraIntegrationService
+            result = JiraIntegrationService.verify_connection(
+                integration.base_url,
+                integration.email,
+                integration.api_token
+            )
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @extend_schema(
+        description="Get Jira issues",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['get'])
+    def issues(self, request, pk=None):
+        """Get issues from Jira project."""
+        integration = self.get_object()
+        jql = request.query_params.get('jql')
+        limit = int(request.query_params.get('limit', 50))
+        
+        try:
+            from apps.projects.services.jira_integration_service import JiraIntegrationService
+            issues = JiraIntegrationService.get_issues(
+                integration.base_url,
+                integration.email,
+                integration.api_token,
+                integration.project_key,
+                jql,
+                limit
+            )
+            return Response({'issues': issues}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class SlackIntegrationViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing Slack integrations."""
+    serializer_class = SlackIntegrationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMemberOrReadOnly]
+    
+    def get_queryset(self):
+        """Return Slack integrations for accessible projects."""
+        project_id = self.request.query_params.get('project')
+        
+        queryset = SlackIntegration.objects.all()
+        
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        
+        return queryset.select_related('project', 'created_by').filter(is_active=True).order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """Set created_by on integration creation."""
+        serializer.save(created_by=self.request.user)
+    
+    @extend_schema(
+        description="Verify Slack connection",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'])
+    def verify(self, request, pk=None):
+        """Verify Slack connection."""
+        integration = self.get_object()
+        
+        try:
+            from apps.projects.services.slack_integration_service import SlackIntegrationService
+            result = SlackIntegrationService.verify_connection(
+                integration.webhook_url,
+                integration.bot_token
+            )
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @extend_schema(
+        description="Send test notification",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=True, methods=['post'])
+    def test(self, request, pk=None):
+        """Send a test notification to Slack."""
+        integration = self.get_object()
+        message = request.data.get('message', 'Test notification from Project Management App')
+        
+        try:
+            from apps.projects.services.slack_integration_service import SlackIntegrationService
+            
+            if integration.webhook_url:
+                result = SlackIntegrationService.send_message(
+                    integration.webhook_url,
+                    message,
+                    integration.channel
+                )
+            elif integration.bot_token:
+                result = SlackIntegrationService.post_to_channel(
+                    integration.bot_token,
+                    integration.channel or '#general',
+                    message
+                )
+            else:
+                return Response(
+                    {'error': 'Either webhook_url or bot_token is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class StatusChangeApprovalViewSet(viewsets.ModelViewSet):
@@ -2938,3 +4187,529 @@ class StatusChangeApprovalViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(approval)
         return Response(serializer.data)
+
+
+class MilestoneViewSet(viewsets.ModelViewSet):
+    """
+    API endpoints for managing project milestones.
+    """
+    serializer_class = MilestoneSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMember]
+
+    def get_queryset(self):
+        project_id = self.kwargs.get('project_pk')
+        if not project_id:
+            return Milestone.objects.none()
+        
+        project = Project.objects.get(pk=project_id)
+        self.check_object_permissions(self.request, project)
+        return Milestone.objects.filter(project_id=project_id).order_by('target_date', 'name')
+
+    def perform_create(self, serializer):
+        project_id = self.kwargs.get('project_pk')
+        project = Project.objects.get(pk=project_id)
+        self.check_object_permissions(self.request, project)
+        serializer.save(project=project, created_by=self.request.user)
+
+
+class TicketReferenceViewSet(viewsets.ModelViewSet):
+    """
+    API endpoints for managing external ticket references.
+    """
+    serializer_class = TicketReferenceSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMember]
+
+    def get_queryset(self):
+        project_id = self.kwargs.get('project_pk')
+        if not project_id:
+            return TicketReference.objects.none()
+        
+        project = Project.objects.get(pk=project_id)
+        self.check_object_permissions(self.request, project)
+        return TicketReference.objects.filter(project_id=project_id).select_related('content_type').order_by('-created_at')
+
+    def perform_create(self, serializer):
+        project_id = self.kwargs.get('project_pk')
+        project = Project.objects.get(pk=project_id)
+        self.check_object_permissions(self.request, project)
+        serializer.save(project=project, created_by=self.request.user)
+
+
+class StoryLinkViewSet(viewsets.ModelViewSet):
+    """
+    API endpoints for managing story links.
+    """
+    serializer_class = StoryLinkSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMember]
+
+    def get_queryset(self):
+        project_id = self.kwargs.get('project_pk')
+        if not project_id:
+            return StoryLink.objects.none()
+        
+        project = Project.objects.get(pk=project_id)
+        self.check_object_permissions(self.request, project)
+        return StoryLink.objects.filter(project_id=project_id).select_related('source_story', 'target_story').order_by('-created_at')
+
+    def perform_create(self, serializer):
+        project_id = self.kwargs.get('project_pk')
+        project = Project.objects.get(pk=project_id)
+        self.check_object_permissions(self.request, project)
+        serializer.save(project=project, created_by=self.request.user)
+
+
+class CardTemplateViewSet(viewsets.ModelViewSet):
+    """
+    API endpoints for managing card templates.
+    Supports both project-specific and global templates.
+    """
+    serializer_class = CardTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMember]
+
+    def get_queryset(self):
+        project_id = self.kwargs.get('project_pk')
+        if project_id:
+            project = Project.objects.get(pk=project_id)
+            self.check_object_permissions(self.request, project)
+            # Return project templates and global templates
+            return CardTemplate.objects.filter(
+                models.Q(project_id=project_id) | models.Q(scope='global')
+            ).order_by('scope', 'is_default', 'name')
+        else:
+            # List all global templates
+            return CardTemplate.objects.filter(scope='global').order_by('is_default', 'name')
+
+    def perform_create(self, serializer):
+        project_id = self.kwargs.get('project_pk')
+        if project_id:
+            project = Project.objects.get(pk=project_id)
+            self.check_object_permissions(self.request, project)
+            serializer.save(project=project, created_by=self.request.user)
+        else:
+            serializer.save(scope='global', created_by=self.request.user)
+
+    @extend_schema(
+        description="Use a card template to create a story",
+        request={'type': 'object', 'properties': {'template_id': {'type': 'string'}}},
+        responses={201: StorySerializer}
+    )
+    @action(detail=True, methods=['post'], url_path='apply')
+    def apply_template(self, request, pk=None):
+        """Apply a card template to create a new story."""
+        template = self.get_object()
+        project_id = self.kwargs.get('project_pk')
+        
+        if not project_id:
+            return Response(
+                {'error': 'Project ID is required to apply template.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        project = Project.objects.get(pk=project_id)
+        self.check_object_permissions(self.request, project)
+        
+        # Create story from template
+        story_data = template.template_fields.copy()
+        story_data['project'] = project_id
+        
+        serializer = StorySerializer(data=story_data, context={'request': request})
+        if serializer.is_valid():
+            story = serializer.save(created_by=request.user)
+            # Increment usage count
+            template.usage_count += 1
+            template.save(update_fields=['usage_count'])
+            return Response(StorySerializer(story).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BoardTemplateViewSet(viewsets.ModelViewSet):
+    """
+    API endpoints for managing board templates.
+    Supports both project-specific and global templates.
+    """
+    serializer_class = BoardTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMember]
+
+    def get_queryset(self):
+        project_id = self.kwargs.get('project_pk')
+        if project_id:
+            project = Project.objects.get(pk=project_id)
+            self.check_object_permissions(self.request, project)
+            # Return project templates and global templates
+            return BoardTemplate.objects.filter(
+                models.Q(project_id=project_id) | models.Q(scope='global')
+            ).order_by('scope', 'is_default', 'name')
+        else:
+            # List all global templates
+            return BoardTemplate.objects.filter(scope='global').order_by('is_default', 'name')
+
+    def perform_create(self, serializer):
+        project_id = self.kwargs.get('project_pk')
+        if project_id:
+            project = Project.objects.get(pk=project_id)
+            self.check_object_permissions(self.request, project)
+            serializer.save(project=project, created_by=self.request.user)
+        else:
+            serializer.save(scope='global', created_by=self.request.user)
+
+    @extend_schema(
+        description="Apply a board template to project configuration",
+        request={'type': 'object', 'properties': {'template_id': {'type': 'string'}}},
+        responses={200: ProjectConfigurationSerializer}
+    )
+    @action(detail=True, methods=['post'], url_path='apply')
+    def apply_template(self, request, pk=None):
+        """Apply a board template to project configuration."""
+        template = self.get_object()
+        project_id = self.kwargs.get('project_pk')
+        
+        if not project_id:
+            return Response(
+                {'error': 'Project ID is required to apply template.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        project = Project.objects.get(pk=project_id)
+        self.check_object_permissions(self.request, project)
+        
+        # Get or create project configuration
+        config, created = ProjectConfiguration.objects.get_or_create(project=project)
+        
+        # Apply board template configuration
+        board_config = template.board_config.copy()
+        if 'board_columns' in board_config:
+            config.board_columns = board_config['board_columns']
+        if 'swimlane_grouping' in board_config:
+            config.swimlane_grouping = board_config['swimlane_grouping']
+        if 'card_display_fields' in board_config:
+            config.card_display_fields = board_config['card_display_fields']
+        if 'card_color_by' in board_config:
+            config.card_color_by = board_config['card_color_by']
+        
+        config.save()
+        
+        # Increment usage count
+        template.usage_count += 1
+        template.save(update_fields=['usage_count'])
+        
+        return Response(ProjectConfigurationSerializer(config).data, status=status.HTTP_200_OK)
+
+
+class ProjectLabelPresetViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing project label presets."""
+    serializer_class = ProjectLabelPresetSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return label presets for projects the user has access to."""
+        user = self.request.user
+        project_id = self.request.query_params.get('project')
+        
+        # Get projects the user has access to
+        user_projects = Project.objects.filter(
+            Q(owner=user) | Q(members=user)
+        ).distinct()
+        
+        # Start with all presets for user's projects
+        queryset = ProjectLabelPreset.objects.filter(project__in=user_projects)
+        
+        # Filter by specific project if provided
+        if project_id:
+            # Verify user has access to this project
+            if user_projects.filter(id=project_id).exists():
+                queryset = queryset.filter(project_id=project_id)
+            else:
+                # User doesn't have access, return empty queryset
+                return ProjectLabelPreset.objects.none()
+        
+        return queryset.select_related('project', 'created_by', 'updated_by').order_by('is_default', 'name')
+    
+    def perform_create(self, serializer):
+        """Set created_by and updated_by on create."""
+        serializer.save(
+            created_by=self.request.user,
+            updated_by=self.request.user
+        )
+    
+    def perform_update(self, serializer):
+        """Set updated_by on update."""
+        serializer.save(updated_by=self.request.user)
+
+
+class StatisticsViewSet(viewsets.ViewSet):
+    """
+    API endpoints for project statistics and analytics.
+    Provides various analytics for stories, components, and team performance.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsProjectMember]
+    
+    from apps.projects.services.statistics_service import StatisticsService
+    
+    def get_project(self):
+        """Get and validate project from URL or query parameters."""
+        # Try to get project ID from URL kwargs first (nested routes)
+        project_id = self.kwargs.get('project_pk') or self.kwargs.get('pk')
+        
+        # If not in kwargs, try query parameters (for non-nested routes)
+        if not project_id:
+            project_id = self.request.query_params.get('project')
+            # Also try 'project_id' as an alternative parameter name
+            if not project_id:
+                project_id = self.request.query_params.get('project_id')
+        
+        if not project_id:
+            from rest_framework import serializers
+            # Debug: log what we received
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"StatisticsViewSet.get_project: kwargs={self.kwargs}, query_params={dict(self.request.query_params)}")
+            raise serializers.ValidationError("Project ID is required. Please provide 'project' as a query parameter or in the URL.")
+        
+        try:
+            project = Project.objects.get(pk=project_id)
+            self.check_object_permissions(self.request, project)
+            return project
+        except Project.DoesNotExist:
+            raise status.HTTP_404_NOT_FOUND
+        except ValueError:
+            from rest_framework import serializers
+            raise serializers.ValidationError(f"Invalid project ID format: {project_id}")
+    
+    @extend_schema(
+        description="Get story type distribution for a project",
+        responses={200: {'type': 'object', 'additionalProperties': {'type': 'integer'}}}
+    )
+    @action(detail=False, methods=['get'], url_path='story-type-distribution')
+    def story_type_distribution(self, request, project_pk=None):
+        """Get story type distribution."""
+        project = self.get_project()
+        from apps.projects.services.statistics_service import StatisticsService
+        service = StatisticsService()
+        data = service.get_story_type_distribution(str(project.id))
+        return Response(data)
+    
+    @extend_schema(
+        description="Get component distribution for a project",
+        responses={200: {'type': 'object', 'additionalProperties': {'type': 'integer'}}}
+    )
+    @action(detail=False, methods=['get'], url_path='component-distribution')
+    def component_distribution(self, request, project_pk=None):
+        """Get component distribution."""
+        project = self.get_project()
+        from apps.projects.services.statistics_service import StatisticsService
+        service = StatisticsService()
+        data = service.get_component_distribution(str(project.id))
+        return Response(data)
+    
+    @extend_schema(
+        description="Get story type creation trends over time",
+        parameters=[
+            {'name': 'days', 'in': 'query', 'type': 'integer', 'default': 30, 'description': 'Number of days for the trend'}
+        ],
+        responses={200: {'type': 'array', 'items': {'type': 'object'}}}
+    )
+    @action(detail=False, methods=['get'], url_path='story-type-trends')
+    def story_type_trends(self, request, project_pk=None):
+        """Get story type trends."""
+        project = self.get_project()
+        from apps.projects.services.statistics_service import StatisticsService
+        service = StatisticsService()
+        days = int(request.query_params.get('days', 30))
+        data = service.get_story_type_trends(str(project.id), days)
+        return Response(data)
+    
+    @extend_schema(
+        description="Get component usage trends over time",
+        parameters=[
+            {'name': 'days', 'in': 'query', 'type': 'integer', 'default': 30, 'description': 'Number of days for the trend'}
+        ],
+        responses={200: {'type': 'array', 'items': {'type': 'object'}}}
+    )
+    @action(detail=False, methods=['get'], url_path='component-trends')
+    def component_trends(self, request, project_pk=None):
+        """Get component trends."""
+        project = self.get_project()
+        from apps.projects.services.statistics_service import StatisticsService
+        service = StatisticsService()
+        days = int(request.query_params.get('days', 30))
+        data = service.get_component_trends(str(project.id), days)
+        return Response(data)
+    
+    @extend_schema(
+        description="Get cycle time metrics (time from start to completion)",
+        parameters=[
+            {'name': 'days', 'in': 'query', 'type': 'integer', 'default': 90, 'description': 'Number of days to analyze'}
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='cycle-time')
+    def cycle_time(self, request, project_pk=None):
+        """Get cycle time analytics."""
+        project = self.get_project()
+        days = int(request.query_params.get('days', 90))
+        data = asyncio.run(analytics.calculate_cycle_time(str(project.id), days))
+        return Response(data)
+    
+    @extend_schema(
+        description="Get lead time metrics (time from creation to completion)",
+        parameters=[
+            {'name': 'days', 'in': 'query', 'type': 'integer', 'default': 90, 'description': 'Number of days to analyze'}
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='lead-time')
+    def lead_time(self, request, project_pk=None):
+        """Get lead time analytics."""
+        project = self.get_project()
+        days = int(request.query_params.get('days', 90))
+        data = asyncio.run(analytics.calculate_lead_time(str(project.id), days))
+        return Response(data)
+    
+    @extend_schema(
+        description="Get throughput metrics (stories completed per time period)",
+        parameters=[
+            {'name': 'days', 'in': 'query', 'type': 'integer', 'default': 30, 'description': 'Number of days to analyze'}
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='throughput')
+    def throughput(self, request, project_pk=None):
+        """Get throughput analytics."""
+        project = self.get_project()
+        days = int(request.query_params.get('days', 30))
+        data = asyncio.run(analytics.calculate_throughput(str(project.id), days))
+        return Response(data)
+    
+    @extend_schema(
+        description="Get project health metrics",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='project-health')
+    def project_health(self, request, project_pk=None):
+        """Get project health analytics."""
+        project = self.get_project()
+        data = asyncio.run(analytics.calculate_project_health(str(project.id)))
+        return Response(data)
+    
+    @extend_schema(
+        description="Get team performance metrics",
+        parameters=[
+            {'name': 'days', 'in': 'query', 'type': 'integer', 'default': 90, 'description': 'Number of days to analyze'}
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='team-performance')
+    def team_performance(self, request, project_pk=None):
+        """Get team performance analytics."""
+        project = self.get_project()
+        days = int(request.query_params.get('days', 90))
+        data = asyncio.run(analytics.calculate_team_performance(str(project.id), days))
+        return Response(data)
+    
+    @extend_schema(
+        description="Get time reports for a project",
+        parameters=[
+            {'name': 'start_date', 'in': 'query', 'type': 'string', 'format': 'date'},
+            {'name': 'end_date', 'in': 'query', 'type': 'string', 'format': 'date'},
+            {'name': 'user_id', 'in': 'query', 'type': 'string', 'format': 'uuid'},
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='time-reports')
+    def time_reports(self, request, project_pk=None):
+        """Get time reports."""
+        project = self.get_project()
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        user_id = request.query_params.get('user_id')
+        
+        from datetime import datetime as dt
+        try:
+            start = dt.fromisoformat(start_date.replace('Z', '+00:00')) if start_date else None
+        except:
+            try:
+                start = dt.strptime(start_date, '%Y-%m-%d') if start_date else None
+            except:
+                start = None
+        try:
+            end = dt.fromisoformat(end_date.replace('Z', '+00:00')) if end_date else None
+        except:
+            try:
+                end = dt.strptime(end_date, '%Y-%m-%d') if end_date else None
+            except:
+                end = None
+        
+        data = ReportsService.get_time_reports(str(project.id), start, end, user_id)
+        return Response(data)
+    
+    @extend_schema(
+        description="Get burndown chart data for a sprint",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='burndown-chart')
+    def burndown_chart(self, request, project_pk=None):
+        """Get burndown chart data."""
+        sprint_id = request.query_params.get('sprint_id')
+        if not sprint_id:
+            return Response({'error': 'sprint_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = ReportsService.get_burndown_chart(sprint_id)
+        if data:
+            return Response(data)
+        return Response({'error': 'Sprint not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @extend_schema(
+        description="Get velocity tracking across sprints",
+        parameters=[
+            {'name': 'num_sprints', 'in': 'query', 'type': 'integer', 'default': 5},
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='velocity-tracking')
+    def velocity_tracking(self, request, project_pk=None):
+        """Get velocity tracking."""
+        project = self.get_project()
+        num_sprints = int(request.query_params.get('num_sprints', 5))
+        data = ReportsService.get_velocity_tracking(str(project.id), num_sprints)
+        return Response(data)
+    
+    @extend_schema(
+        description="Get estimation history for stories",
+        parameters=[
+            {'name': 'story_id', 'in': 'query', 'type': 'string', 'format': 'uuid'},
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='estimation-history')
+    def estimation_history(self, request, project_pk=None):
+        """Get estimation history."""
+        project = self.get_project()
+        story_id = request.query_params.get('story_id')
+        data = ReportsService.get_estimation_history(str(project.id), story_id)
+        return Response(data)
+    
+    @extend_schema(
+        description="Compare actual time vs estimated time",
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='actual-vs-estimated')
+    def actual_vs_estimated(self, request, project_pk=None):
+        """Get actual vs estimated comparison."""
+        project = self.get_project()
+        data = ReportsService.get_actual_vs_estimated(str(project.id))
+        return Response(data)
+    
+    @extend_schema(
+        description="Get epic progress tracking",
+        parameters=[
+            {'name': 'epic_id', 'in': 'query', 'type': 'string', 'format': 'uuid'},
+        ],
+        responses={200: {'type': 'object'}}
+    )
+    @action(detail=False, methods=['get'], url_path='epic-progress')
+    def epic_progress(self, request, project_pk=None):
+        """Get epic progress."""
+        project = self.get_project()
+        epic_id = request.query_params.get('epic_id')
+        data = ReportsService.get_epic_progress(str(project.id), epic_id)
+        return Response(data)

@@ -7,7 +7,9 @@ from django.utils.html import format_html
 from .models import (
     Project, Sprint, Epic, UserStory, Task, Bug, Issue, TimeLog, ProjectConfiguration,
     Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Activity, EditHistory, Watcher, SavedSearch,
-    StatusChangeApproval
+    StatusChangeApproval, ProjectLabelPreset, Milestone, TicketReference, StoryLink, CardTemplate, BoardTemplate,
+    SearchHistory, FilterPreset, TimeBudget, OvertimeRecord, CardCoverImage, CardChecklist, CardVote,
+    StoryArchive, StoryVersion, Webhook, StoryClone, GitHubIntegration, JiraIntegration, SlackIntegration
 )
 
 
@@ -67,7 +69,7 @@ class ProjectAdmin(admin.ModelAdmin):
             '<span style="background-color: {}; color: white; '
             'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
             color,
-            obj.get_status_display()
+            obj.status.replace('_', ' ').title() if obj.status else 'Unknown'
         )
     status_badge.short_description = 'Status'
     status_badge.admin_order_field = 'status'
@@ -165,7 +167,7 @@ class SprintAdmin(admin.ModelAdmin):
             '<span style="background-color: {}; color: white; '
             'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
             color,
-            obj.get_status_display()
+            obj.status.replace('_', ' ').title() if obj.status else 'Unknown'
         )
     status_badge.short_description = 'Status'
     status_badge.admin_order_field = 'status'
@@ -208,6 +210,7 @@ class EpicAdmin(admin.ModelAdmin):
     """Epic admin."""
     
     list_display = (
+        'number',
         'title',
         'project',
         'status_badge',
@@ -253,7 +256,7 @@ class EpicAdmin(admin.ModelAdmin):
             '<span style="background-color: {}; color: white; '
             'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
             color,
-            obj.get_status_display()
+            obj.status.replace('_', ' ').title() if obj.status else 'Unknown'
         )
     status_badge.short_description = 'Status'
     status_badge.admin_order_field = 'status'
@@ -287,6 +290,7 @@ class UserStoryAdmin(admin.ModelAdmin):
     """User Story admin."""
     
     list_display = (
+        'number',
         'title',
         'project',
         'sprint',
@@ -370,25 +374,28 @@ class UserStoryAdmin(admin.ModelAdmin):
             '<span style="background-color: {}; color: white; '
             'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
             color,
-            obj.get_status_display()
+            obj.status.replace('_', ' ').title() if obj.status else 'Unknown'
         )
     status_badge.short_description = 'Status'
     status_badge.admin_order_field = 'status'
     
     def priority_badge(self, obj):
         """Display priority as colored badge."""
-        colors = {
-            'low': '#6c757d',
-            'medium': '#17a2b8',
-            'high': '#ffc107',
+        priority = obj.priority or 'medium'
+        # Map priority to colors
+        color_map = {
+            'low': '#28a745',
+            'medium': '#007bff',
+            'high': '#fd7e14',
             'critical': '#dc3545',
         }
-        color = colors.get(obj.priority, '#6c757d')
+        color = color_map.get(priority, '#6c757d')
+        display_name = priority.title()
         return format_html(
             '<span style="background-color: {}; color: white; '
             'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
             color,
-            obj.get_priority_display()
+            display_name
         )
     priority_badge.short_description = 'Priority'
     priority_badge.admin_order_field = 'priority'
@@ -445,6 +452,7 @@ class TaskAdmin(admin.ModelAdmin):
     """Task admin."""
     
     list_display = (
+        'number',
         'title',
         'story',
         'status_badge',
@@ -490,7 +498,7 @@ class TaskAdmin(admin.ModelAdmin):
             '<span style="background-color: {}; color: white; '
             'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
             color,
-            obj.get_status_display()
+            obj.status.replace('_', ' ').title() if obj.status else 'Unknown'
         )
     status_badge.short_description = 'Status'
     status_badge.admin_order_field = 'status'
@@ -1377,6 +1385,44 @@ class StoryAttachmentAdmin(admin.ModelAdmin):
     file_size_display.short_description = 'Size'
 
 
+@admin.register(ProjectLabelPreset)
+class ProjectLabelPresetAdmin(admin.ModelAdmin):
+    """Admin interface for ProjectLabelPreset."""
+    
+    list_display = ['name', 'project', 'color_display', 'is_default', 'created_by', 'created_at']
+    list_filter = ['project', 'is_default', 'created_at']
+    search_fields = ['name', 'project__name', 'description']
+    readonly_fields = ['id', 'created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('project', 'name', 'color', 'description', 'is_default')
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_by', 'updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def color_display(self, obj):
+        """Display color as a colored square."""
+        if obj.color:
+            return format_html(
+                '<span style="display: inline-block; width: 20px; height: 20px; background-color: {}; border: 1px solid #ccc; border-radius: 3px;"></span> {}',
+                obj.color,
+                obj.color
+            )
+        return '-'
+    color_display.short_description = 'Color'
+    
+    def save_model(self, request, obj, form, change):
+        """Set created_by/updated_by on save."""
+        if not change:
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
+
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
     """Notification admin."""
@@ -1430,3 +1476,851 @@ class NotificationAdmin(admin.ModelAdmin):
             '<span style="color: orange; font-weight: bold;">● Unread</span>'
         )
     read_badge.short_description = 'Status'
+
+
+@admin.register(Milestone)
+class MilestoneAdmin(admin.ModelAdmin):
+    """Milestone admin interface."""
+    
+    list_display = (
+        'name',
+        'project',
+        'status_badge',
+        'target_date',
+        'progress_percentage',
+        'created_by',
+        'created_at'
+    )
+    list_filter = ('status', 'created_at', 'target_date', 'project')
+    search_fields = ('name', 'description', 'project__name')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('project', 'name', 'description', 'status')
+        }),
+        ('Dates', {
+            'fields': ('target_date', 'completed_date')
+        }),
+        ('Progress', {
+            'fields': ('progress_percentage',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_by', 'updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['mark_in_progress', 'mark_completed', 'mark_cancelled']
+    
+    def status_badge(self, obj):
+        """Display status as badge."""
+        colors = {
+            'planned': '#6c757d',
+            'in_progress': '#28a745',
+            'completed': '#17a2b8',
+            'cancelled': '#dc3545',
+        }
+        color = colors.get(obj.status, '#6c757d')
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
+            color,
+            obj.status.replace('_', ' ').title() if obj.status else 'Unknown'
+        )
+    status_badge.short_description = 'Status'
+    status_badge.admin_order_field = 'status'
+    
+    def mark_in_progress(self, request, queryset):
+        """Mark selected milestones as in progress."""
+        updated = queryset.update(status='in_progress')
+        self.message_user(request, f'{updated} milestone(s) marked as in progress.')
+    mark_in_progress.short_description = 'Mark as in progress'
+    
+    def mark_completed(self, request, queryset):
+        """Mark selected milestones as completed."""
+        from django.utils import timezone
+        from datetime import date
+        updated = queryset.update(status='completed', completed_date=date.today())
+        self.message_user(request, f'{updated} milestone(s) marked as completed.')
+    mark_completed.short_description = 'Mark as completed'
+    
+    def mark_cancelled(self, request, queryset):
+        """Mark selected milestones as cancelled."""
+        updated = queryset.update(status='cancelled')
+        self.message_user(request, f'{updated} milestone(s) marked as cancelled.')
+    mark_cancelled.short_description = 'Mark as cancelled'
+
+
+@admin.register(TicketReference)
+class TicketReferenceAdmin(admin.ModelAdmin):
+    """Ticket Reference admin interface."""
+    
+    list_display = (
+        'ticket_id',
+        'system_badge',
+        'work_item_type',
+        'project',
+        'title_preview',
+        'status',
+        'sync_enabled',
+        'last_synced_at',
+        'created_at'
+    )
+    list_filter = ('system', 'sync_enabled', 'created_at', 'project')
+    search_fields = ('ticket_id', 'title', 'project__name', 'ticket_url')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'last_synced_at', 'work_item_type')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Reference Information', {
+            'fields': ('project', 'system', 'ticket_id', 'ticket_url', 'title', 'status')
+        }),
+        ('Work Item', {
+            'fields': ('content_type', 'object_id', 'work_item_type')
+        }),
+        ('Sync Settings', {
+            'fields': ('sync_enabled', 'last_synced_at')
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def system_badge(self, obj):
+        """Display system as badge."""
+        colors = {
+            'github': '#24292e',
+            'jira': '#0052CC',
+            'gitlab': '#FC6D26',
+            'linear': '#5E6AD2',
+            'asana': '#F06A6A',
+            'trello': '#0079BF',
+            'other': '#6c757d',
+        }
+        color = colors.get(obj.system, '#6c757d')
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_system_display()
+        )
+    system_badge.short_description = 'System'
+    system_badge.admin_order_field = 'system'
+    
+    def work_item_type(self, obj):
+        """Display work item type."""
+        return obj.content_type.model if obj.content_type else None
+    work_item_type.short_description = 'Work Item Type'
+    
+    def title_preview(self, obj):
+        """Display title preview."""
+        if obj.title:
+            preview = obj.title[:50] + '...' if len(obj.title) > 50 else obj.title
+            return format_html('<span title="{}">{}</span>', obj.title, preview)
+        return '-'
+    title_preview.short_description = 'Title'
+
+
+@admin.register(StoryLink)
+class StoryLinkAdmin(admin.ModelAdmin):
+    """Story Link admin interface."""
+    
+    list_display = (
+        'source_story',
+        'link_type_badge',
+        'target_story',
+        'project',
+        'created_by',
+        'created_at'
+    )
+    list_filter = ('link_type', 'created_at', 'project')
+    search_fields = (
+        'source_story__title',
+        'target_story__title',
+        'description',
+        'project__name'
+    )
+    readonly_fields = ('id', 'created_at', 'updated_at', 'project')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Link Information', {
+            'fields': ('project', 'source_story', 'target_story', 'link_type', 'description')
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def link_type_badge(self, obj):
+        """Display link type as badge."""
+        colors = {
+            'blocks': '#dc3545',
+            'blocked_by': '#ffc107',
+            'relates_to': '#17a2b8',
+            'duplicates': '#6c757d',
+            'duplicated_by': '#6c757d',
+            'parent': '#007bff',
+            'child': '#007bff',
+            'depends_on': '#28a745',
+            'required_by': '#28a745',
+        }
+        color = colors.get(obj.link_type, '#6c757d')
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_link_type_display()
+        )
+    link_type_badge.short_description = 'Link Type'
+    link_type_badge.admin_order_field = 'link_type'
+
+
+@admin.register(CardTemplate)
+class CardTemplateAdmin(admin.ModelAdmin):
+    """Card Template admin interface."""
+    
+    list_display = (
+        'name',
+        'scope_badge',
+        'project',
+        'icon',
+        'color_display',
+        'is_default',
+        'usage_count',
+        'created_by',
+        'created_at'
+    )
+    list_filter = ('scope', 'is_default', 'created_at', 'project')
+    search_fields = ('name', 'description', 'project__name')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'usage_count')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('name', 'description', 'scope', 'project', 'icon', 'color', 'is_default')
+        }),
+        ('Template Fields', {
+            'fields': ('template_fields',),
+            'classes': ('collapse',)
+        }),
+        ('Statistics', {
+            'fields': ('usage_count',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_by', 'updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def scope_badge(self, obj):
+        """Display scope as badge."""
+        colors = {
+            'project': '#007bff',
+            'global': '#28a745',
+        }
+        color = colors.get(obj.scope, '#6c757d')
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_scope_display()
+        )
+    scope_badge.short_description = 'Scope'
+    scope_badge.admin_order_field = 'scope'
+    
+    def color_display(self, obj):
+        """Display color as a colored square."""
+        if obj.color:
+            return format_html(
+                '<span style="display: inline-block; width: 20px; height: 20px; background-color: {}; border: 1px solid #ccc; border-radius: 3px;"></span> {}',
+                obj.color,
+                obj.color
+            )
+        return '-'
+    color_display.short_description = 'Color'
+
+
+@admin.register(SearchHistory)
+class SearchHistoryAdmin(admin.ModelAdmin):
+    """Search History admin interface with comprehensive features."""
+    
+    list_display = (
+        'user',
+        'query_preview',
+        'project',
+        'content_types_display',
+        'result_count',
+        'filters_count',
+        'created_at'
+    )
+    list_filter = ('created_at', 'project', 'result_count')
+    search_fields = ('query', 'user__email', 'user__username', 'project__name')
+    readonly_fields = ('id', 'created_at', 'query_full', 'filters_display', 'content_types_display')
+    date_hierarchy = 'created_at'
+    list_per_page = 50
+    ordering = ('-created_at',)
+    
+    fieldsets = (
+        ('Search Details', {
+            'fields': ('user', 'project', 'query_full', 'result_count')
+        }),
+        ('Search Configuration', {
+            'fields': ('filters_display', 'content_types_display'),
+            'classes': ('collapse',)
+        }),
+        ('Raw Data', {
+            'fields': ('filters', 'content_types'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def query_preview(self, obj):
+        """Show truncated query."""
+        if obj.query:
+            return obj.query[:100] + '...' if len(obj.query) > 100 else obj.query
+        return '-'
+    query_preview.short_description = 'Query'
+    query_preview.admin_order_field = 'query'
+    
+    def query_full(self, obj):
+        """Show full query."""
+        return obj.query or '-'
+    query_full.short_description = 'Full Query'
+    
+    def filters_count(self, obj):
+        """Display number of filters applied."""
+        if obj.filters:
+            return len(obj.filters) if isinstance(obj.filters, (list, dict)) else 1
+        return 0
+    filters_count.short_description = 'Filters'
+    filters_count.admin_order_field = 'filters'
+    
+    def filters_display(self, obj):
+        """Display filters in a readable format."""
+        if obj.filters:
+            import json
+            try:
+                return format_html('<pre>{}</pre>', json.dumps(obj.filters, indent=2))
+            except:
+                return str(obj.filters)
+        return '-'
+    filters_display.short_description = 'Filters (Formatted)'
+    
+    def content_types_display(self, obj):
+        """Display content types in a readable format."""
+        if obj.content_types:
+            return ', '.join(str(ct) for ct in obj.content_types) if isinstance(obj.content_types, list) else str(obj.content_types)
+        return '-'
+    content_types_display.short_description = 'Content Types'
+
+
+@admin.register(FilterPreset)
+class FilterPresetAdmin(admin.ModelAdmin):
+    """Filter Preset admin interface with comprehensive features."""
+    
+    list_display = (
+        'name',
+        'scope_badge',
+        'project',
+        'user',
+        'is_shared',
+        'is_default',
+        'filters_count',
+        'usage_count',
+        'created_by',
+        'created_at'
+    )
+    list_filter = ('is_shared', 'is_default', 'created_at', 'project')
+    search_fields = ('name', 'description', 'project__name', 'user__email', 'created_by__email')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'usage_count', 'filters_display')
+    date_hierarchy = 'created_at'
+    list_per_page = 50
+    ordering = ('is_default', '-usage_count', 'name')
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('name', 'description', 'project', 'user', 'is_shared', 'is_default')
+        }),
+        ('Filter Configuration', {
+            'fields': ('filters_display', 'filters'),
+            'classes': ('collapse',)
+        }),
+        ('Statistics', {
+            'fields': ('usage_count',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def scope_badge(self, obj):
+        """Display scope badge (project vs global)."""
+        if obj.project:
+            return format_html(
+                '<span style="background-color: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">Project</span>'
+            )
+        else:
+            return format_html(
+                '<span style="background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">Global</span>'
+            )
+    scope_badge.short_description = 'Scope'
+    
+    def filters_count(self, obj):
+        """Display number of filter rules."""
+        if obj.filters:
+            return len(obj.filters) if isinstance(obj.filters, list) else 1
+        return 0
+    filters_count.short_description = 'Filters'
+    filters_count.admin_order_field = 'filters'
+    
+    def filters_display(self, obj):
+        """Display filters in a readable format."""
+        if obj.filters:
+            import json
+            try:
+                return format_html('<pre>{}</pre>', json.dumps(obj.filters, indent=2))
+            except:
+                return str(obj.filters)
+        return '-'
+    filters_display.short_description = 'Filters (Formatted)'
+
+
+@admin.register(TimeBudget)
+class TimeBudgetAdmin(admin.ModelAdmin):
+    """Time Budget admin interface."""
+    
+    list_display = (
+        'scope_badge',
+        'budget_hours',
+        'spent_hours_display',
+        'utilization_display',
+        'status_badge',
+        'project',
+        'sprint',
+        'user',
+        'is_active',
+        'created_at'
+    )
+    list_filter = ('scope', 'period', 'is_active', 'created_at', 'project')
+    search_fields = ('project__name', 'sprint__name', 'story__title', 'task__title', 'user__email')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'spent_hours', 'remaining_hours', 
+                      'utilization_percentage', 'is_over_budget', 'is_warning_threshold_reached')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('scope', 'period', 'project', 'sprint', 'story', 'task', 'epic', 'user', 'is_active')
+        }),
+        ('Budget Details', {
+            'fields': ('budget_hours', 'warning_threshold', 'period_start', 'period_end', 'auto_alert')
+        }),
+        ('Statistics', {
+            'fields': ('spent_hours', 'remaining_hours', 'utilization_percentage', 'is_over_budget', 'is_warning_threshold_reached'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def scope_badge(self, obj):
+        """Display scope as badge."""
+        colors = {
+            'project': '#3b82f6',
+            'sprint': '#10b981',
+            'story': '#f59e0b',
+            'task': '#8b5cf6',
+            'user': '#ec4899',
+            'epic': '#6366f1',
+        }
+        color = colors.get(obj.scope, '#6c757d')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">{}</span>',
+            color,
+            obj.get_scope_display()
+        )
+    scope_badge.short_description = 'Scope'
+    
+    def spent_hours_display(self, obj):
+        """Display spent hours."""
+        return f"{obj.spent_hours:.2f}h"
+    spent_hours_display.short_description = 'Spent'
+    
+    def utilization_display(self, obj):
+        """Display utilization percentage."""
+        color = '#dc3545' if obj.is_over_budget else '#ffc107' if obj.is_warning_threshold_reached else '#28a745'
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}%</span>',
+            color,
+            obj.utilization_percentage
+        )
+    utilization_display.short_description = 'Utilization'
+    
+    def status_badge(self, obj):
+        """Display status badge."""
+        if obj.is_over_budget:
+            return format_html('<span style="color: #dc3545; font-weight: bold;">Over Budget</span>')
+        elif obj.is_warning_threshold_reached:
+            return format_html('<span style="color: #ffc107; font-weight: bold;">Warning</span>')
+        else:
+            return format_html('<span style="color: #28a745;">OK</span>')
+    status_badge.short_description = 'Status'
+
+
+@admin.register(OvertimeRecord)
+class OvertimeRecordAdmin(admin.ModelAdmin):
+    """Overtime Record admin interface with comprehensive features."""
+    
+    list_display = (
+        'time_budget',
+        'overtime_hours_display',
+        'overtime_percentage_display',
+        'period_display',
+        'status_badge',
+        'alert_sent',
+        'resolved',
+        'created_at'
+    )
+    list_filter = ('alert_sent', 'resolved', 'created_at', 'time_budget__project', 'time_budget__scope')
+    search_fields = ('time_budget__project__name', 'time_budget__sprint__name', 'resolution_notes')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'alert_sent', 'alert_sent_at')
+    date_hierarchy = 'created_at'
+    list_per_page = 50
+    ordering = ('-created_at',)
+    
+    fieldsets = (
+        ('Overtime Details', {
+            'fields': ('time_budget', 'overtime_hours', 'overtime_percentage', 'period_start', 'period_end')
+        }),
+        ('Alert Status', {
+            'fields': ('alert_sent', 'alert_sent_at'),
+            'classes': ('collapse',)
+        }),
+        ('Resolution', {
+            'fields': ('resolved', 'resolved_at', 'resolved_by', 'resolution_notes'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def overtime_hours_display(self, obj):
+        """Display overtime hours with formatting."""
+        return f"+{obj.overtime_hours:.2f}h"
+    overtime_hours_display.short_description = 'Overtime Hours'
+    overtime_hours_display.admin_order_field = 'overtime_hours'
+    
+    def overtime_percentage_display(self, obj):
+        """Display overtime percentage with color coding."""
+        color = '#dc3545' if obj.overtime_percentage > 20 else '#ffc107' if obj.overtime_percentage > 10 else '#f59e0b'
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">+{}%</span>',
+            color,
+            obj.overtime_percentage
+        )
+    overtime_percentage_display.short_description = 'Overtime %'
+    overtime_percentage_display.admin_order_field = 'overtime_percentage'
+    
+    def period_display(self, obj):
+        """Display period range."""
+        if obj.period_start and obj.period_end:
+            return f"{obj.period_start} to {obj.period_end}"
+        elif obj.period_start:
+            return str(obj.period_start)
+        return '-'
+    period_display.short_description = 'Period'
+    
+    def status_badge(self, obj):
+        """Display resolution status badge."""
+        if obj.resolved:
+            return format_html('<span style="color: #28a745; font-weight: bold;">✓ Resolved</span>')
+        else:
+            return format_html('<span style="color: #dc3545; font-weight: bold;">⚠ Active</span>')
+    status_badge.short_description = 'Status'
+    status_badge.admin_order_field = 'resolved'
+
+
+@admin.register(CardCoverImage)
+class CardCoverImageAdmin(admin.ModelAdmin):
+    """Card Cover Image admin interface."""
+    
+    list_display = ('content_object', 'is_primary', 'created_at')
+    list_filter = ('is_primary', 'created_at')
+    readonly_fields = ('id', 'created_at')
+
+
+@admin.register(CardChecklist)
+class CardChecklistAdmin(admin.ModelAdmin):
+    """Card Checklist admin interface."""
+    
+    list_display = ('content_object', 'title', 'items_count', 'created_by', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('title',)
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    
+    def items_count(self, obj):
+        """Display number of items."""
+        return len(obj.items) if obj.items else 0
+    items_count.short_description = 'Items'
+
+
+@admin.register(CardVote)
+class CardVoteAdmin(admin.ModelAdmin):
+    """Card Vote admin interface."""
+    
+    list_display = ('content_object', 'user', 'vote_type', 'created_at')
+    list_filter = ('vote_type', 'created_at')
+    search_fields = ('user__email',)
+    readonly_fields = ('id', 'created_at')
+
+
+@admin.register(StoryArchive)
+class StoryArchiveAdmin(admin.ModelAdmin):
+    """Story Archive admin interface."""
+    
+    list_display = ('story', 'archived_by', 'archived_at', 'reason_preview')
+    list_filter = ('archived_at',)
+    search_fields = ('story__title', 'reason')
+    readonly_fields = ('id', 'archived_at')
+    
+    def reason_preview(self, obj):
+        """Show truncated reason."""
+        return obj.reason[:50] + '...' if len(obj.reason) > 50 else obj.reason
+    reason_preview.short_description = 'Reason'
+
+
+@admin.register(StoryVersion)
+class StoryVersionAdmin(admin.ModelAdmin):
+    """Story Version admin interface."""
+    
+    list_display = ('story', 'version_number', 'title', 'created_by', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('story__title', 'title')
+    readonly_fields = ('id', 'created_at')
+
+
+@admin.register(Webhook)
+class WebhookAdmin(admin.ModelAdmin):
+    """Webhook admin interface."""
+    
+    list_display = ('name', 'project', 'url_preview', 'events_count', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at', 'project')
+    search_fields = ('name', 'url')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    
+    def url_preview(self, obj):
+        """Show truncated URL."""
+        return obj.url[:50] + '...' if len(obj.url) > 50 else obj.url
+    url_preview.short_description = 'URL'
+    
+    def events_count(self, obj):
+        """Display number of events."""
+        return len(obj.events) if obj.events else 0
+    events_count.short_description = 'Events'
+
+
+@admin.register(StoryClone)
+class StoryCloneAdmin(admin.ModelAdmin):
+    """Story Clone admin interface."""
+    
+    list_display = ('original_story', 'cloned_story', 'cloned_by', 'cloned_at')
+    list_filter = ('cloned_at',)
+    search_fields = ('original_story__title', 'cloned_story__title')
+    readonly_fields = ('id', 'cloned_at')
+    
+    def color_display(self, obj):
+        """Display color as a colored square."""
+        if obj.color:
+            return format_html(
+                '<span style="display: inline-block; width: 20px; height: 20px; background-color: {}; border: 1px solid #ccc; border-radius: 3px;"></span> {}',
+                obj.color,
+                obj.color
+            )
+        return '-'
+    color_display.short_description = 'Color'
+
+
+@admin.register(BoardTemplate)
+class BoardTemplateAdmin(admin.ModelAdmin):
+    """Board Template admin interface."""
+    
+    list_display = (
+        'name',
+        'scope_badge',
+        'project',
+        'icon',
+        'is_default',
+        'usage_count',
+        'created_by',
+        'created_at'
+    )
+    list_filter = ('scope', 'is_default', 'created_at', 'project')
+    search_fields = ('name', 'description', 'project__name')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'usage_count')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('name', 'description', 'scope', 'project', 'icon', 'is_default')
+        }),
+        ('Board Configuration', {
+            'fields': ('board_config',),
+            'classes': ('collapse',)
+        }),
+        ('Statistics', {
+            'fields': ('usage_count',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_by', 'updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def scope_badge(self, obj):
+        """Display scope as badge."""
+        colors = {
+            'project': '#007bff',
+            'global': '#28a745',
+        }
+        color = colors.get(obj.scope, '#6c757d')
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_scope_display()
+        )
+    scope_badge.short_description = 'Scope'
+    scope_badge.admin_order_field = 'scope'
+
+
+@admin.register(GitHubIntegration)
+class GitHubIntegrationAdmin(admin.ModelAdmin):
+    """GitHub Integration admin interface."""
+    
+    list_display = (
+        'project',
+        'repository_display',
+        'is_active',
+        'sync_issues',
+        'sync_commits',
+        'sync_pull_requests',
+        'created_by',
+        'created_at'
+    )
+    list_filter = ('is_active', 'sync_issues', 'sync_commits', 'sync_pull_requests', 'created_at', 'project')
+    search_fields = ('repository_owner', 'repository_name', 'project__name')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Integration Details', {
+            'fields': ('project', 'repository_owner', 'repository_name', 'access_token', 'is_active')
+        }),
+        ('Sync Configuration', {
+            'fields': ('sync_issues', 'sync_commits', 'sync_pull_requests',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def repository_display(self, obj):
+        """Display repository owner/name."""
+        return f"{obj.repository_owner}/{obj.repository_name}"
+    repository_display.short_description = 'Repository'
+
+
+@admin.register(JiraIntegration)
+class JiraIntegrationAdmin(admin.ModelAdmin):
+    """Jira Integration admin interface."""
+    
+    list_display = (
+        'project',
+        'base_url_preview',
+        'project_key',
+        'is_active',
+        'sync_issues',
+        'auto_create',
+        'created_by',
+        'created_at'
+    )
+    list_filter = ('is_active', 'sync_issues', 'auto_create', 'created_at', 'project')
+    search_fields = ('base_url', 'project_key', 'email', 'project__name')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Integration Details', {
+            'fields': ('project', 'base_url', 'project_key', 'email', 'api_token', 'is_active')
+        }),
+        ('Sync Configuration', {
+            'fields': ('sync_issues', 'auto_create',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def base_url_preview(self, obj):
+        """Show truncated base URL."""
+        if obj.base_url:
+            return obj.base_url[:50] + '...' if len(obj.base_url) > 50 else obj.base_url
+        return '-'
+    base_url_preview.short_description = 'Jira URL'
+
+
+@admin.register(SlackIntegration)
+class SlackIntegrationAdmin(admin.ModelAdmin):
+    """Slack Integration admin interface."""
+    
+    list_display = (
+        'project',
+        'channel',
+        'is_active',
+        'notification_events_count',
+        'created_by',
+        'created_at'
+    )
+    list_filter = ('is_active', 'created_at', 'project')
+    search_fields = ('channel', 'project__name')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Integration Details', {
+            'fields': ('project', 'webhook_url', 'bot_token', 'channel', 'is_active')
+        }),
+        ('Notification Configuration', {
+            'fields': ('notification_events',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def notification_events_count(self, obj):
+        """Display number of notification events."""
+        return len(obj.notification_events) if obj.notification_events else 0
+    notification_events_count.short_description = 'Events'

@@ -5,6 +5,7 @@ from django.contrib import admin
 from .models import (
     GitHubIntegration,
     SlackIntegration,
+    JiraIntegration,
     EmailNotificationSettings,
     WebhookEndpoint,
     WebhookDelivery
@@ -56,6 +57,30 @@ class SlackIntegrationAdmin(admin.ModelAdmin):
         }),
         ('Status', {
             'fields': ('is_active', 'last_used_at')
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(JiraIntegration)
+class JiraIntegrationAdmin(admin.ModelAdmin):
+    """Admin for Jira integrations."""
+    list_display = ['jira_url', 'project_key', 'user', 'is_active', 'last_sync_at', 'created_at']
+    list_filter = ['is_active', 'auto_create_issues', 'auto_sync_status', 'created_at']
+    search_fields = ['jira_url', 'project_key', 'username', 'user__email', 'user__username']
+    readonly_fields = ['id', 'created_at', 'updated_at', 'last_sync_at']
+    fieldsets = (
+        ('Jira Configuration', {
+            'fields': ('user', 'project', 'jira_url', 'username', 'api_token', 'project_key')
+        }),
+        ('Integration Settings', {
+            'fields': ('auto_create_issues', 'auto_sync_status', 'sync_comments', 'issue_type', 'priority_mapping')
+        }),
+        ('Status', {
+            'fields': ('is_active', 'last_sync_at')
         }),
         ('Metadata', {
             'fields': ('id', 'created_at', 'updated_at'),

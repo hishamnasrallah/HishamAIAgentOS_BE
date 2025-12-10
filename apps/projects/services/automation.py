@@ -170,6 +170,61 @@ class AutomationService:
         
         return executed_actions
     
+    def _get_items_for_scheduled_rule(
+        self,
+        conditions: Dict[str, Any],
+        project: Project
+    ) -> List[Any]:
+        """
+        Get items matching conditions for scheduled automation rules.
+        
+        Args:
+            conditions: Conditions to filter items
+            project: Project to get items from
+            
+        Returns:
+            List of matching items (UserStory, Task, Bug, Issue)
+        """
+        items = []
+        
+        # Get content types to check
+        content_types = conditions.get('content_types', ['userstory', 'task', 'bug', 'issue'])
+        
+        # Build filters from conditions
+        filters = {}
+        if 'status' in conditions:
+            filters['status'] = conditions['status']
+        if 'status__in' in conditions:
+            filters['status__in'] = conditions['status__in']
+        if 'assigned_to' in conditions:
+            filters['assigned_to_id'] = conditions['assigned_to']
+        if 'priority' in conditions:
+            filters['priority'] = conditions['priority']
+        if 'component' in conditions:
+            filters['component'] = conditions['component']
+        
+        # Get items by content type
+        if 'userstory' in content_types:
+            stories = UserStory.objects.filter(project=project, **filters)
+            items.extend(list(stories))
+        
+        if 'task' in content_types:
+            tasks = Task.objects.filter(
+                story__project=project,
+                **filters
+            ).select_related('story')
+            items.extend(list(tasks))
+        
+        if 'bug' in content_types:
+            bugs = Bug.objects.filter(project=project, **filters)
+            items.extend(list(bugs))
+        
+        if 'issue' in content_types:
+            issues = Issue.objects.filter(project=project, **filters)
+            items.extend(list(issues))
+        
+        return items
+    
     def _execute_action(
         self,
         item: Any,

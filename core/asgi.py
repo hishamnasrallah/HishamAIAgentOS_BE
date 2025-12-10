@@ -19,6 +19,7 @@ from apps.monitoring import routing as monitoring_routing
 from apps.chat import routing as chat_routing
 from apps.agents import routing as agents_routing
 from apps.workflows import routing as workflows_routing
+from apps.projects import routing as projects_routing
 from core.middleware import JWTAuthMiddlewareStack
 
 # WebSocket routing with authentication
@@ -26,7 +27,8 @@ websocket_router = URLRouter(
     monitoring_routing.websocket_urlpatterns +
     chat_routing.websocket_urlpatterns +
     agents_routing.websocket_urlpatterns +
-    workflows_routing.websocket_urlpatterns
+    workflows_routing.websocket_urlpatterns +
+    projects_routing.websocket_urlpatterns
 )
 
 # Apply middleware stack

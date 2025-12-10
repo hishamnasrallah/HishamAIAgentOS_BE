@@ -326,3 +326,80 @@ class WebhookDelivery(models.Model):
     def __str__(self):
         return f"{self.endpoint.name} - {self.event_type} - {self.status}"
 
+
+class JiraIntegration(models.Model):
+    """Jira integration configuration for a user or project."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='jira_integrations',
+        null=True,
+        blank=True
+    )
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.CASCADE,
+        related_name='jira_integrations',
+        null=True,
+        blank=True
+    )
+    
+    # Jira configuration
+    jira_url = models.URLField(help_text="Jira instance URL (e.g., https://yourcompany.atlassian.net)")
+    username = models.CharField(max_length=200, help_text="Jira username or email")
+    api_token = models.CharField(max_length=500, help_text="Jira API token (encrypted in future)")
+    project_key = models.CharField(max_length=50, help_text="Jira project key (e.g., PROJ)")
+    
+    # Integration settings
+    auto_create_issues = models.BooleanField(default=False, help_text="Automatically create Jira issues from stories")
+    auto_sync_status = models.BooleanField(default=False, help_text="Sync status changes between systems")
+    sync_comments = models.BooleanField(default=True, help_text="Sync comments between systems")
+    
+    # Field mapping
+    issue_type = models.CharField(max_length=50, default='Story', help_text="Default Jira issue type")
+    priority_mapping = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Map story priorities to Jira priorities"
+    )
+    
+    # Status
+    is_active = models.BooleanField(default=True)
+    last_sync_at = models.DateTimeField(null=True, blank=True)
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_jira_integrations',
+        verbose_name='Created By'
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_jira_integrations',
+        verbose_name='Updated By'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    
+    class Meta:
+        db_table = 'jira_integrations'
+        verbose_name = 'Jira Integration'
+        verbose_name_plural = 'Jira Integrations'
+        unique_together = [['jira_url', 'project_key', 'user']]
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['jira_url', 'project_key']),
+        ]
+    
+    def __str__(self):
+        return f"{self.jira_url} - {self.project_key}"
+

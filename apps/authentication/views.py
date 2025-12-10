@@ -7,12 +7,23 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import permissions
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse
 from django.utils import timezone
 from django.db import models
+from django.conf import settings
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
 import csv
 import io
+import os
+import uuid
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 from .models import APIKey
 from .serializers import UserSerializer, UserCreateSerializer, APIKeySerializer
 from apps.monitoring.mixins import AuditLoggingMixin
@@ -411,6 +422,128 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
             'activities': activity_data,
             'total': AuditLog.objects.filter(user=user).count(),
         })
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated], parser_classes=[MultiPartParser, FormParser])
+    def upload_avatar(self, request, pk=None):
+        """Upload avatar for user (own profile or admin)."""
+        user = self.get_object()
+        
+        # Check permissions: users can only update their own avatar, admins can update anyone's
+        if request.user.role != 'admin' and user.id != request.user.id:
+            return Response(
+                {'error': 'You can only update your own avatar.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if 'avatar' not in request.FILES:
+            return Response(
+                {'error': 'No avatar file provided.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        avatar_file = request.FILES['avatar']
+        
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if avatar_file.content_type not in allowed_types:
+            return Response(
+                {'error': f'Invalid file type. Allowed types: {", ".join(allowed_types)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate file size (max 5MB)
+        if avatar_file.size > 5 * 1024 * 1024:
+            return Response(
+                {'error': 'File size exceeds 5MB limit.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            if not HAS_PIL:
+                return Response(
+                    {'error': 'Image processing library (Pillow) is not available.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Process and save image
+            image = Image.open(avatar_file)
+            # Convert to RGB if necessary (for PNG with transparency)
+            if image.mode in ('RGBA', 'LA', 'P'):
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                if image.mode == 'P':
+                    image = image.convert('RGBA')
+                background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+                image = background
+            
+            # Resize to max 512x512 while maintaining aspect ratio
+            image.thumbnail((512, 512), Image.Resampling.LANCZOS)
+            
+            # Generate filename
+            file_ext = os.path.splitext(avatar_file.name)[1] or '.jpg'
+            filename = f'avatars/{user.id}/{uuid.uuid4()}{file_ext}'
+            
+            # Save to storage
+            output = io.BytesIO()
+            image.save(output, format='JPEG', quality=85)
+            output.seek(0)
+            
+            # Delete old avatar if exists
+            if user.avatar and not user.avatar.startswith('http'):
+                try:
+                    default_storage.delete(user.avatar)
+                except:
+                    pass
+            
+            # Save new avatar
+            saved_path = default_storage.save(filename, ContentFile(output.read()))
+            user.avatar = saved_path
+            user.save(update_fields=['avatar'])
+            
+            serializer = self.get_serializer(user)
+            return Response({
+                'message': 'Avatar uploaded successfully.',
+                'user': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to process avatar: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
+    def delete_avatar(self, request, pk=None):
+        """Delete avatar for user (own profile or admin)."""
+        user = self.get_object()
+        
+        # Check permissions
+        if request.user.role != 'admin' and user.id != request.user.id:
+            return Response(
+                {'error': 'You can only delete your own avatar.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if not user.avatar:
+            return Response(
+                {'error': 'No avatar to delete.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Delete file if it's not a URL
+        if not user.avatar.startswith('http'):
+            try:
+                default_storage.delete(user.avatar)
+            except:
+                pass
+        
+        user.avatar = ''
+        user.save(update_fields=['avatar'])
+        
+        serializer = self.get_serializer(user)
+        return Response({
+            'message': 'Avatar deleted successfully.',
+            'user': serializer.data
+        }, status=status.HTTP_200_OK)
 
 
 class APIKeyViewSet(viewsets.ModelViewSet):

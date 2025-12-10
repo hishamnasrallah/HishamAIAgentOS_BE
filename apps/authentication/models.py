@@ -117,6 +117,46 @@ class User(AbstractBaseUser, PermissionsMixin):
     def get_short_name(self):
         """Return the user's short name."""
         return self.first_name
+    
+    def get_avatar_url(self):
+        """Get avatar URL with fallback."""
+        if self.avatar:
+            # If avatar is a full URL, return it
+            if self.avatar.startswith('http://') or self.avatar.startswith('https://'):
+                return self.avatar
+            # If avatar is a relative path, construct full URL
+            from django.conf import settings
+            try:
+                from django.contrib.staticfiles.storage import staticfiles_storage
+                return staticfiles_storage.url(self.avatar)
+            except:
+                return self.avatar
+        return None
+    
+    def get_initials(self):
+        """Generate user initials for avatar fallback."""
+        if self.first_name and self.last_name:
+            return f"{self.first_name[0]}{self.last_name[0]}".upper()
+        elif self.first_name:
+            return self.first_name[0].upper()
+        elif self.last_name:
+            return self.last_name[0].upper()
+        elif self.username:
+            return self.username[0].upper()
+        elif self.email:
+            return self.email[0].upper()
+        return "?"
+    
+    def get_avatar_color(self):
+        """Generate a consistent color for the user based on their ID."""
+        import hashlib
+        hash_obj = hashlib.md5(str(self.id).encode())
+        hash_int = int(hash_obj.hexdigest()[:8], 16)
+        # Generate a color in the range of nice colors (avoid too dark/light)
+        hue = hash_int % 360
+        saturation = 60 + (hash_int % 20)  # 60-80%
+        lightness = 45 + (hash_int % 15)  # 45-60%
+        return f"hsl({hue}, {saturation}%, {lightness}%)"
 
 
 class APIKey(models.Model):
