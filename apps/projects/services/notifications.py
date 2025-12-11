@@ -29,6 +29,40 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def _send_websocket_notification(notification: Notification):
+    """
+    Helper function to send notification via WebSocket.
+    This is called after a notification is created to provide real-time updates.
+    """
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            # Send notification to user's personal notification channel
+            user_group = f'user_{notification.recipient.id}_notifications'
+            async_to_sync(channel_layer.group_send)(
+                user_group,
+                {
+                    'type': 'notification',
+                    'notification': {
+                        'id': str(notification.id),
+                        'type': notification.notification_type,
+                        'title': notification.title,
+                        'message': notification.message,
+                        'is_read': notification.is_read,
+                        'created_at': notification.created_at.isoformat(),
+                        'project': str(notification.project.id) if notification.project else None,
+                        'story': str(notification.story.id) if notification.story else None,
+                    }
+                }
+            )
+    except Exception as e:
+        # WebSocket notification is optional, don't fail if it doesn't work
+        logger.warning(f"Failed to send WebSocket notification: {e}")
+
+
 class NotificationService:
     """
     Service for creating and delivering notifications.
@@ -86,8 +120,10 @@ class NotificationService:
             # Check event-specific settings
             event_setting = settings.get(event_type, {})
             if isinstance(event_setting, dict):
-                if not event_setting.get('enabled', True):
+                # If enabled is explicitly False, don't send
+                if event_setting.get('enabled') is False:
                     return False
+                # If enabled is not set or is True, allow it (default to True)
             elif isinstance(event_setting, bool):
                 if not event_setting:
                     return False
@@ -146,7 +182,11 @@ class NotificationService:
             recipient_types = event_setting.get('recipients', [])
         else:
             # Default recipients if no config
-            recipient_types = ['assignee', 'watchers']
+            # For mention events, default to mentioned_user
+            if event_type == 'on_mention':
+                recipient_types = ['mentioned_user']
+            else:
+                recipient_types = ['assignee', 'watchers']
         
         if story:
             # Add assignee
@@ -158,6 +198,25 @@ class NotificationService:
                 # For now, add project members. In future, implement actual watchers
                 if story.project and story.project.members.exists():
                     recipients.update(story.project.members.all())
+            
+            # Add project members
+            if 'project_members' in recipient_types:
+                if story.project and story.project.members.exists():
+                    recipients.update(story.project.members.all())
+            
+            # Add sprint members
+            if 'sprint_members' in recipient_types and story.sprint:
+                # In future, implement sprint members. For now, use project members
+                if story.project and story.project.members.exists():
+                    recipients.update(story.project.members.all())
+            
+            # Add epic owner
+            if 'epic_owner' in recipient_types and story.epic and story.epic.owner:
+                recipients.add(story.epic.owner)
+            
+            # Add creator
+            if 'creator' in recipient_types and story.created_by:
+                recipients.add(story.created_by)
             
             # Add mentioned users
             if 'mentions' in recipient_types:
@@ -176,12 +235,6 @@ class NotificationService:
             # Don't notify the comment author about their own comment
             pass
         
-        # Add sprint members for sprint events
-        if 'sprint_members' in recipient_types and story and story.sprint:
-            # In future, implement sprint members. For now, use project members
-            if story.project and story.project.members.exists():
-                recipients.update(story.project.members.all())
-        
         # Remove None values and return list
         recipients = {r for r in recipients if r is not None}
         return list(recipients)
@@ -192,26 +245,85 @@ class NotificationService:
         mention: Mention,
         story: UserStory
     ) -> Optional[Notification]:
-        """Create notification for a mention."""
-        if not self._should_send_notification('on_mention', mention.mentioned_user):
+        """
+        Create notification for a mention.
+        
+        For mentions, the mentioned_user should ALWAYS receive a notification if:
+        1. The event is enabled in notification settings
+        2. User preferences allow it
+        
+        Note: The mentioned user is ALWAYS notified when mentioned, regardless of recipient configuration.
+        This is because being mentioned is a direct action that requires notification.
+        """
+        # For mentions, ALWAYS send notification unless explicitly disabled
+        # This is a direct action that requires notification
+        logger.info(f"Processing mention notification for user {mention.mentioned_user.email} in story {story.title}")
+        logger.info(f"Project config exists: {self.config is not None}")
+        
+        # Check if explicitly disabled in project settings
+        explicitly_disabled = False
+        if self.config:
+            settings = self.config.notification_settings or {}
+            logger.info(f"Notification settings: {settings}")
+            event_setting = settings.get('on_mention', {})
+            logger.info(f"on_mention event setting: {event_setting}")
+            
+            # Check if explicitly disabled
+            if isinstance(event_setting, dict):
+                if event_setting.get('enabled') is False:
+                    explicitly_disabled = True
+                    logger.warning("Mention notifications explicitly disabled in project settings")
+            elif isinstance(event_setting, bool) and not event_setting:
+                explicitly_disabled = True
+                logger.warning("Mention notifications explicitly disabled in project settings")
+        
+        # Check user preferences (if they have opted out)
+        user_prefs = getattr(mention.mentioned_user, 'notification_preferences', None) or {}
+        if not user_prefs.get('enabled', True):
+            logger.warning(f"User {mention.mentioned_user.email} has disabled all notifications")
             return None
+        
+        # Check event-specific user preferences
+        event_pref = user_prefs.get('on_mention', {})
+        if isinstance(event_pref, dict) and event_pref.get('enabled') is False:
+            logger.warning(f"User {mention.mentioned_user.email} has disabled mention notifications")
+            return None
+        
+        # If explicitly disabled in project settings, don't send
+        if explicitly_disabled:
+            logger.warning("Mention notifications disabled - not sending")
+            return None
+        
+        logger.info("All checks passed - sending mention notification")
+        
+        # For mention notifications, ALWAYS notify the mentioned user
+        # This is a direct action that requires notification regardless of recipient configuration
+        # Get the user who created the mention (created_by)
+        mentioned_by = mention.created_by
+        if not mentioned_by:
+            # Fallback: try to get from story created_by
+            mentioned_by = story.created_by
         
         notification = Notification.objects.create(
             recipient=mention.mentioned_user,
             notification_type='mention',
             title=f"You were mentioned in '{story.title}'",
-            message=f"{mention.mentioned_by.get_full_name() or mention.mentioned_by.email} mentioned you in story '{story.title}'",
+            message=f"{mentioned_by.get_full_name() if mentioned_by else 'Someone'} mentioned you in story '{story.title}'",
             project=story.project,
             story=story,
             mention=mention,
             metadata={
-                'mentioned_by': str(mention.mentioned_by.id),
-                'text_snippet': mention.text_snippet[:200] if mention.text_snippet else ''
+                'mentioned_by': str(mentioned_by.id) if mentioned_by else None,
+                'text_snippet': getattr(mention, 'text_snippet', '')[:200] if hasattr(mention, 'text_snippet') else ''
             },
-            created_by=mention.mentioned_by
+            created_by=mentioned_by
         )
         
-        logger.info(f"Created mention notification {notification.id} for user {mention.mentioned_user.email}")
+        logger.info(f"Created mention notification {notification.id} for user {mention.mentioned_user.email} in story {story.title}")
+        
+        # Send real-time notification via WebSocket
+        _send_websocket_notification(notification)
+        
         return notification
     
     @transaction.atomic

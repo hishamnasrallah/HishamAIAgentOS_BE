@@ -20,7 +20,7 @@ from apps.projects.models import (
     Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch,
     StatusChangeApproval, ProjectLabelPreset, Milestone, TicketReference, StoryLink, CardTemplate, BoardTemplate,
     SearchHistory, FilterPreset, TimeBudget, OvertimeRecord, CardCoverImage, CardChecklist, CardVote,
-    StoryArchive, StoryVersion, Webhook, StoryClone
+    StoryArchive, StoryVersion, Webhook, StoryClone, ProjectMember
 )
 # Alias for backward compatibility
 Story = UserStory
@@ -66,7 +66,8 @@ from apps.projects.serializers import (
     StoryCloneSerializer,
     GitHubIntegrationSerializer,
     JiraIntegrationSerializer,
-    SlackIntegrationSerializer
+    SlackIntegrationSerializer,
+    ProjectMemberSerializer
 )
 from apps.projects.serializers_approval import StatusChangeApprovalSerializer
 from apps.projects.services.story_generator import story_generator
@@ -378,9 +379,54 @@ class ProjectViewSet(viewsets.ModelViewSet):
         )
     
     @extend_schema(
-        description="Get statistics for a specific member in the project",
-        responses={200: {'type': 'object'}}
+        responses={200: 'Permission details'},
+        description="Get current user's permissions for this project based on permission_settings"
     )
+    @action(detail=True, methods=['get'], url_path='permissions')
+    def permissions(self, request, pk=None):
+        """Get current user's permissions for this project."""
+        from apps.projects.services.permissions import get_permission_service
+        
+        project = self.get_object()
+        user = request.user
+        
+        # Get permission service
+        perm_service = get_permission_service(project)
+        
+        # Check all permissions
+        permissions = {
+            # Story permissions
+            'can_create_story': perm_service.can_create_story(user)[0],
+            'can_edit_story': perm_service.can_edit_story(user)[0],
+            'can_delete_story': perm_service.can_delete_story(user)[0],
+            'can_assign_story': perm_service.can_assign_story(user)[0],
+            'can_change_status': perm_service.can_change_status(user)[0],
+            
+            # Epic permissions
+            'can_create_epic': perm_service.can_create_epic(user)[0],
+            'can_edit_epic': perm_service.can_edit_epic(user)[0],
+            'can_delete_epic': perm_service.can_delete_epic(user)[0],
+            
+            # Task permissions
+            'can_create_task': perm_service.can_create_task(user)[0],
+            'can_edit_task': perm_service.can_edit_task(user)[0],
+            'can_delete_task': perm_service.can_delete_task(user)[0],
+            
+            # Issue permissions (uses story permissions by default)
+            'can_create_issue': perm_service.can_create_issue(user)[0],
+            
+            # Collaboration permissions
+            'can_add_comment': perm_service.can_add_comment(user)[0],
+            'can_add_attachment': perm_service.can_add_attachment(user)[0],
+            'can_manage_dependencies': perm_service.can_manage_dependencies(user)[0],
+            
+            # Project management permissions
+            'can_manage_sprints': perm_service.can_manage_sprints(user)[0],
+            'can_view_analytics': perm_service.can_view_analytics(user)[0],
+        }
+        
+        return Response(permissions, status=status.HTTP_200_OK)
+    
     @action(detail=True, methods=['get'], url_path='members/(?P<user_id>[^/.]+)/statistics')
     def member_statistics(self, request, pk=None, user_id=None):
         """Get statistics for a specific member."""
@@ -4713,3 +4759,83 @@ class StatisticsViewSet(viewsets.ViewSet):
         epic_id = request.query_params.get('epic_id')
         data = ReportsService.get_epic_progress(str(project.id), epic_id)
         return Response(data)
+
+
+class ProjectMemberViewSet(viewsets.ModelViewSet):
+    """
+    API endpoints for managing project members and their roles.
+    Supports creating, updating, and deleting project members with multiple roles.
+    """
+    serializer_class = ProjectMemberSerializer
+    permission_classes = [permissions.IsAuthenticated, IsProjectMember]
+    queryset = ProjectMember.objects.all()
+    
+    def get_queryset(self):
+        """Filter queryset by project if project_id is provided."""
+        queryset = super().get_queryset()
+        project_id = self.request.query_params.get('project')
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        return queryset.select_related('project', 'user', 'added_by')
+    
+    def perform_create(self, serializer):
+        """Set added_by to current user when creating a project member."""
+        serializer.save(added_by=self.request.user)
+    
+    @extend_schema(
+        description="Get all members for a specific project",
+        parameters=[
+            {'name': 'project', 'in': 'query', 'type': 'string', 'format': 'uuid', 'required': True},
+        ],
+        responses={200: ProjectMemberSerializer(many=True)}
+    )
+    @action(detail=False, methods=['get'], url_path='by-project')
+    def by_project(self, request):
+        """Get all members for a specific project."""
+        project_id = request.query_params.get('project')
+        if not project_id:
+            return Response(
+                {'error': 'project parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            project = Project.objects.get(pk=project_id)
+            self.check_object_permissions(request, project)
+        except Project.DoesNotExist:
+            return Response(
+                {'error': 'Project not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        members = ProjectMember.objects.filter(project=project).select_related('user', 'added_by')
+        serializer = self.get_serializer(members, many=True)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        description="Get all projects for a specific user",
+        parameters=[
+            {'name': 'user', 'in': 'query', 'type': 'string', 'format': 'uuid', 'required': True},
+        ],
+        responses={200: ProjectMemberSerializer(many=True)}
+    )
+    @action(detail=False, methods=['get'], url_path='by-user')
+    def by_user(self, request):
+        """Get all projects for a specific user."""
+        user_id = request.query_params.get('user')
+        if not user_id:
+            return Response(
+                {'error': 'user parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Only allow users to see their own memberships, or admins to see any
+        if str(request.user.id) != user_id and not request.user.is_superuser:
+            return Response(
+                {'error': 'You can only view your own project memberships'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        members = ProjectMember.objects.filter(user_id=user_id).select_related('project', 'user', 'added_by')
+        serializer = self.get_serializer(members, many=True)
+        return Response(serializer.data)

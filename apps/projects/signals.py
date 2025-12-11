@@ -199,10 +199,17 @@ def extract_story_mentions(sender, instance, created, **kwargs):
     """
     Extract @mentions from story description and acceptance_criteria.
     Creates Mention objects for each mentioned user.
+    Note: This runs on both create and update to catch mentions added later.
     """
     try:
+        # Extract mentions from story
         mentions = instance.extract_mentions()
+        logger.info(f"[extract_story_mentions] Story {instance.id} ({instance.title}): Extracted {len(mentions)} mentions: {mentions}")
+        logger.info(f"[extract_story_mentions] Story description: {instance.description[:100] if instance.description else 'None'}")
+        logger.info(f"[extract_story_mentions] Story acceptance_criteria: {instance.acceptance_criteria[:100] if instance.acceptance_criteria else 'None'}")
+        
         if not mentions:
+            logger.info(f"[extract_story_mentions] No mentions found in story {instance.title}")
             return
         
         # Get current user from thread-local storage (set by middleware)
@@ -223,31 +230,48 @@ def extract_story_mentions(sender, instance, created, **kwargs):
         
         # Find users by email or username
         for mention_text in mentions:
-            # Try to find user by email first, then by username
+            logger.info(f"[extract_story_mentions] Looking up user for mention: '{mention_text}'")
+            # Try to find user by email first, then by username, then by email prefix
             user = None
-            if '@' in mention_text:
-                # It's an email
+            if '@' in mention_text and mention_text.count('@') == 1:
+                # It's an email (has @ but not part of @mention syntax)
                 try:
                     user = User.objects.get(email=mention_text)
+                    logger.info(f"[extract_story_mentions] Found user by email: {user.email}")
                 except User.DoesNotExist:
-                    logger.warning(f"Mentioned user not found: {mention_text}")
+                    logger.warning(f"[extract_story_mentions] User not found by email: {mention_text}")
                     continue
             else:
-                # It's a username - try to find by username or email prefix
+                # It's a username - try multiple lookup strategies
+                # 1. Try exact username match
                 try:
                     user = User.objects.get(username=mention_text)
+                    logger.info(f"[extract_story_mentions] Found user by username: {user.username} ({user.email})")
                 except User.DoesNotExist:
-                    # Try email prefix match
+                    # 2. Try email prefix match (e.g., 'hisham' matches 'hisham@example.com')
                     try:
-                        user = User.objects.filter(email__startswith=mention_text).first()
-                    except:
-                        pass
+                        user = User.objects.filter(email__istartswith=mention_text + '@').first()
+                        if user:
+                            logger.info(f"[extract_story_mentions] Found user by email prefix: {user.email}")
+                    except Exception as e:
+                        logger.warning(f"[extract_story_mentions] Error in email prefix lookup: {e}")
+                    
+                    # 3. Try case-insensitive username match
+                    if not user:
+                        try:
+                            user = User.objects.filter(username__iexact=mention_text).first()
+                            if user:
+                                logger.info(f"[extract_story_mentions] Found user by case-insensitive username: {user.username}")
+                        except Exception as e:
+                            logger.warning(f"[extract_story_mentions] Error in case-insensitive username lookup: {e}")
                 
                 if not user:
-                    logger.warning(f"Mentioned user not found: {mention_text}")
+                    logger.warning(f"[extract_story_mentions] User not found for mention: '{mention_text}' (tried username, email prefix, case-insensitive)")
                     continue
             
             # Create or update mention
+            # Note: We use get_or_create to avoid duplicates, but we'll always send notification
+            # if the mention is new OR if it's an update (to handle cases where user re-mentions)
             mention, created = Mention.objects.get_or_create(
                 story=instance,
                 mentioned_user=user,
@@ -258,14 +282,22 @@ def extract_story_mentions(sender, instance, created, **kwargs):
             )
             
             if created:
-                logger.info(f"Created mention: {mention_text} in story {instance.title}")
-                
-                # Send notification
-                try:
-                    notification_service = get_notification_service(instance.project)
-                    notification_service.notify_mention(mention, instance)
-                except Exception as e:
-                    logger.error(f"Error sending mention notification: {e}", exc_info=True)
+                logger.info(f"[extract_story_mentions] Created new mention: {mention_text} in story {instance.title} for user {user.email}")
+            else:
+                logger.info(f"[extract_story_mentions] Mention already exists: {mention_text} in story {instance.title} for user {user.email} - will still send notification")
+            
+            # Always send notification for mentions (even if mention already existed)
+            # This ensures users get notified when they're mentioned, regardless of whether it's a new or existing mention
+            try:
+                notification_service = get_notification_service(instance.project)
+                logger.info(f"[extract_story_mentions] Notification service created for project {instance.project.id}")
+                result = notification_service.notify_mention(mention, instance)
+                if result:
+                    logger.info(f"[extract_story_mentions] Successfully created mention notification {result.id} for user {user.email}")
+                else:
+                    logger.warning(f"[extract_story_mentions] Notification service returned None for mention {mention.id} - check notification service logs above")
+            except Exception as e:
+                logger.error(f"[extract_story_mentions] Error sending mention notification: {e}", exc_info=True)
         
     except Exception as e:
         logger.error(f"Error extracting mentions from story {instance.id}: {e}", exc_info=True)
@@ -296,38 +328,59 @@ def extract_comment_mentions(sender, instance, created, **kwargs):
         return
     
     try:
+        # Extract mentions from comment
         mentions = instance.extract_mentions()
+        logger.info(f"[extract_comment_mentions] Comment {instance.id}: Extracted {len(mentions)} mentions: {mentions}")
+        logger.info(f"[extract_comment_mentions] Comment content: {instance.content[:100] if instance.content else 'None'}")
+        
         if not mentions:
+            logger.info(f"[extract_comment_mentions] No mentions found in comment {instance.id}")
             return
         
         # Get current user from thread-local storage
         from apps.monitoring.signals import get_current_user
         current_user = get_current_user()
+        logger.info(f"[extract_comment_mentions] Current user: {current_user.email if current_user and hasattr(current_user, 'email') else 'None'}")
         
         # Find users by email or username
         for mention_text in mentions:
-            # Try to find user by email first, then by username
+            logger.info(f"[extract_comment_mentions] Looking up user for mention: '{mention_text}'")
+            # Try to find user by email first, then by username, then by email prefix
             user = None
-            if '@' in mention_text:
-                # It's an email
+            if '@' in mention_text and mention_text.count('@') == 1:
+                # It's an email (has @ but not part of @mention syntax)
                 try:
                     user = User.objects.get(email=mention_text)
+                    logger.info(f"[extract_comment_mentions] Found user by email: {user.email}")
                 except User.DoesNotExist:
-                    logger.warning(f"Mentioned user not found: {mention_text}")
+                    logger.warning(f"[extract_comment_mentions] User not found by email: {mention_text}")
                     continue
             else:
-                # It's a username - try to find by username or email prefix
+                # It's a username - try multiple lookup strategies
+                # 1. Try exact username match
                 try:
                     user = User.objects.get(username=mention_text)
+                    logger.info(f"[extract_comment_mentions] Found user by username: {user.username} ({user.email})")
                 except User.DoesNotExist:
-                    # Try email prefix match
+                    # 2. Try email prefix match (e.g., 'hisham' matches 'hisham@example.com')
                     try:
-                        user = User.objects.filter(email__startswith=mention_text).first()
-                    except:
-                        pass
+                        user = User.objects.filter(email__istartswith=mention_text + '@').first()
+                        if user:
+                            logger.info(f"[extract_comment_mentions] Found user by email prefix: {user.email}")
+                    except Exception as e:
+                        logger.warning(f"[extract_comment_mentions] Error in email prefix lookup: {e}")
+                    
+                    # 3. Try case-insensitive username match
+                    if not user:
+                        try:
+                            user = User.objects.filter(username__iexact=mention_text).first()
+                            if user:
+                                logger.info(f"[extract_comment_mentions] Found user by case-insensitive username: {user.username}")
+                        except Exception as e:
+                            logger.warning(f"[extract_comment_mentions] Error in case-insensitive username lookup: {e}")
                 
                 if not user:
-                    logger.warning(f"Mentioned user not found: {mention_text}")
+                    logger.warning(f"[extract_comment_mentions] User not found for mention: '{mention_text}' (tried username, email prefix, case-insensitive)")
                     continue
             
             # Create mention
@@ -339,14 +392,19 @@ def extract_comment_mentions(sender, instance, created, **kwargs):
                 created_by=current_user if current_user and current_user.is_authenticated else None,
             )
             
-            logger.info(f"Created mention: {mention_text} in comment on story {instance.story.title}")
+            logger.info(f"[extract_comment_mentions] Created mention: {mention_text} in comment {instance.id} on story {instance.story.title} for user {user.email}")
             
             # Send notification
             try:
                 notification_service = get_notification_service(instance.story.project)
-                notification_service.notify_mention(mention, instance.story)
+                logger.info(f"[extract_comment_mentions] Notification service created for project {instance.story.project.id}")
+                result = notification_service.notify_mention(mention, instance.story)
+                if result:
+                    logger.info(f"[extract_comment_mentions] Successfully created mention notification {result.id} for user {user.email}")
+                else:
+                    logger.warning(f"[extract_comment_mentions] Notification service returned None for mention {mention.id} - check notification service logs above")
             except Exception as e:
-                logger.error(f"Error sending mention notification: {e}", exc_info=True)
+                logger.error(f"[extract_comment_mentions] Error sending mention notification: {e}", exc_info=True)
         
     except Exception as e:
         logger.error(f"Error extracting mentions from comment {instance.id}: {e}", exc_info=True)

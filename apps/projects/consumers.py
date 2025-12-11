@@ -8,6 +8,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
+from django.utils import timezone
 
 from .models import Project, UserStory, Task, Bug, Issue
 
@@ -393,3 +394,85 @@ class CollaborativeEditingConsumer(AsyncWebsocketConsumer):
         # For now, return empty list - could be enhanced with Redis tracking
         return []
 
+
+class NotificationConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket consumer for real-time notifications.
+    
+    URL: ws/notifications/
+    
+    Clients connect to receive real-time notifications for the authenticated user.
+    """
+    
+    async def connect(self):
+        """Handle WebSocket connection."""
+        self.user = self.scope['user']
+        
+        logger.info(f"[NotificationConsumer] Connection attempt for user: {self.user}")
+        
+        # Verify user is authenticated
+        if not self.user.is_authenticated:
+            logger.error("[NotificationConsumer] Rejecting unauthenticated user")
+            await self.close(code=4001)
+            return
+        
+        # Join user's personal notification group
+        self.user_group = f'user_{self.user.id}_notifications'
+        await self.channel_layer.group_add(
+            self.user_group,
+            self.channel_name
+        )
+        
+        logger.info(f"[NotificationConsumer] Accepting WebSocket connection for user {self.user.id}")
+        await self.accept()
+        
+        # Send connection confirmation
+        await self.send(text_data=json.dumps({
+            'type': 'connection',
+            'message': 'Connected to notification stream',
+            'user_id': str(self.user.id)
+        }))
+    
+    async def disconnect(self, close_code):
+        """Handle WebSocket disconnection."""
+        if hasattr(self, 'user_group'):
+            await self.channel_layer.group_discard(
+                self.user_group,
+                self.channel_name
+            )
+    
+    async def receive(self, text_data):
+        """Handle incoming WebSocket message."""
+        try:
+            data = json.loads(text_data)
+            message_type = data.get('type')
+            
+            if message_type == 'ping':
+                # Respond to ping with pong
+                await self.send(text_data=json.dumps({
+                    'type': 'pong',
+                    'timestamp': timezone.now().isoformat()
+                }))
+            else:
+                await self.send_error(f'Unknown message type: {message_type}')
+                
+        except json.JSONDecodeError:
+            await self.send_error('Invalid JSON')
+        except Exception as e:
+            logger.error(f"[NotificationConsumer] Error handling message: {str(e)}", exc_info=True)
+            await self.send_error(str(e))
+    
+    # Event handler for group messages
+    async def notification(self, event):
+        """Handle notification event from channel layer."""
+        await self.send(text_data=json.dumps({
+            'type': 'notification',
+            'notification': event['notification']
+        }))
+    
+    async def send_error(self, message):
+        """Send error message to client."""
+        await self.send(text_data=json.dumps({
+            'type': 'error',
+            'message': message
+        }))

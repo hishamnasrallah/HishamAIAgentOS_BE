@@ -15,7 +15,8 @@ from apps.projects.models import (
     UserStory,
     Epic,
     Sprint,
-    Task
+    Task,
+    ProjectMember
 )
 
 User = get_user_model()
@@ -34,24 +35,26 @@ class PermissionEnforcementService:
     """
     
     # Default permission mappings
+    # Supports all system roles: admin, owner, product_owner, scrum_master, tech_lead, developer, qa, designer, analyst, manager, member, viewer
+    # Plus any custom roles defined per project
     DEFAULT_PERMISSIONS = {
-        'who_can_create_stories': ['member', 'admin'],
-        'who_can_edit_stories': ['member', 'admin'],
-        'who_can_delete_stories': ['admin'],
-        'who_can_assign_stories': ['member', 'admin'],
-        'who_can_change_status': ['member', 'admin'],
-        'who_can_manage_sprints': ['admin', 'scrum_master'],
-        'who_can_view_analytics': ['member', 'admin'],
-        'who_can_create_epics': ['member', 'admin'],
-        'who_can_edit_epics': ['member', 'admin'],
-        'who_can_delete_epics': ['admin'],
-        'who_can_create_issues': ['member', 'admin'],
-        'who_can_create_tasks': ['member', 'admin'],
-        'who_can_edit_tasks': ['member', 'admin'],
-        'who_can_delete_tasks': ['member', 'admin'],
-        'who_can_add_comments': ['member', 'admin'],
-        'who_can_add_attachments': ['member', 'admin'],
-        'who_can_manage_dependencies': ['member', 'admin'],
+        'who_can_create_stories': ['developer', 'product_owner', 'scrum_master', 'manager', 'member', 'admin', 'owner'],
+        'who_can_edit_stories': ['developer', 'product_owner', 'scrum_master', 'manager', 'member', 'admin', 'owner'],
+        'who_can_delete_stories': ['admin', 'owner', 'product_owner'],
+        'who_can_assign_stories': ['product_owner', 'scrum_master', 'tech_lead', 'manager', 'admin', 'owner'],
+        'who_can_change_status': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
+        'who_can_manage_sprints': ['admin', 'owner', 'scrum_master', 'product_owner'],
+        'who_can_view_analytics': ['product_owner', 'scrum_master', 'manager', 'tech_lead', 'member', 'admin', 'owner'],
+        'who_can_create_epics': ['product_owner', 'scrum_master', 'manager', 'admin', 'owner'],
+        'who_can_edit_epics': ['product_owner', 'scrum_master', 'manager', 'admin', 'owner'],
+        'who_can_delete_epics': ['admin', 'owner', 'product_owner'],
+        'who_can_create_issues': ['developer', 'qa', 'product_owner', 'scrum_master', 'manager', 'member', 'admin', 'owner'],
+        'who_can_create_tasks': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
+        'who_can_edit_tasks': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
+        'who_can_delete_tasks': ['developer', 'tech_lead', 'scrum_master', 'manager', 'admin', 'owner'],
+        'who_can_add_comments': ['developer', 'qa', 'designer', 'analyst', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
+        'who_can_add_attachments': ['developer', 'qa', 'designer', 'analyst', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
+        'who_can_manage_dependencies': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'admin', 'owner'],
     }
     
     def __init__(self, project: Optional[Project] = None):
@@ -69,34 +72,64 @@ class PermissionEnforcementService:
         if self.config and self.config.permission_settings:
             settings = self.config.permission_settings
             if permission_key in settings:
-                return settings[permission_key]
+                allowed_roles = settings[permission_key]
+                # Validate that all roles exist (system roles or custom roles)
+                if isinstance(allowed_roles, list):
+                    valid_roles = []
+                    system_roles = ProjectMember.SYSTEM_ROLES
+                    custom_roles = self.config.custom_roles if self.config.custom_roles else []
+                    all_valid_roles = system_roles + custom_roles
+                    
+                    for role in allowed_roles:
+                        if role in all_valid_roles:
+                            valid_roles.append(role)
+                        else:
+                            logger.warning(f"Invalid role '{role}' in permission setting '{permission_key}' for project {self.project.id if self.project else 'None'}")
+                    
+                    return valid_roles if valid_roles else self.DEFAULT_PERMISSIONS.get(permission_key, [])
         
         # Return default
         return self.DEFAULT_PERMISSIONS.get(permission_key, [])
     
-    def _get_user_role_in_project(self, user: User) -> str:
+    def _get_user_roles_in_project(self, user: User) -> List[str]:
         """
-        Get user's role in the project.
+        Get user's roles in the project.
         
-        Returns: 'admin', 'owner', 'member', or 'viewer'
+        Returns: List of role strings (e.g., ['developer', 'scrum_master'])
         """
         if not self.project:
-            return user.role if hasattr(user, 'role') else 'viewer'
+            return [user.role] if hasattr(user, 'role') else ['viewer']
         
-        # System admins have admin role
-        if user.role == 'admin':
-            return 'admin'
+        roles = []
         
-        # Project owner
+        # System admins always have admin role
+        if user.role == 'admin' or user.is_superuser:
+            roles.append('admin')
+        
+        # Project owner always has owner role
         if self.project.owner == user:
-            return 'owner'
+            roles.append('owner')
         
-        # Project member
-        if self.project.members.filter(id=user.id).exists():
-            return 'member'
+        # Get project-specific roles from ProjectMember
+        try:
+            project_member = ProjectMember.objects.get(project=self.project, user=user)
+            # Add all roles from ProjectMember (can include custom roles)
+            for role in project_member.roles:
+                if role not in roles:
+                    roles.append(role)
+        except ProjectMember.DoesNotExist:
+            # Fallback: check if user is in members ManyToMany (backward compatibility)
+            if self.project.members.filter(id=user.id).exists():
+                roles.append('member')
+            else:
+                # Default to viewer if not a member
+                roles.append('viewer')
         
-        # Default to viewer
-        return 'viewer'
+        # If no roles found, default to viewer
+        if not roles:
+            roles.append('viewer')
+        
+        return roles
     
     def _check_role_permission(
         self,
@@ -104,33 +137,57 @@ class PermissionEnforcementService:
         allowed_roles: List[str]
     ) -> bool:
         """
-        Check if user's role in project matches allowed roles.
+        Check if user's roles in project match allowed roles.
         
-        Role mapping:
-        - 'admin' -> system admin
-        - 'owner' -> project owner
-        - 'member' -> project member
-        - 'scrum_master' -> project member with special role (future)
-        - 'viewer' -> no special access
+        Supports:
+        - System roles: admin, owner, product_owner, scrum_master, tech_lead, developer, qa, designer, analyst, manager, member, viewer
+        - Custom roles: defined per project in ProjectConfiguration.custom_roles
+        - Role hierarchy: admin > owner > other roles > viewer
+        
+        Returns True if user has any of the allowed roles.
         """
-        user_role = self._get_user_role_in_project(user)
+        user_roles = self._get_user_roles_in_project(user)
         
         # Admin always has access
-        if user_role == 'admin':
+        if 'admin' in user_roles:
             return True
         
-        # Check if user role is in allowed roles
-        role_mapping = {
-            'admin': ['admin'],
-            'owner': ['owner', 'admin'],
-            'member': ['member', 'owner', 'admin'],
-            'scrum_master': ['scrum_master', 'admin'],
+        # Owner has access if 'owner' is in allowed roles or if allowed roles include 'member'
+        if 'owner' in user_roles:
+            if 'owner' in allowed_roles or 'member' in allowed_roles:
+                return True
+        
+        # Check if any of the user's roles match allowed roles
+        if any(role in allowed_roles for role in user_roles):
+            return True
+        
+        # Role hierarchy: members can do what viewers can do
+        if 'member' in user_roles and 'viewer' in allowed_roles:
+            return True
+        
+        # Check role hierarchy (higher roles inherit lower role permissions)
+        role_hierarchy = {
+            'admin': ['admin', 'owner', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'developer', 'qa', 'designer', 'analyst', 'member', 'viewer'],
+            'owner': ['owner', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'developer', 'qa', 'designer', 'analyst', 'member', 'viewer'],
+            'product_owner': ['product_owner', 'scrum_master', 'manager', 'member', 'viewer'],
+            'scrum_master': ['scrum_master', 'member', 'viewer'],
+            'tech_lead': ['tech_lead', 'developer', 'member', 'viewer'],
+            'manager': ['manager', 'member', 'viewer'],
+            'developer': ['developer', 'member', 'viewer'],
+            'qa': ['qa', 'member', 'viewer'],
+            'designer': ['designer', 'member', 'viewer'],
+            'analyst': ['analyst', 'member', 'viewer'],
+            'member': ['member', 'viewer'],
             'viewer': ['viewer']
         }
         
-        # Check if any of the user's roles match allowed roles
-        user_roles = role_mapping.get(user_role, [user_role])
-        return any(role in allowed_roles for role in user_roles)
+        # Check if any of the user's roles have hierarchy that includes allowed roles
+        for user_role in user_roles:
+            if user_role in role_hierarchy:
+                if any(allowed_role in role_hierarchy[user_role] for allowed_role in allowed_roles):
+                    return True
+        
+        return False
     
     def can_create_story(self, user: User) -> Tuple[bool, Optional[str]]:
         """Check if user can create stories."""
@@ -184,9 +241,9 @@ class PermissionEnforcementService:
         # Check if approval is required
         if self._requires_approval('status_change_to_done', story):
             # Check if user has approval (future: implement approval system)
-            # For now, just check if user is admin/owner
-            user_role = self._get_user_role_in_project(user)
-            if user_role not in ['admin', 'owner']:
+            # For now, just check if user is admin/owner/scrum_master/product_owner
+            user_roles = self._get_user_roles_in_project(user)
+            if not any(role in ['admin', 'owner', 'scrum_master', 'product_owner'] for role in user_roles):
                 return False, "Status change to 'done' requires approval"
         
         return True, None
@@ -244,6 +301,33 @@ class PermissionEnforcementService:
         
         if not has_permission:
             return False, f"Only {', '.join(allowed_roles)} can delete epics"
+        return True, None
+    
+    def can_create_task(self, user: User) -> Tuple[bool, Optional[str]]:
+        """Check if user can create tasks."""
+        allowed_roles = self._get_permission_setting('who_can_create_tasks')
+        has_permission = self._check_role_permission(user, allowed_roles)
+        
+        if not has_permission:
+            return False, f"Only {', '.join(allowed_roles)} can create tasks"
+        return True, None
+    
+    def can_edit_task(self, user: User, task: Optional[Task] = None) -> Tuple[bool, Optional[str]]:
+        """Check if user can edit tasks."""
+        allowed_roles = self._get_permission_setting('who_can_edit_tasks')
+        has_permission = self._check_role_permission(user, allowed_roles)
+        
+        if not has_permission:
+            return False, f"Only {', '.join(allowed_roles)} can edit tasks"
+        return True, None
+    
+    def can_delete_task(self, user: User, task: Optional[Task] = None) -> Tuple[bool, Optional[str]]:
+        """Check if user can delete tasks."""
+        allowed_roles = self._get_permission_setting('who_can_delete_tasks')
+        has_permission = self._check_role_permission(user, allowed_roles)
+        
+        if not has_permission:
+            return False, f"Only {', '.join(allowed_roles)} can delete tasks"
         return True, None
     
     def can_add_comment(self, user: User) -> Tuple[bool, Optional[str]]:

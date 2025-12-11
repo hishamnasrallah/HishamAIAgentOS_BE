@@ -9,7 +9,8 @@ from .models import (
     Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Activity, EditHistory, Watcher, SavedSearch,
     StatusChangeApproval, ProjectLabelPreset, Milestone, TicketReference, StoryLink, CardTemplate, BoardTemplate,
     SearchHistory, FilterPreset, TimeBudget, OvertimeRecord, CardCoverImage, CardChecklist, CardVote,
-    StoryArchive, StoryVersion, Webhook, StoryClone, GitHubIntegration, JiraIntegration, SlackIntegration
+    StoryArchive, StoryVersion, Webhook, StoryClone, GitHubIntegration, JiraIntegration, SlackIntegration,
+    ProjectMember
 )
 
 
@@ -2324,3 +2325,57 @@ class SlackIntegrationAdmin(admin.ModelAdmin):
         """Display number of notification events."""
         return len(obj.notification_events) if obj.notification_events else 0
     notification_events_count.short_description = 'Events'
+
+
+@admin.register(ProjectMember)
+class ProjectMemberAdmin(admin.ModelAdmin):
+    """Project Member admin interface."""
+    
+    list_display = (
+        'user',
+        'project',
+        'roles_display',
+        'added_by',
+        'added_at',
+        'updated_at'
+    )
+    list_filter = ('added_at', 'updated_at', 'project')
+    search_fields = (
+        'user__email',
+        'user__username',
+        'user__first_name',
+        'user__last_name',
+        'project__name',
+        'project__slug'
+    )
+    readonly_fields = ('id', 'added_at', 'updated_at')
+    date_hierarchy = 'added_at'
+    
+    fieldsets = (
+        ('Member Information', {
+            'fields': ('project', 'user', 'roles')
+        }),
+        ('Metadata', {
+            'fields': ('added_by', 'added_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('id',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def roles_display(self, obj):
+        """Display roles as badges."""
+        if not obj.roles:
+            return '-'
+        badges = []
+        for role in obj.roles:
+            color = '#007bff' if role in ProjectMember.SYSTEM_ROLES else '#28a745'
+            badges.append(
+                f'<span style="background-color: {color}; color: white; '
+                f'padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-right: 4px;">{role}</span>'
+            )
+        return format_html(''.join(badges))
+    roles_display.short_description = 'Roles'
+    roles_display.allow_tags = True

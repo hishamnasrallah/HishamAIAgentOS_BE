@@ -101,11 +101,13 @@ class AutomationService:
                     matches = (old_status in trigger_statuses or new_status in trigger_statuses)
                 
                 if matches:
-                    actions = rule.get('actions', [])
-                    for action in actions:
-                        result = self._execute_action(item, action, user)
-                        if result:
-                            executed_actions.append(result)
+                    # Check conditions before executing actions
+                    if self._evaluate_conditions(item, rule.get('conditions', [])):
+                        actions = rule.get('actions', [])
+                        for action in actions:
+                            result = self._execute_action(item, action, user)
+                            if result:
+                                executed_actions.append(result)
         
         return executed_actions
     
@@ -162,11 +164,13 @@ class AutomationService:
                                 matches = matches and (trigger_conditions['contains'] in new_value)
                     
                     if matches:
-                        actions = rule.get('actions', [])
-                        for action in actions:
-                            result = self._execute_action(item, action, user)
-                            if result:
-                                executed_actions.append(result)
+                        # Check rule-level conditions before executing actions
+                        if self._evaluate_conditions(item, rule.get('conditions', [])):
+                            actions = rule.get('actions', [])
+                            for action in actions:
+                                result = self._execute_action(item, action, user)
+                                if result:
+                                    executed_actions.append(result)
         
         return executed_actions
     
@@ -224,6 +228,79 @@ class AutomationService:
             items.extend(list(issues))
         
         return items
+    
+    def _evaluate_conditions(
+        self,
+        item: Any,
+        conditions: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Evaluate conditions for an automation rule.
+        
+        Args:
+            item: The work item
+            conditions: List of condition dictionaries
+            
+        Returns:
+            True if all conditions match, False otherwise
+        """
+        if not conditions or len(conditions) == 0:
+            return True  # No conditions means always match
+        
+        for condition in conditions:
+            field_name = condition.get('field')
+            operator = condition.get('operator')
+            expected_value = condition.get('value')
+            
+            if not field_name or not operator:
+                continue  # Skip invalid conditions
+            
+            # Get field value from item
+            field_value = None
+            if hasattr(item, field_name):
+                field_value = getattr(item, field_name)
+            elif hasattr(item, f'{field_name}_id'):
+                field_value = getattr(item, f'{field_name}_id')
+            
+            # Evaluate condition
+            matches = False
+            if operator == 'equals':
+                matches = (field_value == expected_value)
+            elif operator == 'not_equals':
+                matches = (field_value != expected_value)
+            elif operator == 'contains':
+                if isinstance(field_value, str):
+                    matches = (expected_value in field_value)
+                elif isinstance(field_value, list):
+                    matches = (expected_value in field_value)
+            elif operator == 'greater_than':
+                try:
+                    matches = (float(field_value) > float(expected_value))
+                except (ValueError, TypeError):
+                    matches = False
+            elif operator == 'less_than':
+                try:
+                    matches = (float(field_value) < float(expected_value))
+                except (ValueError, TypeError):
+                    matches = False
+            elif operator == 'in':
+                if isinstance(expected_value, list):
+                    matches = (field_value in expected_value)
+                elif isinstance(expected_value, str):
+                    # Treat as comma-separated list
+                    values = [v.strip() for v in expected_value.split(',')]
+                    matches = (str(field_value) in values)
+            elif operator == 'not_in':
+                if isinstance(expected_value, list):
+                    matches = (field_value not in expected_value)
+                elif isinstance(expected_value, str):
+                    values = [v.strip() for v in expected_value.split(',')]
+                    matches = (str(field_value) not in values)
+            
+            if not matches:
+                return False  # All conditions must match
+        
+        return True  # All conditions matched
     
     def _execute_action(
         self,
@@ -501,11 +578,13 @@ def execute_automation_rules(
                     continue
                 trigger = rule.get('trigger', {})
                 if trigger.get('type') == 'on_create':
-                    actions = rule.get('actions', [])
-                    for action in actions:
-                        result = service._execute_action(item, action, None)
-                        if result:
-                            executed_actions.append(result)
+                    # Check conditions before executing actions
+                    if service._evaluate_conditions(item, rule.get('conditions', [])):
+                        actions = rule.get('actions', [])
+                        for action in actions:
+                            result = service._execute_action(item, action, None)
+                            if result:
+                                executed_actions.append(result)
         
         elif trigger_type == 'on_status_change':
             # Execute rules for status change
@@ -547,11 +626,13 @@ def execute_automation_rules(
                         continue
                     trigger = rule.get('trigger', {})
                     if trigger.get('type') == 'on_task_complete':
-                        actions = rule.get('actions', [])
-                        for action in actions:
-                            result = service._execute_action(item, action, None)
-                            if result:
-                                executed_actions.append(result)
+                        # Check conditions before executing actions
+                        if service._evaluate_conditions(item, rule.get('conditions', [])):
+                            actions = rule.get('actions', [])
+                            for action in actions:
+                                result = service._execute_action(item, action, None)
+                                if result:
+                                    executed_actions.append(result)
         
         else:
             logger.warning(f"Unknown trigger type: {trigger_type}")

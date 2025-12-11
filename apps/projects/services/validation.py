@@ -82,8 +82,12 @@ class ValidationRuleEnforcementService:
         
         # Check if moving to 'in_progress'
         if new_status == 'in_progress' and old_status != 'in_progress':
-            # Check story points requirement
-            if self._get_validation_rule('require_story_points_before_in_progress'):
+            # Check story points requirement - check both validation_rules and direct config field
+            require_story_points = (
+                self._get_validation_rule('require_story_points_before_in_progress') or
+                (self.config and self.config.story_points_required)
+            )
+            if require_story_points:
                 if not story.story_points or story.story_points <= 0:
                     errors.append("Story points are required before moving to 'In Progress'")
             
