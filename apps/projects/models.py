@@ -349,6 +349,31 @@ class UserStory(models.Model):
         # Fallback to default states if no configuration exists
         return ['backlog', 'todo', 'in_progress', 'review', 'done']
     
+    def get_default_status(self):
+        """Get default status from project configuration using is_default flag."""
+        try:
+            config = self.project.configuration
+            if config and config.custom_states:
+                # Find state with is_default=True
+                default_state = next(
+                    (state for state in config.custom_states if state.get('is_default', False)),
+                    None
+                )
+                if default_state and default_state.get('id'):
+                    return default_state['id']
+                # If no default state found, use first state by order
+                sorted_states = sorted(
+                    [s for s in config.custom_states if s.get('id')],
+                    key=lambda x: x.get('order', 999)
+                )
+                if sorted_states:
+                    return sorted_states[0].get('id')
+        except ProjectConfiguration.DoesNotExist:
+            pass
+        
+        # Fallback to hardcoded default
+        return self.DEFAULT_STATUS
+    
     def clean(self):
         """Validate status against project configuration."""
         from django.core.exceptions import ValidationError
@@ -366,14 +391,45 @@ class UserStory(models.Model):
         super().save(*args, **kwargs)
     
     def extract_mentions(self):
-        """Extract @mentions from description and acceptance_criteria."""
+        """Extract @mentions from description and acceptance_criteria.
+        
+        Handles both HTML format (from rich text editor) and plain text format.
+        HTML format: <span class="mention" data-id="email@example.com" data-label="Name">@Name</span>
+        Plain text format: @username
+        """
         mentions = []
-        text = f"{self.description} {self.acceptance_criteria}"
-        pattern = r'@(\w+(?:\.\w+)?)'
-        matches = re.findall(pattern, text)
-        for match in matches:
-            mentions.append(match)
-        return mentions
+        text = f"{self.description or ''} {self.acceptance_criteria or ''}"
+        if not text.strip():
+            return mentions
+        
+        # First, try to extract from HTML mention spans (data-id attribute contains email)
+        # Pattern: data-id="email@example.com" or data-id='email@example.com'
+        html_pattern = r'data-id=["\']([^"\']+@[^"\']+)["\']'
+        html_matches = re.findall(html_pattern, text)
+        for match in html_matches:
+            # Extract email from data-id
+            email = match.strip()
+            if '@' in email:
+                # It's an email - add it directly (user lookup will handle email matching)
+                if email not in mentions:
+                    mentions.append(email)
+                # Also add username part for fallback matching
+                username = email.split('@')[0]
+                if username and username not in mentions:
+                    mentions.append(username)
+        
+        # Also extract plain text @mentions (for backward compatibility and plain text content)
+        # Pattern to match @username (allows letters, numbers, dots, underscores, hyphens)
+        # Matches: @username, @user.name, @user_name, @user-name, @user123
+        plain_pattern = r'@([a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?)'
+        plain_matches = re.findall(plain_pattern, text)
+        for match in plain_matches:
+            # Remove any trailing punctuation that might have been captured
+            match = match.rstrip('.,;:!?)')
+            if match and len(match) > 0 and match not in mentions:
+                mentions.append(match)
+        
+        return list(set(mentions))  # Remove duplicates
 
 
 # Alias for backward compatibility
@@ -1380,6 +1436,11 @@ class ProjectConfiguration(models.Model):
         blank=True,
         help_text="Project-specific permission overrides"
     )
+    custom_roles = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Custom roles defined for this project (e.g., ['architect', 'devops', 'support'])"
+    )
     integration_settings = models.JSONField(
         default=dict,
         blank=True,
@@ -1515,6 +1576,8 @@ class ProjectConfiguration(models.Model):
                 "allow_self_assignment": True,
                 "require_approval_for_status_change": False,
             }
+        if not self.custom_roles:
+            self.custom_roles = []
         self.save()
 
 
@@ -1625,15 +1688,44 @@ class StoryComment(models.Model):
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
     
     def extract_mentions(self):
-        """Extract @mentions from comment content."""
+        """Extract @mentions from comment content.
+        
+        Handles both HTML format (from rich text editor) and plain text format.
+        HTML format: <span class="mention" data-id="email@example.com" data-label="Name">@Name</span>
+        Plain text format: @username
+        """
         mentions = []
         if not self.content:
             return mentions
-        pattern = r'@(\w+(?:\.\w+)?)'
-        matches = re.findall(pattern, self.content)
-        for match in matches:
-            mentions.append(match)
-        return mentions
+        
+        # First, try to extract from HTML mention spans (data-id attribute contains email)
+        # Pattern: data-id="email@example.com" or data-id='email@example.com'
+        html_pattern = r'data-id=["\']([^"\']+@[^"\']+)["\']'
+        html_matches = re.findall(html_pattern, self.content)
+        for match in html_matches:
+            # Extract email from data-id
+            email = match.strip()
+            if '@' in email:
+                # It's an email - add it directly (user lookup will handle email matching)
+                if email not in mentions:
+                    mentions.append(email)
+                # Also add username part for fallback matching
+                username = email.split('@')[0]
+                if username and username not in mentions:
+                    mentions.append(username)
+        
+        # Also extract plain text @mentions (for backward compatibility and plain text content)
+        # Pattern to match @username (allows letters, numbers, dots, underscores, hyphens)
+        # Matches: @username, @user.name, @user_name, @user-name, @user123
+        plain_pattern = r'@([a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?)'
+        plain_matches = re.findall(plain_pattern, self.content)
+        for match in plain_matches:
+            # Remove any trailing punctuation that might have been captured
+            match = match.rstrip('.,;:!?)')
+            if match and len(match) > 0 and match not in mentions:
+                mentions.append(match)
+        
+        return list(set(mentions))  # Remove duplicates
     
     class Meta:
         db_table = 'story_comments'
@@ -3433,4 +3525,79 @@ class OvertimeRecord(models.Model):
     
     def __str__(self):
         return f"Overtime: {self.time_budget} (+{self.overtime_hours}h)"
+
+
+class ProjectMember(models.Model):
+    """
+    Project-specific member with roles.
+    Supports multiple roles per user per project and custom roles.
+    """
+    
+    # Standard system roles (always available)
+    SYSTEM_ROLES = [
+        'admin',           # System administrator
+        'owner',           # Project owner
+        'product_owner',   # Product Owner
+        'scrum_master',    # Scrum Master
+        'tech_lead',       # Technical Lead
+        'developer',       # Developer
+        'qa',              # Quality Assurance
+        'designer',        # UI/UX Designer
+        'analyst',         # Business Analyst
+        'manager',         # Project Manager
+        'member',          # General project member
+        'viewer',          # Read-only access
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='project_members',
+        db_index=True
+    )
+    user = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.CASCADE,
+        related_name='project_memberships',
+        db_index=True
+    )
+    roles = models.JSONField(
+        default=list,
+        help_text="List of roles for this user in this project. Can include system roles and custom roles."
+    )
+    
+    # Metadata
+    added_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='added_project_members',
+        verbose_name='Added By'
+    )
+    added_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'project_members'
+        verbose_name = 'Project Member'
+        verbose_name_plural = 'Project Members'
+        unique_together = [['project', 'user']]
+        indexes = [
+            models.Index(fields=['project', 'user']),
+            models.Index(fields=['project']),
+        ]
+    
+    def __str__(self):
+        roles_str = ', '.join(self.roles) if self.roles else 'No roles'
+        return f'{self.user.email} in {self.project.name} ({roles_str})'
+    
+    def has_role(self, role: str) -> bool:
+        """Check if user has a specific role."""
+        return role in self.roles
+    
+    def has_any_role(self, roles: list) -> bool:
+        """Check if user has any of the specified roles."""
+        return any(role in self.roles for role in roles)
 

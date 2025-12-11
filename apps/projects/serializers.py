@@ -11,7 +11,8 @@ from apps.projects.models import (
     Mention, StoryComment, StoryDependency, StoryAttachment, Notification, Watcher, Activity, EditHistory, SavedSearch,
     StatusChangeApproval, ProjectLabelPreset, Milestone, TicketReference, StoryLink, CardTemplate, BoardTemplate,
     SearchHistory, FilterPreset, TimeBudget, OvertimeRecord, CardCoverImage, CardChecklist, CardVote,
-    StoryArchive, StoryVersion, Webhook, StoryClone, GitHubIntegration, JiraIntegration, SlackIntegration
+    StoryArchive, StoryVersion, Webhook, StoryClone, GitHubIntegration, JiraIntegration, SlackIntegration,
+    ProjectMember
 )
 # Alias for backward compatibility
 Story = UserStory
@@ -604,6 +605,15 @@ class StorySerializer(serializers.ModelSerializer):
                 if not is_valid:
                     from rest_framework.exceptions import ValidationError
                     raise ValidationError({'sprint': error})
+            
+            # Set default status from configuration if not provided
+            if 'status' not in validated_data or not validated_data.get('status'):
+                from apps.projects.models import UserStory
+                # Create temporary instance to use get_default_status method
+                temp_story = UserStory(project=project)
+                default_status = temp_story.get_default_status()
+                validated_data['status'] = default_status
+                logger.info(f"[StorySerializer] Set default status from configuration: {default_status}")
         
         instance = super().create(validated_data)
         logger.info(f"[StorySerializer] Story created. Story points: {instance.story_points}, Assigned to: {instance.assigned_to}, Epic: {instance.epic}, Sprint: {instance.sprint}")
@@ -1361,7 +1371,12 @@ class ProjectConfigurationSerializer(serializers.ModelSerializer):
         if not isinstance(value, list):
             raise serializers.ValidationError("custom_states must be a list")
         
+        if len(value) == 0:
+            raise serializers.ValidationError("At least one state is required")
+        
         state_ids = []
+        has_default = False
+        
         for state in value:
             if not isinstance(state, dict):
                 raise serializers.ValidationError("Each state must be a dictionary")
@@ -1371,9 +1386,30 @@ class ProjectConfigurationSerializer(serializers.ModelSerializer):
                 if field not in state:
                     raise serializers.ValidationError(f"State missing required field: {field}")
             
-            if state['id'] in state_ids:
-                raise serializers.ValidationError(f"Duplicate state id: {state['id']}")
-            state_ids.append(state['id'])
+            # Validate id format
+            state_id = state['id']
+            if not isinstance(state_id, str) or len(state_id.strip()) == 0:
+                raise serializers.ValidationError("State id must be a non-empty string")
+            
+            # Check for duplicates
+            if state_id in state_ids:
+                raise serializers.ValidationError(f"Duplicate state id: {state_id}")
+            state_ids.append(state_id)
+            
+            # Validate order is integer
+            if not isinstance(state.get('order'), int):
+                raise serializers.ValidationError(f"State order must be an integer for state: {state_id}")
+            
+            # Check for is_default flag
+            if state.get('is_default', False):
+                if has_default:
+                    raise serializers.ValidationError("Only one state can have is_default=True")
+                has_default = True
+        
+        # Ensure at least one default state
+        if not has_default and len(value) > 0:
+            # Auto-set first state as default
+            value[0]['is_default'] = True
         
         return value
     
@@ -1382,21 +1418,145 @@ class ProjectConfigurationSerializer(serializers.ModelSerializer):
         if not isinstance(value, list):
             raise serializers.ValidationError("story_point_scale must be a list")
         
+        if len(value) == 0:
+            raise serializers.ValidationError("Story point scale must have at least one value")
+        
         if not all(isinstance(x, int) and x > 0 for x in value):
             raise serializers.ValidationError("All story point values must be positive integers")
         
         if len(value) != len(set(value)):
             raise serializers.ValidationError("Story point scale must have unique values")
         
+        # Don't validate against min/max here - do it in validate() method after all fields are set
         return sorted(value)
     
     def validate_max_story_points_per_story(self, value):
         """Validate max story points per story."""
-        if value < self.initial_data.get('min_story_points_per_story', 1):
-            raise serializers.ValidationError(
-                "max_story_points_per_story must be >= min_story_points_per_story"
-            )
+        if value < 1:
+            raise serializers.ValidationError("max_story_points_per_story must be at least 1")
+        
+        # Don't validate against min_points or scale here - do it in validate() method
         return value
+    
+    def validate_min_story_points_per_story(self, value):
+        """Validate min story points per story."""
+        if value < 1:
+            raise serializers.ValidationError("min_story_points_per_story must be at least 1")
+        
+        # Don't validate against max_points or scale here - do it in validate() method
+        return value
+    
+    def validate_state_transitions(self, value):
+        """Validate state transitions structure."""
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("state_transitions must be a dictionary")
+        
+        # Validate structure only - state ID validation happens in validate() method
+        for from_state, to_states in value.items():
+            if not isinstance(to_states, list):
+                raise serializers.ValidationError(
+                    f"Transition values for '{from_state}' must be a list"
+                )
+        
+        return value
+    
+    def validate(self, data):
+        """Cross-field validation."""
+        # Get all relevant data (from data dict or instance)
+        custom_states = data.get('custom_states')
+        if custom_states is None and self.instance:
+            custom_states = self.instance.custom_states
+        
+        state_transitions = data.get('state_transitions')
+        if state_transitions is None and self.instance:
+            state_transitions = self.instance.state_transitions
+        
+        min_points = data.get('min_story_points_per_story')
+        if min_points is None and self.instance:
+            min_points = self.instance.min_story_points_per_story
+        
+        max_points = data.get('max_story_points_per_story')
+        if max_points is None and self.instance:
+            max_points = self.instance.max_story_points_per_story
+        
+        story_point_scale = data.get('story_point_scale')
+        if story_point_scale is None and self.instance:
+            story_point_scale = self.instance.story_point_scale
+        
+        # 1. Ensure at least one state has is_default=True
+        if custom_states:
+            has_default = any(state.get('is_default', False) for state in custom_states)
+            if not has_default and len(custom_states) > 0:
+                # Auto-set first state as default
+                if isinstance(custom_states, list) and len(custom_states) > 0:
+                    custom_states = list(custom_states)  # Make a copy
+                    custom_states[0] = {**custom_states[0], 'is_default': True}
+                    data['custom_states'] = custom_states
+        
+        # 2. Validate state_transitions against custom_states
+        if state_transitions and custom_states and isinstance(custom_states, list):
+            state_ids = [state.get('id') for state in custom_states if state.get('id')]
+            
+            # Clean up invalid transitions (remove references to non-existent states)
+            cleaned_transitions = {}
+            for from_state, to_states in state_transitions.items():
+                if from_state in state_ids:
+                    # Only include valid target states
+                    valid_to_states = [s for s in to_states if s in state_ids]
+                    cleaned_transitions[from_state] = valid_to_states
+                # If from_state doesn't exist, skip it (don't raise error - just clean it up)
+            
+            # Update data with cleaned transitions
+            data['state_transitions'] = cleaned_transitions
+        
+        # 3. Validate min/max story points relationship
+        if min_points is not None and max_points is not None:
+            if min_points > max_points:
+                raise serializers.ValidationError({
+                    'min_story_points_per_story': f"min_story_points_per_story ({min_points}) must be <= max_story_points_per_story ({max_points})",
+                    'max_story_points_per_story': f"max_story_points_per_story ({max_points}) must be >= min_story_points_per_story ({min_points})"
+                })
+        
+        # 4. Validate and auto-adjust story_point_scale against min/max
+        if story_point_scale and isinstance(story_point_scale, list) and len(story_point_scale) > 0:
+            original_scale = list(story_point_scale)  # Make a copy
+            adjusted_scale = list(story_point_scale)  # Make a copy
+            
+            # Filter out values outside min/max range
+            if min_points is not None:
+                adjusted_scale = [v for v in adjusted_scale if v >= min_points]
+            
+            if max_points is not None:
+                adjusted_scale = [v for v in adjusted_scale if v <= max_points]
+            
+            # If scale was adjusted, update it
+            if len(adjusted_scale) != len(original_scale) or set(adjusted_scale) != set(original_scale):
+                if len(adjusted_scale) == 0:
+                    # If all values were removed, raise error
+                    raise serializers.ValidationError({
+                        'story_point_scale': f"Story point scale must have at least one value within the range [{min_points or 1}, {max_points or 21}]. Current scale: {original_scale}"
+                    })
+                # Auto-adjust the scale - remove invalid values
+                data['story_point_scale'] = sorted(adjusted_scale)
+                # Update the variable for final validation
+                story_point_scale = adjusted_scale
+            
+            # Final validation - ensure scale is within bounds (should always pass after adjustment)
+            final_scale = data.get('story_point_scale', story_point_scale)
+            if final_scale and isinstance(final_scale, list) and len(final_scale) > 0:
+                if min_points is not None:
+                    if min(final_scale) < min_points:
+                        raise serializers.ValidationError({
+                            'story_point_scale': f"Story point scale minimum ({min(final_scale)}) must be >= min_story_points_per_story ({min_points})"
+                        })
+                
+                if max_points is not None:
+                    if max(final_scale) > max_points:
+                        raise serializers.ValidationError({
+                            'story_point_scale': f"Story point scale maximum ({max(final_scale)}) must be <= max_story_points_per_story ({max_points})"
+                        })
+        
+        return data
     
     def update(self, instance, validated_data):
         """Update configuration and initialize defaults if needed."""
@@ -1407,6 +1567,12 @@ class ProjectConfigurationSerializer(serializers.ModelSerializer):
             validated_data['story_point_scale'] = instance.get_default_story_point_scale()
         if 'state_transitions' in validated_data and not validated_data['state_transitions']:
             validated_data['state_transitions'] = instance.get_default_state_transitions()
+        
+        # Ensure at least one state has is_default=True after update
+        if 'custom_states' in validated_data and validated_data['custom_states']:
+            has_default = any(state.get('is_default', False) for state in validated_data['custom_states'])
+            if not has_default:
+                validated_data['custom_states'][0]['is_default'] = True
         
         return super().update(instance, validated_data)
 
@@ -2041,5 +2207,85 @@ class FilterPresetSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Shared presets cannot be associated with a specific user.")
         if not is_shared and not user:
             raise serializers.ValidationError("User-specific presets must have a user.")
+        
+        return data
+
+
+class ProjectMemberSerializer(serializers.ModelSerializer):
+    """Serializer for ProjectMember model."""
+    
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    user_first_name = serializers.CharField(source='user.first_name', read_only=True)
+    user_last_name = serializers.CharField(source='user.last_name', read_only=True)
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    added_by_email = serializers.EmailField(source='added_by.email', read_only=True)
+    
+    class Meta:
+        model = ProjectMember
+        fields = [
+            'id',
+            'project',
+            'user',
+            'user_email',
+            'user_username',
+            'user_first_name',
+            'user_last_name',
+            'project_name',
+            'roles',
+            'added_by',
+            'added_by_email',
+            'added_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'added_at', 'updated_at']
+    
+    def validate_roles(self, value):
+        """Validate that roles are valid (system roles or custom roles from project)."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Roles must be a list.")
+        
+        if not value:
+            raise serializers.ValidationError("At least one role is required.")
+        
+        # Get project to check custom roles
+        project = self.instance.project if self.instance else self.initial_data.get('project')
+        if project:
+            try:
+                from apps.projects.models import ProjectConfiguration
+                config = ProjectConfiguration.objects.get(project=project)
+                custom_roles = config.custom_roles or []
+            except ProjectConfiguration.DoesNotExist:
+                custom_roles = []
+        else:
+            custom_roles = []
+        
+        # All valid roles (system + custom)
+        valid_roles = ProjectMember.SYSTEM_ROLES + custom_roles
+        
+        # Validate each role
+        invalid_roles = [role for role in value if role not in valid_roles]
+        if invalid_roles:
+            raise serializers.ValidationError(
+                f"Invalid roles: {', '.join(invalid_roles)}. "
+                f"Valid roles are: {', '.join(valid_roles)}"
+            )
+        
+        return value
+    
+    def validate(self, data):
+        """Validate that user and project combination is unique."""
+        project = data.get('project') or (self.instance.project if self.instance else None)
+        user = data.get('user') or (self.instance.user if self.instance else None)
+        
+        if project and user:
+            # Check for existing ProjectMember with same project and user
+            existing = ProjectMember.objects.filter(project=project, user=user).exclude(
+                id=self.instance.id if self.instance else None
+            )
+            if existing.exists():
+                raise serializers.ValidationError(
+                    "A ProjectMember with this project and user already exists."
+                )
         
         return data
