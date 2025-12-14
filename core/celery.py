@@ -47,6 +47,10 @@ app.conf.beat_schedule = {
         'task': 'apps.projects.tasks.execute_scheduled_automation_rules',
         'schedule': crontab(hour='*/1', minute=0),  # Run every hour to check for scheduled triggers
     },
+    'check-conversations-for-summarization': {
+        'task': 'apps.chat.tasks.check_conversations_for_summarization',
+        'schedule': crontab(minute='*/30'),  # Run every 30 minutes to check for conversations needing summarization
+    },
 }
 
 @app.task(bind=True, ignore_result=True)

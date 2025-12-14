@@ -67,6 +67,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'first_name': user.first_name,
             'last_name': user.last_name,
             'two_factor_enabled': user.two_factor_enabled,
+            'is_superuser': user.is_superuser,
         }
         
         # Add user to online presence
@@ -193,7 +194,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
             'role', 'avatar', 'bio', 'preferred_language', 'timezone',
-            'notification_preferences', 'two_factor_enabled',
+            'notification_preferences', 'two_factor_enabled', 'is_superuser',
             'date_joined', 'last_login'
         ]
-        read_only_fields = ['id', 'email', 'role', 'two_factor_enabled', 'date_joined', 'last_login']
+        read_only_fields = ['id', 'email', 'role', 'two_factor_enabled', 'is_superuser', 'date_joined', 'last_login']

@@ -27,6 +27,8 @@ from apps.workflows.serializers import (
     WorkflowExecutionResponseSerializer
 )
 from apps.workflows.services.workflow_executor import workflow_executor
+from apps.core.services.roles import RoleService
+from apps.organizations.services import OrganizationStatusService, SubscriptionService
 
 
 class WorkflowViewSet(viewsets.ModelViewSet):
@@ -85,6 +87,48 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         # Create/update/delete require admin
         return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
     
+    def perform_create(self, serializer):
+        """
+        Create workflow with organization status and subscription validation.
+        Also check if tier allows custom workflow creation.
+        """
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=user)
+            
+            # Check if tier allows custom workflow creation (Professional+ only)
+            SubscriptionService.check_tier_feature(organization, 'allows_custom_workflows', user=user)
+        
+        serializer.save(created_by=user)
+    
+    def perform_update(self, serializer):
+        """
+        Update workflow with organization status and subscription validation.
+        """
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=user)
+        
+        serializer.save(updated_by=user)
+    
     @extend_schema(
         request=WorkflowExecutionRequestSerializer,
         responses={200: WorkflowExecutionResponseSerializer},
@@ -99,6 +143,27 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         serializer = WorkflowExecutionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
+        # Get user's organization and validate
+        user = request.user
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (but we still track usage if they have an org)
+        if organization:
+            try:
+                # Check organization status
+                OrganizationStatusService.require_active_organization(organization, user=user)
+                
+                # Check subscription active
+                OrganizationStatusService.require_subscription_active(organization, user=user)
+                
+                # Check tier-based usage limit
+                SubscriptionService.check_usage_limit(organization, 'workflow_executions', user=user)
+            except Exception as e:
+                return Response(
+                    {'error': str(e), 'success': False},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
         input_data = serializer.validated_data['input_data']
         user_id = str(request.user.id) if request.user.is_authenticated else None
         
@@ -112,6 +177,13 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 )
             
             result = async_to_sync(run_execution)()
+            
+            # Increment usage count after successful execution (only if organization exists)
+            if organization and result.get('success', True):
+                try:
+                    SubscriptionService.increment_usage(organization, 'workflow_executions')
+                except Exception as e:
+                    logger.warning(f"Failed to increment usage count: {e}")
             
             # Return execution_id in response for WebSocket connection
             # The execution_id is already in the result from workflow_executor.execute()
@@ -245,7 +317,7 @@ class WorkflowExecutionViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = WorkflowExecution.objects.select_related('workflow', 'user')
         
         # Admins can see all executions
-        if user.role == 'admin':
+        if RoleService.is_admin(user):
             return queryset.all()
         
         # Regular users can only see their own executions
@@ -358,7 +430,7 @@ class WorkflowStepViewSet(viewsets.ReadOnlyModelViewSet):
             return WorkflowStep.objects.none()
         
         # Admins can see all steps
-        if user.role == 'admin':
+        if RoleService.is_admin(user):
             return WorkflowStep.objects.all()
         
         # Regular users can only see steps from their own executions

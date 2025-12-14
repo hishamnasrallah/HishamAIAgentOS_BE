@@ -2,9 +2,10 @@
 Views for commands app.
 """
 
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema
 from asgiref.sync import async_to_sync
 from django.core.cache import cache
@@ -23,6 +24,9 @@ from .services import command_executor
 from .services.template_renderer import TemplateRenderer
 from .services.parameter_validator import ParameterValidator
 from apps.agents.models import Agent
+from apps.authentication.permissions import IsAdminUser
+from apps.core.services.roles import RoleService
+from apps.organizations.services import OrganizationStatusService, SubscriptionService
 
 # Instantiate services
 template_renderer = TemplateRenderer()
@@ -33,12 +37,26 @@ logger = logging.getLogger(__name__)
 
 
 class CommandCategoryViewSet(viewsets.ModelViewSet):
-    """Command category viewset."""
+    """
+    Command category viewset.
+    
+    Access Control:
+    - All authenticated users can view categories (read-only)
+    - Only admins can create/update/delete categories
+    """
     
     queryset = CommandCategory.objects.all()
     serializer_class = CommandCategorySerializer
+    permission_classes = [IsAuthenticated]
     search_fields = ['name', 'description']
     ordering_fields = ['order', 'name', 'created_at']
+    
+    def get_permissions(self):
+        """Override to allow read-only for all authenticated users, but restrict create/update/delete to admins."""
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated()]
+        # Create/update/delete require admin
+        return [IsAuthenticated(), IsAdminUser()]
     
     def list(self, request, *args, **kwargs):
         """List categories with caching."""
@@ -54,15 +72,29 @@ class CommandCategoryViewSet(viewsets.ModelViewSet):
 
 
 class CommandTemplateViewSet(viewsets.ModelViewSet):
-    """Command template viewset with execute and preview actions."""
+    """
+    Command template viewset with execute and preview actions.
+    
+    Access Control:
+    - All authenticated users can view and execute commands
+    - Only admins can create/update/delete command templates
+    """
     
     queryset = CommandTemplate.objects.all()
     serializer_class = CommandTemplateSerializer
+    permission_classes = [IsAuthenticated]
     filterset_fields = ['category', 'is_active']
     search_fields = ['name', 'description', 'tags']
     ordering_fields = ['created_at', 'usage_count', 'name', 'success_rate', 'estimated_cost']
     # Enable pagination for better performance
     # pagination_class = None  # Disable pagination - return all commands at once
+    
+    def get_permissions(self):
+        """Override to allow read/execute for all authenticated users, but restrict create/update/delete to admins."""
+        if self.action in ['list', 'retrieve', 'execute', 'preview']:
+            return [IsAuthenticated()]
+        # Create/update/delete require admin
+        return [IsAuthenticated(), IsAdminUser()]
     
     def get_serializer_class(self):
         if self.action == 'list':
@@ -111,6 +143,34 @@ class CommandTemplateViewSet(viewsets.ModelViewSet):
         serializer = CommandExecutionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
+        # Get user's organization and validate
+        user = request.user if request.user.is_authenticated else None
+        organization = None
+        if user:
+            organization = RoleService.get_user_organization(user)
+            
+            # Super admins can bypass checks (but we still track usage if they have an org)
+            if organization:
+                try:
+                    # Check organization status
+                    OrganizationStatusService.require_active_organization(organization, user=user)
+                    
+                    # Check subscription active
+                    OrganizationStatusService.require_subscription_active(organization, user=user)
+                    
+                    # Check tier-based usage limit
+                    SubscriptionService.check_usage_limit(organization, 'command_executions', user=user)
+                except Exception as e:
+                    return Response({
+                        'success': False,
+                        'output': '',
+                        'execution_time': 0,
+                        'cost': 0,
+                        'token_usage': {},
+                        'agent_used': '',
+                        'error': str(e)
+                    }, status=status.HTTP_403_FORBIDDEN)
+        
         parameters = serializer.validated_data['parameters']
         agent_id = serializer.validated_data.get('agent_id')
         
@@ -157,6 +217,13 @@ class CommandTemplateViewSet(viewsets.ModelViewSet):
                     'agent_used': '',
                     'error': 'Command execution timed out after 4 minutes'
                 }, status=status.HTTP_408_REQUEST_TIMEOUT)
+            
+            # Increment usage count after successful execution (only if organization exists)
+            if organization and result.success:
+                try:
+                    SubscriptionService.increment_usage(organization, 'command_executions')
+                except Exception as e:
+                    logger.warning(f"Failed to increment usage count: {e}")
             
             # Prepare response
             response_data = {

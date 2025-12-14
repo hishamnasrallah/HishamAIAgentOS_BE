@@ -10,6 +10,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import timedelta
 from drf_spectacular.utils import extend_schema
+from apps.core.services.roles import RoleService
 
 User = get_user_model()
 
@@ -51,7 +52,7 @@ def online_users(request):
     now = timezone.now()
     active_threshold = now - timedelta(minutes=5)
     user = request.user
-    is_admin = user.role == 'admin'
+    is_admin = RoleService.is_admin(user)
     
     # Clean up stale entries
     global _online_users
@@ -70,17 +71,35 @@ def online_users(request):
             'count': 0
         })
     
-    # Fetch user details
-    users = User.objects.filter(id__in=online_user_ids).only(
-        'id', 'email', 'first_name', 'last_name', 'role'
-    )
+    # Filter by organization for non-super-admins
+    if not RoleService.is_super_admin(user):
+        user_orgs = RoleService.get_user_organizations(user)
+        if user_orgs:
+            org_ids = [org.id for org in user_orgs]
+            # Filter users by organization
+            users = User.objects.filter(
+                id__in=online_user_ids,
+                organization_id__in=org_ids
+            ).only('id', 'email', 'first_name', 'last_name', 'role', 'organization')
+        else:
+            # User has no organization, only show themselves
+            users = User.objects.filter(id=user.id).only('id', 'email', 'first_name', 'last_name', 'role', 'organization')
+    else:
+        # Super admins see all online users
+        users = User.objects.filter(id__in=online_user_ids).only(
+            'id', 'email', 'first_name', 'last_name', 'role', 'organization'
+        )
     
     online_users_list = []
     for user_obj in users:
         presence_data = _online_users.get(str(user_obj.id), {})
+        # Use get_full_name method or construct from first_name/last_name
+        full_name = user_obj.get_full_name() if hasattr(user_obj, 'get_full_name') else (
+            f"{user_obj.first_name} {user_obj.last_name}".strip() if user_obj.first_name or user_obj.last_name else None
+        )
         user_data = {
             'id': str(user_obj.id),
-            'name': user_obj.get_full_name() or user_obj.email.split('@')[0],
+            'name': full_name or user_obj.email.split('@')[0],
             'email': user_obj.email,
             'status': presence_data.get('status', 'online'),
         }

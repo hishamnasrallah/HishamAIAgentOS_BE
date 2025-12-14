@@ -11,6 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
 from .models import Project, UserStory, Task, Bug, Issue
+from apps.core.services.roles import RoleService
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -325,7 +326,7 @@ class CollaborativeEditingConsumer(AsyncWebsocketConsumer):
             return (
                 project.owner_id == self.user.id or
                 project.members.filter(id=self.user.id).exists() or
-                self.user.role == 'admin'
+                RoleService.is_admin(self.user)
             )
         except Project.DoesNotExist:
             return False
@@ -350,7 +351,7 @@ class CollaborativeEditingConsumer(AsyncWebsocketConsumer):
             return (
                 project.owner_id == self.user.id or
                 project.members.filter(id=self.user.id).exists() or
-                self.user.role == 'admin'
+                RoleService.is_admin(self.user)
             )
         except (UserStory.DoesNotExist, Task.DoesNotExist, Bug.DoesNotExist, Issue.DoesNotExist):
             return False

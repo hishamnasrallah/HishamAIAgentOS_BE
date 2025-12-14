@@ -10,6 +10,7 @@ from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 
 from .models import WorkflowExecution
+from apps.core.services.roles import RoleService
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -292,7 +293,7 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
             return False
         
         # Admins can access all executions
-        if hasattr(user, 'role') and user.role == 'admin':
+        if RoleService.is_admin(user):
             return True
         
         # Users can only access their own executions

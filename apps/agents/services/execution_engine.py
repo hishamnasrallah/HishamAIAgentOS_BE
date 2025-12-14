@@ -7,6 +7,7 @@ Provides high-level interface for executing agents with full lifecycle managemen
 from typing import Dict, Any, Optional
 import logging
 
+from asgiref.sync import sync_to_async
 from apps.agents.models import Agent
 from apps.agents.engine import BaseAgent, TaskAgent, ConversationalAgent, AgentContext, AgentResult
 from .state_manager import state_manager
@@ -126,7 +127,27 @@ class ExecutionEngine:
             
         Yields:
             Response chunks
+            
+        Raises:
+            PermissionError: If organization/subscription checks fail
         """
+        # Check organization status, subscription, and usage limits (same as ViewSet)
+        from apps.core.services.roles import RoleService
+        from apps.organizations.services import OrganizationStatusService, SubscriptionService
+        
+        organization = await sync_to_async(RoleService.get_user_organization)(user)
+        
+        # Super admins can bypass checks (but we still track usage if they have an org)
+        if not await sync_to_async(RoleService.is_super_admin)(user) and organization:
+            # Check organization status
+            await sync_to_async(OrganizationStatusService.require_active_organization)(organization, user=user)
+            
+            # Check subscription active
+            await sync_to_async(OrganizationStatusService.require_subscription_active)(organization, user=user)
+            
+            # Check tier-based usage limit
+            await sync_to_async(SubscriptionService.check_usage_limit)(organization, 'agent_executions', user=user)
+        
         # Create execution record
         execution = await state_manager.create_execution(
             agent=agent,
@@ -139,24 +160,52 @@ class ExecutionEngine:
             # Create agent instance
             agent_instance = self._create_agent_instance(agent)
             
-            # Create context
+            # Create context - need to handle conversation_history from context dict
+            metadata = context or {}
+            conversation_history = metadata.get('conversation_history', [])
+            
             agent_context = AgentContext(
                 user=user,
                 session_id=str(execution.id),
-                metadata=context or {}
+                conversation_history=conversation_history,
+                metadata=metadata
             )
             
             # Mark as started
             await state_manager.start_execution(execution)
             
             # Stream response
+            logger.info(f"[ExecutionEngine] Starting streaming execution, conversation_history={len(conversation_history)} messages")
             collected_output = []
+            chunk_count = 0
             async for chunk in agent_instance.execute_streaming(input_data, agent_context):
+                chunk_count += 1
+                if chunk_count == 1:
+                    logger.info(f"[ExecutionEngine] First chunk received, length: {len(chunk)}")
                 collected_output.append(chunk)
                 yield chunk
             
+            logger.info(f"[ExecutionEngine] Streaming completed: {chunk_count} chunks, {len(''.join(collected_output))} total chars")
+            
             # Complete execution
             full_output = ''.join(collected_output)
+            
+            # Extract conversation ID from response if available
+            # This allows storing provider-specific conversation IDs for future requests
+            try:
+                if context and hasattr(context, 'metadata') and context.metadata:
+                    platform_config = context.metadata.get('platform_config')
+                    if platform_config:
+                        # Get adapter to extract conversation ID
+                        adapter = await agent_instance._get_registry()
+                        adapter_instance = adapter.get_adapter(agent.preferred_platform)
+                        if adapter_instance:
+                            # Extract conversation ID from response metadata
+                            # Note: For streaming, we may need to get this from response headers or final chunk
+                            # This is provider-specific and may need adapter implementation
+                            pass
+            except Exception as e:
+                logger.debug(f"[ExecutionEngine] Could not extract conversation ID: {e}")
             
             # Estimate tokens and cost for streaming response
             from apps.agents.utils.token_estimator import estimate_tokens, estimate_cost
@@ -186,6 +235,17 @@ class ExecutionEngine:
                 model_used=agent.model_name
             )
             
+            # Increment usage count after successful execution (only if organization exists)
+            if organization:
+                try:
+                    await sync_to_async(SubscriptionService.increment_usage)(organization, 'agent_executions')
+                except Exception as e:
+                    logger.warning(f"Failed to increment usage count: {e}")
+            
+        except PermissionError:
+            # Don't fail execution on permission errors - just raise them
+            await state_manager.fail_execution(execution, "Organization/subscription/permission check failed")
+            raise
         except Exception as e:
             logger.error(f"Streaming execution failed: {str(e)}", exc_info=True)
             await state_manager.fail_execution(execution, str(e))

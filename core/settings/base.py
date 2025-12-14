@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     
     # Local apps
     'apps.authentication',
+    'apps.organizations',  # Organizations (SaaS multi-tenancy)
     'apps.agents',
     'apps.commands',
     'apps.workflows',
@@ -271,6 +272,15 @@ EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
 EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@hishamos.com')
+
+# Generated Projects Configuration
+GENERATED_PROJECTS_DIR = env('GENERATED_PROJECTS_DIR', default=str(BASE_DIR / 'generated-projects'))
+GENERATED_PROJECTS_RETENTION_DAYS = env.int('GENERATED_PROJECTS_RETENTION_DAYS', default=30)
+MAX_FILE_SIZE = env.int('MAX_FILE_SIZE', default=10 * 1024 * 1024)  # 10MB default
+MAX_PROJECT_SIZE = env.int('MAX_PROJECT_SIZE', default=100 * 1024 * 1024)  # 100MB default
+
+# Backend URL for internal API calls
+BACKEND_URL = env('BACKEND_URL', default='http://localhost:8000')
 
 # Logging
 # Enable structured JSON logging in production, verbose in development

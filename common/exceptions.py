@@ -20,14 +20,45 @@ def custom_exception_handler(exc, context):
     # Call REST framework's default exception handler first
     response = exception_handler(exc, context)
     
-    # Log the exception
-    logger.error(f"Exception occurred: {exc}", exc_info=True, extra={'context': context})
+    # Log the exception (use warning for validation errors, error for others)
+    from rest_framework.exceptions import ValidationError as DRFValidationError
+    if isinstance(exc, DRFValidationError) and response and response.status_code == 400:
+        # Validation errors are expected - log at warning level
+        logger.warning(f"Validation error: {exc}", extra={'context': context})
+    else:
+        # Other errors should be logged at error level
+        logger.error(f"Exception occurred: {exc}", exc_info=True, extra={'context': context})
     
     if response is not None:
+        # Extract clean error message from ValidationError
+        error_message = str(exc)
+        
+        # For ValidationError, extract the actual message from ErrorDetail objects
+        if hasattr(exc, 'detail'):
+            if isinstance(exc.detail, list) and len(exc.detail) > 0:
+                # Get the first error detail's string
+                first_detail = exc.detail[0]
+                if hasattr(first_detail, 'string'):
+                    error_message = first_detail.string
+                elif isinstance(first_detail, str):
+                    error_message = first_detail
+            elif isinstance(exc.detail, dict):
+                # Get first error message from dict
+                first_key = next(iter(exc.detail.keys()), None)
+                if first_key:
+                    first_value = exc.detail[first_key]
+                    if isinstance(first_value, list) and len(first_value) > 0:
+                        if hasattr(first_value[0], 'string'):
+                            error_message = first_value[0].string
+                        elif isinstance(first_value[0], str):
+                            error_message = first_value[0]
+                    elif isinstance(first_value, str):
+                        error_message = first_value
+        
         # Customize the response format
         custom_response_data = {
             'error': True,
-            'message': str(exc),
+            'message': error_message,
             'details': response.data,
             'status_code': response.status_code
         }

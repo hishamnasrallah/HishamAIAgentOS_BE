@@ -405,7 +405,8 @@ class SearchService:
         # Get accessible projects for user
         accessible_projects = []
         if user and not user.is_anonymous:
-            if user.role == 'admin':
+            from apps.core.services.roles import RoleService
+            if RoleService.is_admin(user):
                 accessible_projects = list(Project.objects.all().values_list('id', flat=True))
             else:
                 accessible_projects = list(Project.objects.filter(

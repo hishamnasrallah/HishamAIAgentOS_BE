@@ -1,116 +1,187 @@
 """
-Views for core app.
+Core API views for system-wide functionality.
 """
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.contrib.auth import get_user_model
-from .models import SystemSettings, FeatureFlag
-from .serializers import SystemSettingsSerializer, FeatureFlagSerializer
+from drf_spectacular.utils import extend_schema
+from apps.core.services.roles import RoleService
+from apps.projects.models import Project
+from apps.organizations.models import Organization
 
-User = get_user_model()
 
-
-class SystemSettingsViewSet(viewsets.ModelViewSet):
-    """System settings viewset (admin only)."""
-    
-    queryset = SystemSettings.objects.all()
-    serializer_class = SystemSettingsSerializer
+class RoleViewSet(viewsets.ViewSet):
+    """
+    API endpoints for role management.
+    Provides information about system roles and role validation.
+    """
     permission_classes = [IsAuthenticated]
-    filterset_fields = ['category', 'is_public']
-    search_fields = ['key', 'description']
-    ordering_fields = ['category', 'key', 'updated_at']
     
-    def get_queryset(self):
-        """Filter based on is_public and user role."""
-        user = self.request.user
-        if user.role == 'admin':
-            return SystemSettings.objects.all()
-        # Non-admins can only see public settings
-        return SystemSettings.objects.filter(is_public=True)
+    @extend_schema(
+        description="Get all system roles with their information",
+        responses={200: {
+            'type': 'object',
+            'properties': {
+                'roles': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'value': {'type': 'string'},
+                            'label': {'type': 'string'},
+                            'description': {'type': 'string'},
+                            'level': {'type': 'integer'},
+                            'is_system': {'type': 'boolean'},
+                        }
+                    }
+                }
+            }
+        }}
+    )
+    @action(detail=False, methods=['get'], url_path='system')
+    def system_roles(self, request):
+        """Get all system roles."""
+        roles = RoleService.get_roles_with_info()
+        return Response({'roles': roles})
     
-    def get_permissions(self):
-        """Override to restrict create/update/delete to admins."""
-        if self.action in ['list', 'retrieve']:
-            return [IsAuthenticated()]
-        # Create/update/delete require admin
-        from rest_framework.permissions import IsAdminUser
-        return [IsAuthenticated(), IsAdminUser()]
-    
-    @action(detail=False, methods=['get'])
-    def by_category(self, request):
-        """Get settings grouped by category."""
-        queryset = self.get_queryset()
-        categories = {}
-        for setting in queryset:
-            if setting.category not in categories:
-                categories[setting.category] = []
-            serializer = self.get_serializer(setting)
-            categories[setting.category].append(serializer.data)
-        return Response(categories)
-    
-    @action(detail=True, methods=['post'])
-    def reset_to_default(self, request, pk=None):
-        """Reset setting to default value (admin only)."""
-        if request.user.role != 'admin':
+    @extend_schema(
+        description="Get all available roles for a project (system + custom)",
+        responses={200: {
+            'type': 'object',
+            'properties': {
+                'roles': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'value': {'type': 'string'},
+                            'label': {'type': 'string'},
+                            'description': {'type': 'string'},
+                            'level': {'type': 'integer'},
+                            'is_system': {'type': 'boolean'},
+                        }
+                    }
+                }
+            }
+        }}
+    )
+    @action(detail=False, methods=['get'], url_path='project/(?P<project_id>[^/.]+)')
+    def project_roles(self, request, project_id=None):
+        """Get all available roles for a specific project (system + org + custom)."""
+        try:
+            project = Project.objects.select_related('organization').get(pk=project_id)
+            # Verify user has access to this project's organization
+            if not RoleService.is_super_admin(request.user):
+                user_orgs = RoleService.get_user_organizations(request.user)
+                if project.organization not in user_orgs:
+                    return Response(
+                        {'error': 'You do not have access to this project.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            roles = RoleService.get_roles_with_info(project, project.organization)
+            return Response({'roles': roles})
+        except Project.DoesNotExist:
             return Response(
-                {'error': 'Only admins can reset settings.'},
-                status=status.HTTP_403_FORBIDDEN
+                {'error': 'Project not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @extend_schema(
+        description="Get user's roles in a project",
+        responses={200: {
+            'type': 'object',
+            'properties': {
+                'roles': {
+                    'type': 'array',
+                    'items': {'type': 'string'}
+                },
+                'is_admin': {'type': 'boolean'},
+                'is_owner': {'type': 'boolean'},
+            }
+        }}
+    )
+    @action(detail=False, methods=['get'], url_path='user/(?P<project_id>[^/.]+)')
+    def user_roles(self, request, project_id=None):
+        """Get current user's roles in a specific project."""
+        try:
+            project = Project.objects.select_related('organization').get(pk=project_id)
+            # Verify user has access to this project's organization
+            if not RoleService.is_super_admin(request.user):
+                user_orgs = RoleService.get_user_organizations(request.user)
+                if project.organization not in user_orgs:
+                    return Response(
+                        {'error': 'You do not have access to this project.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            user = request.user
+            roles = RoleService.get_user_roles(user, project, project.organization)
+            is_super_admin = RoleService.is_super_admin(user)
+            is_org_admin = RoleService.is_org_admin(user, project.organization)
+            is_owner = project.owner == user
+            
+            return Response({
+                'roles': roles,
+                'is_super_admin': is_super_admin,
+                'is_org_admin': is_org_admin,
+                'is_admin': is_super_admin or is_org_admin,  # Backward compatibility
+                'is_owner': is_owner,
+            })
+        except Project.DoesNotExist:
+            return Response(
+                {'error': 'Project not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @extend_schema(
+        description="Validate if a role is valid",
+        responses={200: {
+            'type': 'object',
+            'properties': {
+                'valid': {'type': 'boolean'},
+                'role': {'type': 'string'},
+            }
+        }}
+    )
+    @action(detail=False, methods=['post'], url_path='validate')
+    def validate_role(self, request):
+        """Validate if a role is valid (optionally for a project or organization)."""
+        role = request.data.get('role')
+        project_id = request.data.get('project_id')
+        organization_id = request.data.get('organization_id')
+        
+        if not role:
+            return Response(
+                {'error': 'Role is required.'},
+                status=status.HTTP_400_BAD_REQUEST
             )
         
-        setting = self.get_object()
-        # Default values would be defined elsewhere or in model
-        # For now, just return current value
+        project = None
+        organization = None
+        
+        if project_id:
+            try:
+                project = Project.objects.select_related('organization').get(pk=project_id)
+                organization = project.organization
+            except Project.DoesNotExist:
+                return Response(
+                    {'error': 'Project not found.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        elif organization_id:
+            try:
+                organization = Organization.objects.get(pk=organization_id)
+            except Organization.DoesNotExist:
+                return Response(
+                    {'error': 'Organization not found.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        is_valid = RoleService.is_valid_role(role, project, organization)
         return Response({
-            'message': 'Reset functionality to be implemented',
-            'current_value': setting.value
+            'valid': is_valid,
+            'role': role,
         })
-
-
-class FeatureFlagViewSet(viewsets.ModelViewSet):
-    """Feature flags viewset (admin only)."""
-    
-    queryset = FeatureFlag.objects.all()
-    serializer_class = FeatureFlagSerializer
-    permission_classes = [IsAuthenticated]
-    filterset_fields = ['is_enabled']
-    search_fields = ['key', 'name', 'description']
-    ordering_fields = ['key', 'is_enabled', 'updated_at']
-    
-    def get_queryset(self):
-        """All authenticated users can view feature flags."""
-        return FeatureFlag.objects.all()
-    
-    def get_permissions(self):
-        """Override to restrict create/update/delete to admins."""
-        if self.action in ['list', 'retrieve']:
-            return [IsAuthenticated()]
-        # Create/update/delete require admin
-        from rest_framework.permissions import IsAdminUser
-        return [IsAuthenticated(), IsAdminUser()]
-    
-    @action(detail=True, methods=['post'])
-    def toggle(self, request, pk=None):
-        """Toggle feature flag (admin only)."""
-        if request.user.role != 'admin':
-            return Response(
-                {'error': 'Only admins can toggle feature flags.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        feature_flag = self.get_object()
-        feature_flag.is_enabled = not feature_flag.is_enabled
-        feature_flag.updated_by = request.user
-        feature_flag.save()
-        
-        serializer = self.get_serializer(feature_flag)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['get'])
-    def active(self, request):
-        """Get all active feature flags."""
-        queryset = FeatureFlag.objects.filter(is_enabled=True)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)

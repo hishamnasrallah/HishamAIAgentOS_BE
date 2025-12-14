@@ -195,7 +195,10 @@ class FeatureFlag(models.Model):
         
         # Check role-based access
         if self.enabled_for_roles:
-            if user.role not in self.enabled_for_roles:
+            from apps.core.services.roles import RoleService
+            user_roles = RoleService.get_user_roles(user)
+            # Check if user has any of the required roles
+            if not any(role in self.enabled_for_roles for role in user_roles):
                 return False
         
         # Check user-specific access

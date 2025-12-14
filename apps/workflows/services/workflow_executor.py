@@ -9,6 +9,7 @@ import uuid
 import asyncio
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
+from pathlib import Path
 from django.utils import timezone
 from django.core.cache import cache
 from django.conf import settings
@@ -628,6 +629,96 @@ class WorkflowExecutor:
                     'output': None,
                     'error': str(e)
                 }
+        elif step_type == 'api_call':
+            # API call step: call HishamOS API
+            try:
+                result = await self._execute_api_call_step(
+                    execution_id,
+                    step,
+                    context,
+                    user_id
+                )
+                
+                await self.state_manager.record_step_completion(
+                    str(execution_id),
+                    step.id,
+                    result.get('output'),
+                    success=result.get('success', True)
+                )
+                
+                return result
+            except Exception as e:
+                await self.state_manager.record_step_completion(
+                    str(execution_id),
+                    step.id,
+                    None,
+                    success=False
+                )
+                return {
+                    'success': False,
+                    'output': None,
+                    'error': str(e)
+                }
+        elif step_type == 'file_generation':
+            # File generation step: generate project files
+            try:
+                result = await self._execute_file_generation_step(
+                    execution_id,
+                    step,
+                    context,
+                    user_id
+                )
+                
+                await self.state_manager.record_step_completion(
+                    str(execution_id),
+                    step.id,
+                    result.get('output'),
+                    success=result.get('success', True)
+                )
+                
+                return result
+            except Exception as e:
+                await self.state_manager.record_step_completion(
+                    str(execution_id),
+                    step.id,
+                    None,
+                    success=False
+                )
+                return {
+                    'success': False,
+                    'output': None,
+                    'error': str(e)
+                }
+        elif step_type == 'repo_creation':
+            # Repository creation step: create Git repository
+            try:
+                result = await self._execute_repo_creation_step(
+                    execution_id,
+                    step,
+                    context,
+                    user_id
+                )
+                
+                await self.state_manager.record_step_completion(
+                    str(execution_id),
+                    step.id,
+                    result.get('output'),
+                    success=result.get('success', True)
+                )
+                
+                return result
+            except Exception as e:
+                await self.state_manager.record_step_completion(
+                    str(execution_id),
+                    step.id,
+                    None,
+                    success=False
+                )
+                return {
+                    'success': False,
+                    'output': None,
+                    'error': str(e)
+                }
         else:
             # Default: agent step
             # Prepare step inputs
@@ -1183,6 +1274,333 @@ class WorkflowExecutor:
                     'timestamp': datetime.now().isoformat()
                 }
             )
+    
+    async def _execute_api_call_step(
+        self,
+        execution_id: uuid.UUID,
+        step: ParsedStep,
+        context: Dict[str, Any],
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute an API call step.
+        
+        Args:
+            execution_id: Execution UUID
+            step: Step definition with API call config
+            context: Workflow context
+            user_id: User ID for authentication
+            
+        Returns:
+            API call result
+        """
+        from apps.agents.services.api_caller import AgentAPICaller
+        from django.contrib.auth import get_user_model
+        
+        User = get_user_model()
+        
+        # Get user
+        if user_id:
+            try:
+                user = await User.objects.aget(id=user_id)
+            except User.DoesNotExist:
+                return {
+                    'success': False,
+                    'output': None,
+                    'error': f'User {user_id} not found'
+                }
+        else:
+            return {
+                'success': False,
+                'output': None,
+                'error': 'user_id is required for API calls'
+            }
+        
+        # Resolve step inputs
+        step_inputs = self._resolve_step_inputs(step.inputs, context)
+        
+        # Get API call configuration
+        method = step_inputs.get('method', 'GET')
+        endpoint = step_inputs.get('endpoint', '')
+        data = step_inputs.get('data')
+        params = step_inputs.get('params')
+        
+        if not endpoint:
+            return {
+                'success': False,
+                'output': None,
+                'error': 'endpoint is required for API call step'
+            }
+        
+        try:
+            # Create API caller and make request
+            async with AgentAPICaller(user=user) as api_caller:
+                result = await api_caller.call(
+                    method=method,
+                    endpoint=endpoint,
+                    data=data,
+                    params=params
+                )
+                
+                return {
+                    'success': True,
+                    'output': result
+                }
+        except Exception as e:
+            return {
+                'success': False,
+                'output': None,
+                'error': f'API call failed: {str(e)}'
+            }
+    
+    async def _execute_file_generation_step(
+        self,
+        execution_id: uuid.UUID,
+        step: ParsedStep,
+        context: Dict[str, Any],
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a file generation step.
+        
+        Args:
+            execution_id: Execution UUID
+            step: Step definition with file generation config
+            context: Workflow context
+            user_id: User ID
+            
+        Returns:
+            File generation result
+        """
+        from apps.projects.models import GeneratedProject
+        from apps.projects.services.project_generator import ProjectGenerator, ProjectGenerationError
+        import uuid as uuid_lib
+        
+        # Resolve step inputs
+        step_inputs = self._resolve_step_inputs(step.inputs, context)
+        
+        # Get configuration
+        project_id = step_inputs.get('project_id')
+        project_structure = step_inputs.get('project_structure', {})
+        
+        if not project_id:
+            return {
+                'success': False,
+                'output': None,
+                'error': 'project_id is required for file generation step'
+            }
+        
+        try:
+            # Get or create GeneratedProject
+            # Check if there's an existing one in context
+            generated_project_id = context.get('generated_project_id')
+            
+            if generated_project_id:
+                try:
+                    generated_project = await GeneratedProject.objects.aget(id=generated_project_id)
+                except GeneratedProject.DoesNotExist:
+                    generated_project = None
+            else:
+                generated_project = None
+            
+            if not generated_project:
+                # Create new GeneratedProject
+                from apps.projects.models import Project
+                try:
+                    project = await Project.objects.aget(id=project_id)
+                except Project.DoesNotExist:
+                    return {
+                        'success': False,
+                        'output': None,
+                        'error': f'Project {project_id} not found'
+                    }
+                
+                output_dir = Path(settings.GENERATED_PROJECTS_DIR) / str(uuid_lib.uuid4())
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+                generated_project = await GeneratedProject.objects.acreate(
+                    project=project,
+                    output_directory=str(output_dir),
+                    status='generating',
+                    created_by_id=user_id if user_id else None
+                )
+            
+            # Update context
+            context['generated_project_id'] = str(generated_project.id)
+            
+            # Generate files
+            generator = ProjectGenerator(generated_project)
+            created_files = generator.generate_project_structure(project_structure)
+            
+            # Update status
+            generated_project.status = 'completed'
+            generated_project.completed_at = timezone.now()
+            await generated_project.asave()
+            
+            return {
+                'success': True,
+                'output': {
+                    'generated_project_id': str(generated_project.id),
+                    'files_created': len(created_files),
+                    'file_paths': list(created_files.keys())
+                }
+            }
+            
+        except ProjectGenerationError as e:
+            return {
+                'success': False,
+                'output': None,
+                'error': f'File generation failed: {str(e)}'
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'output': None,
+                'error': f'Unexpected error: {str(e)}'
+            }
+    
+    async def _execute_repo_creation_step(
+        self,
+        execution_id: uuid.UUID,
+        step: ParsedStep,
+        context: Dict[str, Any],
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a repository creation step.
+        
+        Args:
+            execution_id: Execution UUID
+            step: Step definition with repo creation config
+            context: Workflow context
+            user_id: User ID
+            
+        Returns:
+            Repository creation result
+        """
+        from apps.projects.models import GeneratedProject, RepositoryExport
+        from apps.projects.services.repository_exporter import RepositoryExporter, RepositoryExportError
+        
+        # Resolve step inputs
+        step_inputs = self._resolve_step_inputs(step.inputs, context)
+        
+        # Get configuration
+        generated_project_id = step_inputs.get('generated_project_id') or context.get('generated_project_id')
+        export_type = step_inputs.get('export_type', 'zip')
+        
+        if not generated_project_id:
+            return {
+                'success': False,
+                'output': None,
+                'error': 'generated_project_id is required for repo creation step'
+            }
+        
+        try:
+            generated_project = await GeneratedProject.objects.aget(id=generated_project_id)
+        except GeneratedProject.DoesNotExist:
+            return {
+                'success': False,
+                'output': None,
+                'error': f'Generated project {generated_project_id} not found'
+            }
+        
+        try:
+            # Create export record
+            export = await RepositoryExport.objects.acreate(
+                generated_project=generated_project,
+                export_type=export_type,
+                status='exporting',
+                repository_name=step_inputs.get('repository_name', ''),
+                config=step_inputs.get('config', {}),
+                created_by_id=user_id if user_id else None
+            )
+            
+            exporter = RepositoryExporter(generated_project)
+            
+            if export_type == 'zip':
+                archive_path = exporter.export_as_zip()
+                export.archive_path = str(archive_path)
+                export.archive_size = archive_path.stat().st_size
+            elif export_type in ('tar', 'tar.gz'):
+                gzip = export_type == 'tar.gz'
+                archive_path = exporter.export_as_tar(gzip=gzip)
+                export.archive_path = str(archive_path)
+                export.archive_size = archive_path.stat().st_size
+            elif export_type == 'github':
+                github_token = step_inputs.get('github_token')
+                if not github_token:
+                    return {
+                        'success': False,
+                        'output': None,
+                        'error': 'github_token is required for GitHub export'
+                    }
+                
+                repo_info = await exporter.export_to_github(
+                    github_token=github_token,
+                    repository_name=step_inputs.get('repository_name', ''),
+                    organization=step_inputs.get('organization'),
+                    private=step_inputs.get('private', False)
+                )
+                export.repository_url = repo_info.get('repository_url', '')
+            elif export_type == 'gitlab':
+                gitlab_token = step_inputs.get('gitlab_token')
+                if not gitlab_token:
+                    return {
+                        'success': False,
+                        'output': None,
+                        'error': 'gitlab_token is required for GitLab export'
+                    }
+                
+                repo_info = await exporter.export_to_gitlab(
+                    gitlab_token=gitlab_token,
+                    project_name=step_inputs.get('project_name', ''),
+                    namespace=step_inputs.get('namespace'),
+                    visibility=step_inputs.get('visibility', 'private')
+                )
+                export.repository_url = repo_info.get('repository_url', '')
+            else:
+                return {
+                    'success': False,
+                    'output': None,
+                    'error': f'Unsupported export type: {export_type}'
+                }
+            
+            export.status = 'completed'
+            export.completed_at = timezone.now()
+            await export.asave()
+            
+            return {
+                'success': True,
+                'output': {
+                    'export_id': str(export.id),
+                    'export_type': export_type,
+                    'repository_url': export.repository_url,
+                    'archive_path': export.archive_path
+                }
+            }
+            
+        except RepositoryExportError as e:
+            if 'export' in locals():
+                export.status = 'failed'
+                export.error_message = str(e)
+                await export.asave()
+            
+            return {
+                'success': False,
+                'output': None,
+                'error': f'Repository export failed: {str(e)}'
+            }
+        except Exception as e:
+            if 'export' in locals():
+                export.status = 'failed'
+                export.error_message = str(e)
+                await export.asave()
+            
+            return {
+                'success': False,
+                'output': None,
+                'error': f'Unexpected error: {str(e)}'
+            }
     
     async def _emit_execution_error(
         self,

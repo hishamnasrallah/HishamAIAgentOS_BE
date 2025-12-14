@@ -29,6 +29,10 @@ class AIPlatformSerializer(serializers.ModelSerializer):
             'supports_vision', 'supports_json_mode', 'supports_image_generation',
             'rate_limit_per_minute', 'rate_limit_per_day',
             'status', 'is_default', 'priority', 'is_enabled',
+            'conversation_strategy', 'conversation_id_field', 'returns_conversation_id', 
+            'conversation_id_path', 'api_stateful', 'sdk_session_support',
+            'supported_identifiers', 'metadata_fields', 'identifier_extraction_paths',
+            'provider_notes', 'cost_optimization_notes',
             'total_requests', 'failed_requests', 'total_tokens', 'total_cost',
             'last_health_check', 'is_healthy', 'health_status',
             'created_at', 'updated_at'

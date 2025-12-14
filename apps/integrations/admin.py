@@ -73,6 +73,21 @@ class AIPlatformAdmin(admin.ModelAdmin):
         ('Capabilities', {
             'fields': ('supports_vision', 'supports_json_mode', 'supports_image_generation')
         }),
+        ('Conversation Management', {
+            'fields': (
+                'conversation_strategy', 'conversation_id_field', 
+                'returns_conversation_id', 'conversation_id_path',
+                'api_stateful', 'sdk_session_support',
+                'supported_identifiers', 'identifier_extraction_paths'
+            ),
+            'classes': ('collapse',),
+            'description': 'Conversation context management capabilities'
+        }),
+        ('Provider Documentation', {
+            'fields': ('provider_notes', 'cost_optimization_notes', 'metadata_fields'),
+            'classes': ('collapse',),
+            'description': 'Comprehensive provider documentation and metadata information'
+        }),
         ('Rate Limiting', {
             'fields': ('rate_limit_per_minute', 'rate_limit_per_day')
         }),

@@ -14,6 +14,7 @@ from apps.agents.models import Agent
 from apps.workflows.models import Workflow
 from apps.commands.models import CommandTemplate
 from apps.projects.models import Project
+from apps.core.services.roles import RoleService
 
 User = get_user_model()
 
@@ -122,16 +123,24 @@ def global_search(request):
         })
     
     # Search Projects (respect permissions - only projects user owns or is member of)
-    if user.role == 'admin':
+    if RoleService.is_admin(user):
         # Admins can see all projects
         projects = Project.objects.filter(
             Q(name__icontains=query) | Q(description__icontains=query)
         ).only('id', 'name', 'description')[:5]
     else:
         # Regular users can only see projects they own or are members of
-        projects = Project.objects.filter(
-            Q(owner=user) | Q(members__id=user.id)
-        ).filter(
+        # Also include projects from user's organizations
+        user_orgs = RoleService.get_user_organizations(user)
+        if user.organization:
+            user_orgs.append(user.organization)
+        org_ids = list(set(org.id for org in user_orgs)) if user_orgs else []
+        
+        project_filter = Q(owner=user) | Q(members__id=user.id)
+        if org_ids:
+            project_filter |= Q(organization_id__in=org_ids)
+        
+        projects = Project.objects.filter(project_filter).filter(
             Q(name__icontains=query) | Q(description__icontains=query)
         ).distinct().only('id', 'name', 'description')[:5]
     

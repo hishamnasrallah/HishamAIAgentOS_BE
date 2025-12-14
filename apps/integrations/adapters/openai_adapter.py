@@ -6,6 +6,7 @@ with support for both standard and streaming completions.
 """
 
 import openai
+import httpx
 from typing import Optional, AsyncIterator, Dict, List, Any
 import time
 import asyncio
@@ -30,7 +31,22 @@ class OpenAIAdapter(BaseAIAdapter):
     def __init__(self, platform_config):
         """Initialize OpenAI adapter."""
         super().__init__(platform_config)
-        self.client = openai.AsyncOpenAI(api_key=self.api_key)
+        
+        # Create a custom httpx client without proxies to avoid compatibility issues
+        # This works around the issue where OpenAI library tries to pass 'proxies' to httpx.AsyncClient
+        http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+        )
+        
+        # Initialize OpenAI client with custom http_client
+        # Set max_retries=0 - we handle retries via _retry_with_backoff for non-streaming
+        # For streaming, retries don't make sense, so disable them
+        self.client = openai.AsyncOpenAI(
+            api_key=self.api_key,
+            http_client=http_client,
+            max_retries=0  # Disable automatic retries - we handle retries explicitly
+        )
         self.pricing = OpenAIPricing()
         self.validator = OpenAIValidator()
         self.logger.info(f"OpenAI adapter initialized with model: {self.default_model}")
@@ -111,6 +127,29 @@ class OpenAIAdapter(BaseAIAdapter):
                 f"${cost:.6f}, {latency:.2f}s"
             )
             
+            # Extract ALL identifiers and metadata from response
+            all_identifiers = self.extract_all_identifiers(response, None)
+            all_metadata = self.extract_all_metadata(response, None)
+            
+            metadata = {
+                'prompt_tokens': usage.prompt_tokens,
+                'completion_tokens': usage.completion_tokens,
+                'model_id': model_id,
+                'latency_ms': int(latency * 1000),
+                'response_id': response.id if hasattr(response, 'id') else None,
+                'created': response.created if hasattr(response, 'created') else None,
+                'object': response.object if hasattr(response, 'object') else None,
+                'system_fingerprint': getattr(response, 'system_fingerprint', None),
+            }
+            
+            # Store all identifiers in metadata
+            if all_identifiers:
+                metadata['identifiers'] = all_identifiers
+            
+            # Merge additional metadata
+            if all_metadata:
+                metadata.update({k: v for k, v in all_metadata.items() if k not in metadata})
+            
             return CompletionResponse(
                 content=completion.message.content,
                 model=model,
@@ -118,12 +157,7 @@ class OpenAIAdapter(BaseAIAdapter):
                 tokens_used=usage.total_tokens,
                 cost=cost,
                 finish_reason=completion.finish_reason,
-                metadata={
-                    'prompt_tokens': usage.prompt_tokens,
-                    'completion_tokens': usage.completion_tokens,
-                    'model_id': model_id,
-                    'latency_ms': int(latency * 1000),
-                }
+                metadata=metadata
             )
             
         except openai.APIError as e:

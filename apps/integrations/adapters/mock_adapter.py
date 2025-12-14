@@ -85,6 +85,31 @@ class MockAdapter(BaseAIAdapter):
         # Mock cost (very low for testing)
         mock_cost = estimated_tokens * 0.00001  # $0.00001 per token
         
+        # Extract ALL identifiers and metadata from response (mock adapter - no real identifiers)
+        # Create a mock response object for extraction
+        mock_response = type('MockResponse', (), {
+            'id': f'mock-{datetime.now().timestamp()}',
+            'model': model or self.platform_config.default_model or 'mock-model-v1',
+        })()
+        
+        all_identifiers = self.extract_all_identifiers(mock_response, None)
+        all_metadata = self.extract_all_metadata(mock_response, None)
+        
+        metadata = {
+            'mock': True,
+            'timestamp': datetime.now().isoformat(),
+            'prompt_length': len(request.prompt),
+            'estimated_tokens': estimated_tokens,
+        }
+        
+        # Store all identifiers in metadata (if any found)
+        if all_identifiers:
+            metadata['identifiers'] = all_identifiers
+        
+        # Merge additional metadata
+        if all_metadata:
+            metadata.update({k: v for k, v in all_metadata.items() if k not in metadata})
+        
         return CompletionResponse(
             content=mock_content,
             model=model or self.platform_config.default_model or 'mock-model-v1',
@@ -92,11 +117,7 @@ class MockAdapter(BaseAIAdapter):
             tokens_used=estimated_tokens,
             cost=mock_cost,
             finish_reason='stop',
-            metadata={
-                'mock': True,
-                'timestamp': datetime.now().isoformat(),
-                'prompt_length': len(request.prompt),
-            }
+            metadata=metadata
         )
     
     def _generate_mock_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:

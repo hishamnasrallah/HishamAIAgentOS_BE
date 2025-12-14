@@ -10,7 +10,7 @@ from .models import (
     StatusChangeApproval, ProjectLabelPreset, Milestone, TicketReference, StoryLink, CardTemplate, BoardTemplate,
     SearchHistory, FilterPreset, TimeBudget, OvertimeRecord, CardCoverImage, CardChecklist, CardVote,
     StoryArchive, StoryVersion, Webhook, StoryClone, GitHubIntegration, JiraIntegration, SlackIntegration,
-    ProjectMember
+    ProjectMember, GeneratedProject, ProjectFile, RepositoryExport
 )
 
 
@@ -20,6 +20,7 @@ class ProjectAdmin(admin.ModelAdmin):
     
     list_display = (
         'name',
+        'organization',
         'status_badge',
         'owner',
         'member_count',
@@ -27,8 +28,8 @@ class ProjectAdmin(admin.ModelAdmin):
         'end_date',
         'created_at'
     )
-    list_filter = ('status', 'created_at', 'start_date', 'end_date')
-    search_fields = ('name', 'slug', 'description', 'owner__email', 'owner__username')
+    list_filter = ('status', 'organization', 'created_at', 'start_date', 'end_date')
+    search_fields = ('name', 'slug', 'description', 'owner__email', 'owner__username', 'organization__name')
     prepopulated_fields = {'slug': ('name',)}
     filter_horizontal = ('members',)
     readonly_fields = ('id', 'created_at', 'updated_at', 'member_count', 'story_count', 'sprint_count')
@@ -37,6 +38,9 @@ class ProjectAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Basic Information', {
             'fields': ('name', 'slug', 'description', 'status', 'tags')
+        }),
+        ('Organization', {
+            'fields': ('organization',)
         }),
         ('Dates', {
             'fields': ('start_date', 'end_date')
@@ -53,6 +57,22 @@ class ProjectAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    def get_queryset(self, request):
+        """Filter projects by organization for non-super-admins."""
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        # For org admins, show projects in their organization
+        from apps.core.services.roles import RoleService
+        user_orgs = RoleService.get_user_organizations(request.user)
+        if user_orgs:
+            org_ids = [org.id for org in user_orgs]
+            return qs.filter(organization_id__in=org_ids)
+        elif request.user.organization:
+            return qs.filter(organization=request.user.organization)
+        else:
+            return qs.none()
     
     actions = ['mark_active', 'mark_on_hold', 'mark_completed', 'mark_cancelled']
     
@@ -2371,7 +2391,8 @@ class ProjectMemberAdmin(admin.ModelAdmin):
             return '-'
         badges = []
         for role in obj.roles:
-            color = '#007bff' if role in ProjectMember.SYSTEM_ROLES else '#28a745'
+            from apps.core.services.roles import RoleService
+            color = '#007bff' if role in RoleService.get_all_system_roles() else '#28a745'
             badges.append(
                 f'<span style="background-color: {color}; color: white; '
                 f'padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-right: 4px;">{role}</span>'

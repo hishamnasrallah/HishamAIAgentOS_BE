@@ -92,6 +92,31 @@ class AnthropicAdapter(BaseAIAdapter):
                 f"${cost:.6f}, {latency:.2f}s"
             )
             
+            # Extract ALL identifiers and metadata from response
+            all_identifiers = self.extract_all_identifiers(response, None)
+            all_metadata = self.extract_all_metadata(response, None)
+            
+            metadata = {
+                'input_tokens': usage.input_tokens,
+                'output_tokens': usage.output_tokens,
+                'model_id': model_id,
+                'latency_ms': int(latency * 1000),
+                'stop_reason': response.stop_reason,
+                'stop_sequence': getattr(response, 'stop_sequence', None),
+                'response_id': response.id if hasattr(response, 'id') else None,
+                'type': getattr(response, 'type', None),
+                'role': getattr(response, 'role', None),
+                'content_block_type': getattr(response.content[0], 'type', None) if response.content else None,
+            }
+            
+            # Store all identifiers in metadata
+            if all_identifiers:
+                metadata['identifiers'] = all_identifiers
+            
+            # Merge additional metadata
+            if all_metadata:
+                metadata.update({k: v for k, v in all_metadata.items() if k not in metadata})
+            
             return CompletionResponse(
                 content=content,
                 model=model,
@@ -99,13 +124,7 @@ class AnthropicAdapter(BaseAIAdapter):
                 tokens_used=usage.input_tokens + usage.output_tokens,
                 cost=cost,
                 finish_reason=response.stop_reason,
-                metadata={
-                    'input_tokens': usage.input_tokens,
-                    'output_tokens': usage.output_tokens,
-                    'model_id': model_id,
-                    'latency_ms': int(latency * 1000),
-                    'stop_reason': response.stop_reason,
-                }
+                metadata=metadata
             )
             
         except anthropic.APIError as e:

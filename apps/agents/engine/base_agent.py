@@ -12,7 +12,8 @@ import logging
 import time
 from datetime import datetime
 
-from apps.integrations.services import get_registry, tracker
+# Lazy import to avoid MemoryError - only import when needed
+# from apps.integrations.services import get_registry, tracker
 from apps.integrations.adapters.base import CompletionRequest, CompletionResponse
 
 
@@ -162,8 +163,9 @@ class BaseAgent:
             # Calculate execution time
             execution_time = time.time() - start_time
             
-            # Track usage
+            # Track usage (lazy import to avoid MemoryError)
             if context.user:
+                from apps.integrations.services import tracker
                 await tracker.track_completion(
                     response,
                     self.preferred_platform,
@@ -220,10 +222,21 @@ class BaseAgent:
         if not adapter:
             raise ValueError(f"Platform {self.preferred_platform} not available")
         
-        # Create request
+        # Create request - check if messages array is available from conversational agent
+        messages = None
+        if context and context.metadata and 'messages' in context.metadata:
+            messages = context.metadata['messages']
+        
+        # Get AI conversation ID from metadata (if available)
+        ai_conversation_id = None
+        if context and context.metadata and 'ai_conversation_id' in context.metadata:
+            ai_conversation_id = context.metadata['ai_conversation_id']
+        
         request = CompletionRequest(
             prompt=prompt,
             system_prompt=self.system_prompt,
+            messages=messages,  # Pass messages array if available
+            conversation_id=ai_conversation_id,  # Pass AI provider's conversation ID
             temperature=self.temperature,
             max_tokens=self.max_tokens,
         )
@@ -363,14 +376,17 @@ class BaseAgent:
             except Exception as e:
                 logger.warning(f"Failed to add mock adapter: {str(e)}")
         
-        # Add mock to platforms_to_try if not already there and no other adapters work
-        if 'mock' not in platforms_to_try:
-            # If only mock is available, use it first
-            if len(available_adapters) == 1 and 'mock' in available_adapters:
+        # Filter out mock from preferred platforms if real adapters are available
+        real_adapters = [p for p in available_adapters.keys() if p != 'mock']
+        if real_adapters:
+            # Remove mock from platforms_to_try if real adapters exist
+            platforms_to_try = [p for p in platforms_to_try if p != 'mock']
+            # Only add mock as absolute last resort if no real adapters work
+            platforms_to_try.append('mock')
+        else:
+            # Only mock available, use it
+            if 'mock' not in platforms_to_try:
                 platforms_to_try = ['mock'] + platforms_to_try
-            # Otherwise, add it as last resort
-            else:
-                platforms_to_try.append('mock')
         
         last_error = None
         for platform_name in platforms_to_try:
@@ -381,9 +397,21 @@ class BaseAgent:
                 continue
             
             try:
+                # Check if messages array is available from conversational agent
+                messages = None
+                if context and context.metadata and 'messages' in context.metadata:
+                    messages = context.metadata['messages']
+                
+                # Get AI conversation ID from metadata (if available)
+                ai_conversation_id = None
+                if context and context.metadata and 'ai_conversation_id' in context.metadata:
+                    ai_conversation_id = context.metadata['ai_conversation_id']
+                
                 request = CompletionRequest(
                     prompt=prompt,
                     system_prompt=self.system_prompt,
+                    messages=messages,  # Pass messages array if available
+                    conversation_id=ai_conversation_id,  # Pass AI provider's conversation ID
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
                 )
@@ -404,8 +432,10 @@ class BaseAgent:
         raise Exception(f"All platforms failed. Last error: {str(last_error)}")
     
     async def _get_registry(self):
-        """Get or initialize adapter registry."""
+        """Get or initialize adapter registry (lazy import to avoid MemoryError)."""
         if self._registry is None:
+            # Lazy import to avoid loading all adapters at module import time
+            from apps.integrations.services import get_registry
             self._registry = await get_registry()
         # Ensure registry is initialized
         if not self._registry._initialized:

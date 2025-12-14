@@ -13,7 +13,7 @@ from .views import (
     SearchHistoryViewSet, FilterPresetViewSet, TimeBudgetViewSet, OvertimeRecordViewSet, QuickFiltersViewSet,
     CardCoverImageViewSet, CardChecklistViewSet, CardVoteViewSet, StoryArchiveViewSet, StoryVersionViewSet,
     WebhookViewSet, StoryCloneViewSet, GitHubIntegrationViewSet, JiraIntegrationViewSet, SlackIntegrationViewSet,
-    ProjectMemberViewSet
+    ProjectMemberViewSet, GeneratedProjectViewSet, ProjectFileViewSet, RepositoryExportViewSet
 )
 
 # Create router for nested resources
@@ -60,6 +60,9 @@ router.register(r'github-integrations', GitHubIntegrationViewSet, basename='gith
 router.register(r'jira-integrations', JiraIntegrationViewSet, basename='jiraintegration')
 router.register(r'slack-integrations', SlackIntegrationViewSet, basename='slackintegration')
 router.register(r'project-members', ProjectMemberViewSet, basename='projectmember')
+router.register(r'generated-projects', GeneratedProjectViewSet, basename='generatedproject')
+router.register(r'project-files', ProjectFileViewSet, basename='projectfile')
+router.register(r'repository-exports', RepositoryExportViewSet, basename='repositoryexport')
 
 # Create explicit URL patterns for projects to avoid conflicts
 urlpatterns = [
@@ -71,6 +74,7 @@ urlpatterns = [
     path('<uuid:pk>/members/', ProjectViewSet.as_view({'get': 'members'}), name='project-members'),
     path('<uuid:pk>/members/add/', ProjectViewSet.as_view({'post': 'add_member'}), name='project-add-member'),
     path('<uuid:pk>/members/remove/', ProjectViewSet.as_view({'post': 'remove_member'}), name='project-remove-member'),
+    path('<uuid:pk>/members/<uuid:user_id>/statistics/', ProjectViewSet.as_view({'get': 'member_statistics'}), name='project-member-statistics'),
     path('<uuid:pk>/permissions/', ProjectViewSet.as_view({'get': 'permissions'}), name='project-permissions'),
     
     # Project tag endpoints

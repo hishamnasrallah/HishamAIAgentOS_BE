@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from apps.integrations.models import PlatformUsage, AIPlatform
 from apps.agents.models import AgentExecution
+from apps.core.services.roles import RoleService
 
 
 class AnalyticsViewSet(viewsets.ViewSet):
@@ -36,7 +37,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
         user_id = request.query_params.get('user')
         
         # Check if user is admin for user filtering
-        if user_id and request.user.role != 'admin':
+        if user_id and not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can filter by user.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -66,7 +67,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
         
         if user_id:
             queryset = queryset.filter(user_id=user_id)
-        elif request.user.role != 'admin':
+        elif not RoleService.is_admin(request.user):
             # Non-admins only see their own usage
             queryset = queryset.filter(user=request.user)
         
@@ -147,7 +148,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
         if platform_name:
             queryset = queryset.filter(platform__platform_name=platform_name)
         
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             queryset = queryset.filter(user=request.user)
         
         # Group by date (database-agnostic using Django's TruncDate)
@@ -225,7 +226,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
         if platform_name:
             queryset = queryset.filter(platform__platform_name=platform_name)
         
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             queryset = queryset.filter(user=request.user)
         
         # Get token usage by platform
@@ -285,7 +286,7 @@ class AnalyticsViewSet(viewsets.ViewSet):
         - period: 'week', 'month', 'year' (default: 'month')
         - limit: number of users to return (default: 10)
         """
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can view top users.'},
                 status=status.HTTP_403_FORBIDDEN

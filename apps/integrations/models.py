@@ -20,6 +20,7 @@ class AIPlatform(models.Model):
         ('openai', 'OpenAI'),
         ('anthropic', 'Anthropic Claude'),
         ('google', 'Google Gemini'),
+        ('openrouter', 'OpenRouter'),
     ]
 
     STATUS_CHOICES = [
@@ -77,6 +78,96 @@ class AIPlatform(models.Model):
     supports_vision = models.BooleanField(default=False)
     supports_json_mode = models.BooleanField(default=False)
     supports_image_generation = models.BooleanField(default=False)
+    
+    # -------------------------------
+    # CONVERSATION MANAGEMENT CAPABILITIES
+    # -------------------------------
+    # Conversation management strategy: how the provider maintains context
+    CONVERSATION_STRATEGY_CHOICES = [
+        ('stateless', 'Stateless - requires sending full message history each time'),
+        ('thread_id', 'Thread ID - provider maintains context via thread/conversation ID (e.g., OpenAI Assistants API)'),
+        ('session_id', 'Session ID - provider maintains context via session ID'),
+        ('conversation_id', 'Conversation ID - provider maintains context via conversation ID (e.g., Gemini)'),
+        ('assistant_thread', 'Assistant Thread - provider uses assistant + thread pattern (OpenAI Assistants)'),
+    ]
+    
+    conversation_strategy = models.CharField(
+        max_length=30,
+        choices=CONVERSATION_STRATEGY_CHOICES,
+        default='stateless',
+        help_text="How this provider manages conversation context"
+    )
+    
+    # Provider-specific conversation ID field name (e.g., 'thread_id', 'session_id', 'conversation_id')
+    conversation_id_field = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Field name for conversation ID in API requests (e.g., 'thread_id', 'conversation_id')"
+    )
+    
+    # Whether provider returns conversation ID in response (to extract and store)
+    returns_conversation_id = models.BooleanField(
+        default=False,
+        help_text="Whether API responses include conversation/thread ID we should extract"
+    )
+    
+    # Response field path where conversation ID is located (e.g., 'response.metadata.thread_id')
+    conversation_id_path = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        help_text="JSON path to conversation ID in API response (e.g., 'metadata.thread_id')"
+    )
+    
+    # -------------------------------
+    # COMPREHENSIVE PROVIDER DOCUMENTATION & METADATA
+    # -------------------------------
+    
+    # Whether API itself is stateful (server maintains context)
+    api_stateful = models.BooleanField(
+        default=False,
+        help_text="Whether API itself is stateful (server maintains conversation context)"
+    )
+    
+    # Whether SDK provides session/conversation management (client-side wrapper)
+    sdk_session_support = models.BooleanField(
+        default=False,
+        help_text="Whether SDK provides session/conversation management (convenience wrapper)"
+    )
+    
+    # List of identifier types supported (thread_id, session_id, conversation_id, run_id, assistant_id, etc.)
+    supported_identifiers = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of identifier types supported: ['thread_id', 'session_id', 'conversation_id', 'run_id', 'assistant_id']"
+    )
+    
+    # All metadata fields provider returns in responses
+    metadata_fields = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="All metadata fields provider returns: ['usage', 'model', 'finish_reason', 'created', 'id', etc.]"
+    )
+    
+    # Comprehensive provider documentation
+    provider_notes = models.TextField(
+        blank=True,
+        help_text="Comprehensive documentation: architecture (stateless/stateful), SDK support, identifiers, implementation details, cost implications"
+    )
+    
+    # Cost optimization notes
+    cost_optimization_notes = models.TextField(
+        blank=True,
+        help_text="Token cost implications, optimization strategies, recommendations for this provider"
+    )
+    
+    # Identifier extraction paths (JSON dict: {identifier_type: json_path})
+    identifier_extraction_paths = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="JSON paths to extract each identifier type: {'thread_id': 'thread.id', 'session_id': 'session.id', etc.}"
+    )
 
     # -------------------------------
     # RATE LIMITING

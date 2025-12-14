@@ -16,6 +16,8 @@ from .serializers import (
     AgentSerializer, AgentListSerializer,
     AgentExecutionSerializer, AgentExecutionCreateSerializer
 )
+from apps.core.services.roles import RoleService
+from apps.organizations.services import OrganizationStatusService, SubscriptionService
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,48 @@ class AgentViewSet(viewsets.ModelViewSet):
         # Create/update/delete require admin
         return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
     
+    def perform_create(self, serializer):
+        """
+        Create agent with organization status and subscription validation.
+        Also check if tier allows custom agent creation.
+        """
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=user)
+            
+            # Check if tier allows custom agent creation (Professional+ only)
+            SubscriptionService.check_tier_feature(organization, 'allows_custom_agents', user=user)
+        
+        serializer.save(created_by=user)
+    
+    def perform_update(self, serializer):
+        """
+        Update agent with organization status and subscription validation.
+        """
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=user)
+        
+        serializer.save(updated_by=user)
+    
     @action(detail=True, methods=['post'])
     def execute(self, request, pk=None):
         """
@@ -90,6 +134,27 @@ class AgentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Get user's organization and validate
+        user = request.user
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (but we still track usage if they have an org)
+        if not RoleService.is_super_admin(user) and organization:
+            try:
+                # Check organization status
+                OrganizationStatusService.require_active_organization(organization, user=user)
+                
+                # Check subscription active
+                OrganizationStatusService.require_subscription_active(organization, user=user)
+                
+                # Check tier-based usage limit
+                SubscriptionService.check_usage_limit(organization, 'agent_executions', user=user)
+            except Exception as e:
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
         # Execute agent
         execution_engine = ExecutionEngine()
         
@@ -107,6 +172,13 @@ class AgentViewSet(viewsets.ModelViewSet):
             # async_to_sync handles event loop creation automatically
             # It will create a new loop if one doesn't exist or if we're in ASGI
             result = async_to_sync(run_execution)()
+            
+            # Increment usage count after successful execution (only if organization exists)
+            if organization:
+                try:
+                    SubscriptionService.increment_usage(organization, 'agent_executions')
+                except Exception as e:
+                    logger.warning(f"Failed to increment usage count: {e}")
             
             # AgentResult is a dataclass with: success, output, error, tokens_used, cost, execution_time, etc.
             return Response({
@@ -161,7 +233,7 @@ class AgentExecutionViewSet(viewsets.ModelViewSet):
             return AgentExecution.objects.none()
         
         # Admins can see all executions
-        if user.role == 'admin':
+        if RoleService.is_admin(user):
             return AgentExecution.objects.select_related('agent', 'user').all()
         
         # Regular users can only see their own executions
@@ -173,8 +245,38 @@ class AgentExecutionViewSet(viewsets.ModelViewSet):
         return AgentExecutionSerializer
     
     def perform_create(self, serializer):
-        """Set the current user as the execution creator."""
-        serializer.save(user=self.request.user)
+        """
+        Set the current user as the execution creator.
+        Also validate organization status, subscription, and tier limits.
+        """
+        user = self.request.user
+        
+        # Get user's organization
+        from apps.core.services.roles import RoleService
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (but we still track usage if they have an org)
+        if not RoleService.is_super_admin(user) and organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization)
+            
+            # Check tier-based usage limit
+            SubscriptionService.check_usage_limit(organization, 'agent_executions')
+        
+        # Save execution
+        execution = serializer.save(user=user)
+        
+        # Increment usage count (only if organization exists)
+        if organization:
+            try:
+                SubscriptionService.increment_usage(organization, 'agent_executions')
+            except Exception as e:
+                logger.warning(f"Failed to increment usage count: {e}")
+        
+        return execution
     
     def get_permissions(self):
         """Override to allow create for all authenticated users, but restrict update/delete to admins."""

@@ -1,30 +1,42 @@
 """
 Custom permissions for role-based access control.
+
+All permission checks use RoleService for unified role management.
 """
 
 from rest_framework import permissions
 from apps.projects.services.permissions import get_permission_service
+from apps.core.services.roles import RoleService
 
 
 class IsAdminUser(permissions.BasePermission):
     """Permission check for admin users."""
     
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role == 'admin'
+        if not request.user or not request.user.is_authenticated:
+            return False
+        # Super admins always have access
+        if RoleService.is_super_admin(request.user):
+            return True
+        return RoleService.is_admin(request.user)
 
 
 class IsManager(permissions.BasePermission):
     """Permission check for manager users."""
     
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role in ['admin', 'manager']
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return RoleService.has_any_role(request.user, ['org_admin', 'manager', 'product_owner', 'scrum_master'])
 
 
 class IsDeveloper(permissions.BasePermission):
     """Permission check for developer users."""
     
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role in ['admin', 'manager', 'developer']
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return RoleService.has_any_role(request.user, ['org_admin', 'manager', 'developer', 'tech_lead', 'product_owner', 'scrum_master'])
 
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
@@ -33,25 +45,34 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
     """
     
     def has_object_permission(self, request, view, obj):
+        # Super admins always have access
+        if RoleService.is_super_admin(request.user):
+            return True
+        
         # Read permissions are allowed to any request
         if request.method in permissions.SAFE_METHODS:
             return True
         
-        # Write permissions are only allowed to the owner
-        return obj.user == request.user or request.user.role == 'admin'
+        # Write permissions are only allowed to the owner or admin
+        return obj.user == request.user or RoleService.is_admin(request.user)
 
 
 class IsOwner(permissions.BasePermission):
     """Permission check for object owner."""
     
     def has_object_permission(self, request, view, obj):
+        # Super admins always have access
+        if RoleService.is_super_admin(request.user):
+            return True
+        
         # Check if obj has a 'user' or 'owner' attribute
+        is_admin = RoleService.is_admin(request.user)
         if hasattr(obj, 'user'):
-            return obj.user == request.user or request.user.role == 'admin'
+            return obj.user == request.user or is_admin
         elif hasattr(obj, 'owner'):
-            return obj.owner == request.user or request.user.role == 'admin'
+            return obj.owner == request.user or is_admin
         elif hasattr(obj, 'created_by'):
-            return obj.created_by == request.user or request.user.role == 'admin'
+            return obj.created_by == request.user or is_admin
         
         return False
 
@@ -67,15 +88,19 @@ class IsProjectMember(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
+        # Super admins always have access
+        if RoleService.is_super_admin(request.user):
+            return True
+        
         # Admins have access to everything
-        if request.user.role == 'admin':
+        if RoleService.is_admin(request.user):
             return True
         
         return True  # Will check object-level permissions
     
     def has_object_permission(self, request, view, obj):
-        # Admins have full access
-        if request.user.role == 'admin':
+        # Super admins have full access
+        if RoleService.is_super_admin(request.user):
             return True
         
         # Get the project from the object
@@ -87,6 +112,21 @@ class IsProjectMember(permissions.BasePermission):
         
         if not project:
             return False
+        
+        # Check organization access
+        organization = project.organization if hasattr(project, 'organization') else None
+        if organization:
+            # Check if user belongs to the organization
+            user_orgs = RoleService.get_user_organizations(request.user)
+            if not user_orgs and request.user.organization:
+                user_orgs = [request.user.organization]
+            
+            if organization not in user_orgs:
+                return False
+            
+            # Org admins have access to all projects in their org
+            if RoleService.is_org_admin(request.user, organization):
+                return True
         
         # Check if user is owner
         if project.owner == request.user:
@@ -111,8 +151,8 @@ class IsProjectOwner(permissions.BasePermission):
         return True  # Will check object-level permissions
     
     def has_object_permission(self, request, view, obj):
-        # Admins have full access
-        if request.user.role == 'admin':
+        # Super admins have full access
+        if RoleService.is_super_admin(request.user):
             return True
         
         # Get the project from the object
@@ -124,6 +164,21 @@ class IsProjectOwner(permissions.BasePermission):
         
         if not project:
             return False
+        
+        # Check organization access
+        organization = project.organization if hasattr(project, 'organization') else None
+        if organization:
+            # Check if user belongs to the organization
+            user_orgs = RoleService.get_user_organizations(request.user)
+            if not user_orgs and request.user.organization:
+                user_orgs = [request.user.organization]
+            
+            if organization not in user_orgs:
+                return False
+            
+            # Org admins have access to all projects in their org
+            if RoleService.is_org_admin(request.user, organization):
+                return True
         
         # Only owner can access
         return project.owner == request.user
@@ -143,8 +198,8 @@ class IsProjectMemberOrReadOnly(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         # Read permissions for authenticated users (will be filtered by queryset)
         if request.method in permissions.SAFE_METHODS:
-            # Admins have full access
-            if request.user.role == 'admin':
+            # Super admins have full access
+            if RoleService.is_super_admin(request.user):
                 return True
             
             # Get the project from the object
@@ -157,8 +212,22 @@ class IsProjectMemberOrReadOnly(permissions.BasePermission):
             if not project:
                 return False
             
+            # Check organization access
+            organization = project.organization if hasattr(project, 'organization') else None
+            if organization:
+                user_orgs = RoleService.get_user_organizations(request.user)
+                if not user_orgs and request.user.organization:
+                    user_orgs = [request.user.organization]
+                
+                if organization not in user_orgs:
+                    return False
+                
+                # Org admins have access to all projects in their org
+                if RoleService.is_org_admin(request.user, organization):
+                    return True
+            
             # Check if user is owner or member
-            if project.owner == request.user:
+            if RoleService.is_admin_or_owner(request.user, project, organization):
                 return True
             if project.members.filter(id=request.user.id).exists():
                 return True
@@ -166,8 +235,8 @@ class IsProjectMemberOrReadOnly(permissions.BasePermission):
             return False
         
         # Write permissions only for members/owners/admins
-        # Admins have full access
-        if request.user.role == 'admin':
+        # Super admins have full access
+        if RoleService.is_super_admin(request.user):
             return True
         
         # Get the project from the object
@@ -179,6 +248,20 @@ class IsProjectMemberOrReadOnly(permissions.BasePermission):
         
         if not project:
             return False
+        
+        # Check organization access
+        organization = project.organization if hasattr(project, 'organization') else None
+        if organization:
+            user_orgs = RoleService.get_user_organizations(request.user)
+            if not user_orgs and request.user.organization:
+                user_orgs = [request.user.organization]
+            
+            if organization not in user_orgs:
+                return False
+            
+            # Org admins have access to all projects in their org
+            if RoleService.is_org_admin(request.user, organization):
+                return True
         
         # Check if user is owner
         if project.owner == request.user:
@@ -205,15 +288,15 @@ class IsProjectPermissionEnforced(permissions.BasePermission):
             return False
         
         # Admins always have access
-        if request.user.role == 'admin':
+        if RoleService.is_admin(request.user):
             return True
         
         return True  # Will check object-level permissions
     
     def has_object_permission(self, request, view, obj):
         """Check if user has permission for the specific object and action."""
-        # Admins always have access
-        if request.user.role == 'admin':
+        # Super admins always have access
+        if RoleService.is_super_admin(request.user):
             return True
         
         # Get the project from the object
@@ -226,6 +309,20 @@ class IsProjectPermissionEnforced(permissions.BasePermission):
         if not project:
             # If no project, fall back to default behavior
             return True
+        
+        # Check organization access
+        organization = project.organization if hasattr(project, 'organization') else None
+        if organization:
+            user_orgs = RoleService.get_user_organizations(request.user)
+            if not user_orgs and request.user.organization:
+                user_orgs = [request.user.organization]
+            
+            if organization not in user_orgs:
+                return False
+            
+            # Org admins have access to all projects in their org
+            if RoleService.is_org_admin(request.user, organization):
+                return True
         
         # Get permission service
         perm_service = get_permission_service(project)
@@ -294,12 +391,16 @@ class IsProjectPermissionEnforcedOrReadOnly(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
+        # Super admins always have access
+        if RoleService.is_super_admin(request.user):
+            return True
+        
         # Read permissions are allowed (will be filtered by queryset)
         if request.method in permissions.SAFE_METHODS:
             return True
         
         # Admins always have access
-        if request.user.role == 'admin':
+        if RoleService.is_admin(request.user):
             return True
         
         return True  # Will check object-level permissions
@@ -308,6 +409,10 @@ class IsProjectPermissionEnforcedOrReadOnly(permissions.BasePermission):
         """Check if user has permission for the specific object and action."""
         # Read permissions for authenticated users
         if request.method in permissions.SAFE_METHODS:
+            # Super admins have full access
+            if RoleService.is_super_admin(request.user):
+                return True
+            
             # Check basic project membership
             project = None
             if hasattr(obj, 'project'):
@@ -316,9 +421,19 @@ class IsProjectPermissionEnforcedOrReadOnly(permissions.BasePermission):
                 project = obj
             
             if project:
-                # Admins have full access
-                if request.user.role == 'admin':
-                    return True
+                # Check organization access
+                organization = project.organization if hasattr(project, 'organization') else None
+                if organization:
+                    user_orgs = RoleService.get_user_organizations(request.user)
+                    if not user_orgs and request.user.organization:
+                        user_orgs = [request.user.organization]
+                    
+                    if organization not in user_orgs:
+                        return False
+                    
+                    # Org admins have access to all projects in their org
+                    if RoleService.is_org_admin(request.user, organization):
+                        return True
                 
                 # Check if user is owner or member
                 if project.owner == request.user:
@@ -331,8 +446,8 @@ class IsProjectPermissionEnforcedOrReadOnly(permissions.BasePermission):
             return True
         
         # Write permissions - use permission enforcement
-        # Admins always have access
-        if request.user.role == 'admin':
+        # Super admins always have access
+        if RoleService.is_super_admin(request.user):
             return True
         
         # Get the project from the object
@@ -344,6 +459,20 @@ class IsProjectPermissionEnforcedOrReadOnly(permissions.BasePermission):
         
         if not project:
             return False
+        
+        # Check organization access
+        organization = project.organization if hasattr(project, 'organization') else None
+        if organization:
+            user_orgs = RoleService.get_user_organizations(request.user)
+            if not user_orgs and request.user.organization:
+                user_orgs = [request.user.organization]
+            
+            if organization not in user_orgs:
+                return False
+            
+            # Org admins have access to all projects in their org
+            if RoleService.is_org_admin(request.user, organization):
+                return True
         
         # Get permission service
         perm_service = get_permission_service(project)

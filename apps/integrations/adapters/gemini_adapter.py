@@ -98,6 +98,28 @@ class GeminiAdapter(BaseAIAdapter):
                 f"${cost:.6f}, {latency:.2f}s"
             )
             
+            # Extract ALL identifiers and metadata from response
+            all_identifiers = self.extract_all_identifiers(response, None)
+            all_metadata = self.extract_all_metadata(response, None)
+            
+            metadata = {
+                'input_tokens_estimated': estimated_input_tokens,
+                'output_tokens_estimated': estimated_output_tokens,
+                'model_id': model_id,
+                'latency_ms': int(latency * 1000),
+                'response_id': getattr(response, 'id', None),
+                'candidates_count': len(response.candidates) if hasattr(response, 'candidates') else None,
+                'prompt_feedback': getattr(response, 'prompt_feedback', None),
+            }
+            
+            # Store all identifiers in metadata
+            if all_identifiers:
+                metadata['identifiers'] = all_identifiers
+            
+            # Merge additional metadata
+            if all_metadata:
+                metadata.update({k: v for k, v in all_metadata.items() if k not in metadata})
+            
             return CompletionResponse(
                 content=content,
                 model=model,
@@ -105,12 +127,7 @@ class GeminiAdapter(BaseAIAdapter):
                 tokens_used=total_tokens,
                 cost=cost,
                 finish_reason='stop',
-                metadata={
-                    'input_tokens_estimated': estimated_input_tokens,
-                    'output_tokens_estimated': estimated_output_tokens,
-                    'model_id': model_id,
-                    'latency_ms': int(latency * 1000),
-                }
+                metadata=metadata
             )
             
         except Exception as e:

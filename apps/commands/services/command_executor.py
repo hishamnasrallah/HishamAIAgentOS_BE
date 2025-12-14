@@ -148,12 +148,9 @@ class CommandExecutor:
                 completed_at=timezone.now()
             )
             
-            # Update command metrics
-            await sync_to_async(command.update_metrics)(
-                success=execution_result.success,
-                execution_time=execution_time,
-                cost=execution_result.cost or 0.0
-            )
+            # Note: Statistics are automatically updated via post_save signal
+            # The signal handler runs in a sync context when CommandExecution is created
+            # No need to manually call recalculate_statistics() here
             
             # Step 7: Return result
             return CommandExecutionResult(
@@ -195,12 +192,9 @@ class CommandExecutor:
                     completed_at=timezone.now()
                 )
                 
-                # Update command metrics
-                await sync_to_async(command.update_metrics)(
-                    success=False,
-                    execution_time=execution_time,
-                    cost=0.0
-                )
+                # Note: Statistics are automatically updated via post_save signal
+                # The signal handler runs in a sync context when CommandExecution is created
+                # No need to manually call recalculate_statistics() here
             except Exception as metric_error:
                 logger.error(f"Failed to create execution record or update metrics: {str(metric_error)}")
             

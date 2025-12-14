@@ -26,7 +26,10 @@ except ImportError:
     HAS_PIL = False
 from .models import APIKey
 from .serializers import UserSerializer, UserCreateSerializer, APIKeySerializer
+from .permissions import IsAdminUser
 from apps.monitoring.mixins import AuditLoggingMixin
+from apps.core.services.roles import RoleService
+from apps.organizations.services import OrganizationStatusService, SubscriptionService
 
 User = get_user_model()
 
@@ -49,19 +52,33 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     
     def get_queryset(self):
         """
-        Filter users to only show the current user.
-        Admins can see all users.
+        Filter users based on organization and permissions.
+        - Super admins: See all users across all organizations
+        - Org admins: See all users in their organization
+        - Regular users: Can only see themselves
         """
         user = self.request.user
         if not user or not user.is_authenticated:
             return User.objects.none()
         
-        # Admins can see all users
-        if user.role == 'admin':
-            return User.objects.all()
+        # Super admins see all users
+        if RoleService.is_super_admin(user):
+            return User.objects.all().select_related('organization')
+        
+        # Org admins see all users in their organization(s), but exclude superusers
+        user_orgs = RoleService.get_user_organizations(user)
+        if user_orgs:
+            org_ids = [org.id for org in user_orgs]
+            is_org_admin = any(RoleService.is_org_admin(user, org) for org in user_orgs)
+            if is_org_admin:
+                # Org admins see all users in their organization(s), but NOT superusers
+                return User.objects.filter(
+                    organization_id__in=org_ids,
+                    is_superuser=False
+                ).select_related('organization')
         
         # Regular users can only see themselves
-        return User.objects.filter(id=user.id)
+        return User.objects.filter(id=user.id).select_related('organization')
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -72,24 +89,138 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
         """Override to allow read/update for own profile, but restrict create/delete to admins."""
         if self.action in ['list', 'retrieve', 'update', 'partial_update', 'me']:
             return [IsAuthenticated()]
-        # Create/delete require admin
-        return [IsAuthenticated(), permissions.IsAdminUser()]
+        # Create/delete require admin (super_admin or org_admin) - use our custom IsAdminUser
+        return [IsAuthenticated(), IsAdminUser()]
+    
+    def perform_create(self, serializer):
+        """Validate organization limits and set organization for new users."""
+        user = self.request.user
+        
+        # Get organization for the new user
+        organization = None
+        if RoleService.is_super_admin(user):
+            # Super admin can assign to any organization from request data
+            organization_id = self.request.data.get('organization')
+            if organization_id:
+                from apps.organizations.models import Organization
+                try:
+                    organization = Organization.objects.get(pk=organization_id)
+                except Organization.DoesNotExist:
+                    pass
+        elif RoleService.is_org_admin(user):
+            # Org admin can only create users in their organization
+            user_orgs = RoleService.get_user_organizations(user)
+            if user_orgs:
+                organization = user_orgs[0]  # Use first organization
+        
+        # If no organization found, try to get from serializer validated_data
+        if not organization:
+            organization = serializer.validated_data.get('organization')
+        
+        # Validate organization limits if organization is set
+        # Super admins can bypass all checks
+        if organization and not RoleService.is_super_admin(user):
+            # Check if organization is active
+            if not organization.is_active():
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError(f'Cannot create user. Organization "{organization.name}" is {organization.get_status_display()}.')
+            
+            # Check if organization subscription is active
+            if not organization.is_subscription_active():
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError('Cannot create user. Organization subscription has expired.')
+            
+            # Check user limit
+            if not organization.can_add_user():
+                current_count = organization.get_member_count()
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError(f'Cannot create user. Organization has reached the maximum number of users ({organization.max_users}). Current: {current_count}')
+        
+        # Save the user (organization will be set in serializer.create() if not already set)
+        serializer.save()
+    
+    def perform_update(self, serializer):
+        """
+        Update user with organization status and subscription validation.
+        Users can update their own profile, but org status/subscription must be valid.
+        """
+        user = serializer.instance
+        request_user = self.request.user
+        
+        # Get organization from the user being updated
+        organization = user.organization if user else None
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=request_user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=request_user)
+        
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        """
+        Delete user with organization status and subscription validation.
+        """
+        user = self.request.user
+        
+        # Get organization from the user being deleted
+        organization = instance.organization if instance else None
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=user)
+        
+        super().perform_destroy(instance)
     
     # Note: Audit logging is now handled automatically by:
     # 1. Middleware for API requests
     # 2. Signals for model saves
     # No need for explicit logging here
     
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    @action(detail=False, methods=['get', 'put', 'patch'], permission_classes=[IsAuthenticated])
     def me(self, request):
-        """Get current user."""
-        serializer = self.get_serializer(request.user)
-        return Response(serializer.data)
+        """
+        Get or update current user profile.
+        For updates, validate organization status and subscription.
+        """
+        if request.method == 'GET':
+            serializer = self.get_serializer(request.user)
+            return Response(serializer.data)
+        else:
+            # Update profile
+            user = request.user
+            organization = user.organization if user else None
+            
+            # Super admins can bypass checks (handled in service methods)
+            if organization:
+                try:
+                    # Check organization status
+                    OrganizationStatusService.require_active_organization(organization, user=user)
+                    
+                    # Check subscription active
+                    OrganizationStatusService.require_subscription_active(organization, user=user)
+                except Exception as e:
+                    return Response(
+                        {'error': str(e)},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            serializer = self.get_serializer(user, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def activate(self, request, pk=None):
         """Activate a user (admin only)."""
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can activate users.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -104,7 +235,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def deactivate(self, request, pk=None):
         """Deactivate a user (admin only)."""
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can deactivate users.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -126,7 +257,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def bulk_activate(self, request):
         """Bulk activate users (admin only)."""
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can perform bulk operations.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -150,7 +281,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def bulk_deactivate(self, request):
         """Bulk deactivate users (admin only)."""
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can perform bulk operations.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -181,7 +312,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def bulk_delete(self, request):
         """Bulk delete users (admin only)."""
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can perform bulk operations.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -213,7 +344,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def bulk_assign_role(self, request):
         """Bulk assign role to users (admin only)."""
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can perform bulk operations.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -234,9 +365,10 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        if role not in dict(User.ROLE_CHOICES):
+        if not RoleService.is_valid_role(role):
+            valid_roles = RoleService.get_all_system_roles()
             return Response(
-                {'error': f'Invalid role. Must be one of: {", ".join(dict(User.ROLE_CHOICES).keys())}'},
+                {'error': f'Invalid role. Must be one of: {", ".join(valid_roles)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -251,7 +383,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def export(self, request):
         """Export users to CSV (admin only)."""
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can export users.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -303,7 +435,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def import_users(self, request):
         """Import users from CSV (admin only)."""
-        if request.user.role != 'admin':
+        if not RoleService.is_admin(request.user):
             return Response(
                 {'error': 'Only admins can import users.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -343,7 +475,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
                     role = row.get('Role', 'viewer').strip().lower()
                     is_active = row.get('Is Active', 'Yes').strip().lower() in ('yes', 'true', '1')
                     
-                    if role not in dict(User.ROLE_CHOICES):
+                    if not RoleService.is_valid_role(role):
                         role = 'viewer'
                     
                     user, created = User.objects.get_or_create(
@@ -390,7 +522,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
         user = self.get_object()
         
         # Users can only see their own activity, admins can see anyone's
-        if request.user.role != 'admin' and user.id != request.user.id:
+        if not RoleService.is_admin(request.user) and user.id != request.user.id:
             return Response(
                 {'error': 'You can only view your own activity.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -429,7 +561,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
         user = self.get_object()
         
         # Check permissions: users can only update their own avatar, admins can update anyone's
-        if request.user.role != 'admin' and user.id != request.user.id:
+        if not RoleService.is_admin(request.user) and user.id != request.user.id:
             return Response(
                 {'error': 'You can only update your own avatar.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -517,7 +649,7 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
         user = self.get_object()
         
         # Check permissions
-        if request.user.role != 'admin' and user.id != request.user.id:
+        if not RoleService.is_admin(request.user) and user.id != request.user.id:
             return Response(
                 {'error': 'You can only delete your own avatar.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -561,3 +693,74 @@ class APIKeyViewSet(viewsets.ModelViewSet):
         if self.request.user.is_superuser:
             return APIKey.objects.all()
         return APIKey.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        """
+        Create API key with organization status, subscription, and tier limit validation.
+        """
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=user)
+            
+            # Check API key limit based on tier
+            from apps.organizations.services import SubscriptionService
+            current_count = APIKey.objects.filter(user=user, is_active=True).count()
+            tier = organization.subscription_tier or 'trial'
+            max_api_keys = SubscriptionService.get_limit_for_feature(tier, 'max_api_keys')
+            
+            # Super admins can bypass API key limits
+            if not RoleService.is_super_admin(user) and max_api_keys is not None and current_count >= max_api_keys:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError(
+                    f'You have reached your API key limit ({max_api_keys} for {tier.title()} tier). '
+                    f'Current: {current_count}/{max_api_keys}. Please upgrade your subscription or deactivate existing keys.'
+                )
+        
+        serializer.save(user=user, created_by=user)
+    
+    def perform_update(self, serializer):
+        """
+        Update API key with organization status and subscription validation.
+        """
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=user)
+        
+        serializer.save(updated_by=user)
+    
+    def perform_destroy(self, instance):
+        """
+        Delete API key with organization status and subscription validation.
+        """
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        
+        # Super admins can bypass checks (handled in service methods)
+        if organization:
+            # Check organization status
+            OrganizationStatusService.require_active_organization(organization, user=user)
+            
+            # Check subscription active
+            OrganizationStatusService.require_subscription_active(organization, user=user)
+        
+        super().perform_destroy(instance)

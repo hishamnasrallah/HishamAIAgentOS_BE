@@ -23,8 +23,21 @@ class Project(models.Model):
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
-    slug = models.SlugField(max_length=200, unique=True)
+    slug = models.SlugField(max_length=200, db_index=True, blank=True)  # No longer unique globally, unique per organization. Auto-generated from name if not provided.
     description = models.TextField(blank=True, default='')
+    
+    # Organization relationship (for SaaS multi-tenancy)
+    # Projects belong to an organization
+    # Note: nullable=True temporarily - will be made required after data migration
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        related_name='projects',
+        db_index=True,
+        null=True,
+        blank=True,
+        help_text='Organization this project belongs to'
+    )
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planning')
     
@@ -77,9 +90,14 @@ class Project(models.Model):
         db_table = 'projects'
         verbose_name = 'Project'
         verbose_name_plural = 'Projects'
+        ordering = ['-created_at']
+        unique_together = [['organization', 'slug']]  # Slug unique per organization
         indexes = [
-            models.Index(fields=['slug']),
+            models.Index(fields=['organization', 'slug']),
+            models.Index(fields=['organization']),
             models.Index(fields=['status']),
+            models.Index(fields=['owner']),
+            models.Index(fields=['created_at']),
         ]
     
     def __str__(self):
@@ -830,25 +848,19 @@ class Bug(models.Model):
         return f'{self.project.name} - {self.title}'
     
     def get_valid_statuses(self):
-        """Get valid status values from project configuration."""
-        try:
-            config = self.project.configuration
-            if config and config.custom_states:
-                return [state.get('id') for state in config.custom_states if state.get('id')]
-        except ProjectConfiguration.DoesNotExist:
-            pass
-        # Fallback to default states if no configuration exists
-        return ['new', 'assigned', 'in_progress', 'resolved', 'closed', 'reopened']
+        """Get valid status values - Bug model has fixed STATUS_CHOICES, not custom states."""
+        # Bug model always uses fixed STATUS_CHOICES, not custom states from project configuration
+        return [choice[0] for choice in self.STATUS_CHOICES]
     
     def clean(self):
-        """Validate status against project configuration."""
+        """Validate status against Bug model's STATUS_CHOICES."""
         from django.core.exceptions import ValidationError
         
         if self.status:
             valid_statuses = self.get_valid_statuses()
             if self.status not in valid_statuses:
                 raise ValidationError({
-                    'status': f"Invalid status '{self.status}'. Valid statuses for this project are: {', '.join(valid_statuses)}"
+                    'status': f"Invalid status '{self.status}'. Valid statuses are: {', '.join(valid_statuses)}"
                 })
     
     def save(self, *args, **kwargs):
@@ -1081,25 +1093,19 @@ class Issue(models.Model):
         return f'{self.project.name} - {self.title}'
     
     def get_valid_statuses(self):
-        """Get valid status values from project configuration."""
-        try:
-            config = self.project.configuration
-            if config and config.custom_states:
-                return [state.get('id') for state in config.custom_states if state.get('id')]
-        except ProjectConfiguration.DoesNotExist:
-            pass
-        # Fallback to default states if no configuration exists
-        return ['open', 'in_progress', 'resolved', 'closed', 'reopened']
+        """Get valid status values - Issue model has fixed STATUS_CHOICES, not custom states."""
+        # Issue model always uses fixed STATUS_CHOICES, not custom states from project configuration
+        return [choice[0] for choice in self.STATUS_CHOICES]
     
     def clean(self):
-        """Validate status against project configuration."""
+        """Validate status against Issue model's STATUS_CHOICES."""
         from django.core.exceptions import ValidationError
         
         if self.status:
             valid_statuses = self.get_valid_statuses()
             if self.status not in valid_statuses:
                 raise ValidationError({
-                    'status': f"Invalid status '{self.status}'. Valid statuses for this project are: {', '.join(valid_statuses)}"
+                    'status': f"Invalid status '{self.status}'. Valid statuses are: {', '.join(valid_statuses)}"
                 })
     
     def save(self, *args, **kwargs):
@@ -3531,23 +3537,22 @@ class ProjectMember(models.Model):
     """
     Project-specific member with roles.
     Supports multiple roles per user per project and custom roles.
+    
+    Note: System roles are defined in apps.core.services.roles.RoleService
+    This model uses RoleService for role validation and management.
     """
     
-    # Standard system roles (always available)
-    SYSTEM_ROLES = [
-        'admin',           # System administrator
-        'owner',           # Project owner
-        'product_owner',   # Product Owner
-        'scrum_master',    # Scrum Master
-        'tech_lead',       # Technical Lead
-        'developer',       # Developer
-        'qa',              # Quality Assurance
-        'designer',        # UI/UX Designer
-        'analyst',         # Business Analyst
-        'manager',         # Project Manager
-        'member',          # General project member
-        'viewer',          # Read-only access
-    ]
+    @classmethod
+    def get_system_roles(cls):
+        """Get system roles from RoleService."""
+        from apps.core.services.roles import RoleService
+        return RoleService.get_all_system_roles()
+    
+    # For backward compatibility, expose SYSTEM_ROLES as a property
+    @property
+    def SYSTEM_ROLES(self):
+        """Backward compatibility property."""
+        return self.get_system_roles()
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(
@@ -3600,4 +3605,178 @@ class ProjectMember(models.Model):
     def has_any_role(self, roles: list) -> bool:
         """Check if user has any of the specified roles."""
         return any(role in self.roles for role in roles)
+
+
+class GeneratedProject(models.Model):
+    """Tracks a generated project's metadata and status."""
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('generating', 'Generating'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('archived', 'Archived'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.CASCADE,
+        related_name='generated_projects'
+    )
+    workflow_execution = models.ForeignKey(
+        'workflows.WorkflowExecution',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='generated_projects'
+    )
+    
+    # File system path
+    output_directory = models.CharField(max_length=500)
+    
+    # Status tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    error_message = models.TextField(blank=True)
+    
+    # Statistics
+    total_files = models.IntegerField(default=0)
+    total_size = models.BigIntegerField(default=0)  # in bytes
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_generated_projects'
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'generated_projects'
+        verbose_name = 'Generated Project'
+        verbose_name_plural = 'Generated Projects'
+        indexes = [
+            models.Index(fields=['project', '-created_at']),
+            models.Index(fields=['status']),
+            models.Index(fields=['created_by', '-created_at']),
+        ]
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.project.name} - {self.status}"
+
+
+class ProjectFile(models.Model):
+    """Tracks individual files in a generated project."""
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    generated_project = models.ForeignKey(
+        GeneratedProject,
+        on_delete=models.CASCADE,
+        related_name='files'
+    )
+    
+    # File metadata
+    file_path = models.CharField(max_length=500, db_index=True)
+    file_name = models.CharField(max_length=255)
+    file_type = models.CharField(max_length=50)  # e.g., 'python', 'javascript', 'markdown'
+    file_size = models.BigIntegerField(default=0)  # in bytes
+    content_hash = models.CharField(max_length=64)  # SHA-256 hash
+    
+    # File content (optional, for small files)
+    content_preview = models.TextField(blank=True, help_text="First 1000 chars")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'project_files'
+        verbose_name = 'Project File'
+        verbose_name_plural = 'Project Files'
+        indexes = [
+            models.Index(fields=['generated_project', 'file_path']),
+            models.Index(fields=['file_type']),
+            models.Index(fields=['content_hash']),
+        ]
+        unique_together = [['generated_project', 'file_path']]
+        ordering = ['file_path']
+    
+    def __str__(self):
+        return f"{self.file_path} ({self.generated_project.project.name})"
+
+
+class RepositoryExport(models.Model):
+    """Tracks repository export jobs."""
+    
+    EXPORT_TYPE_CHOICES = [
+        ('zip', 'ZIP Archive'),
+        ('tar', 'TAR Archive'),
+        ('tar.gz', 'TAR GZIP Archive'),
+        ('github', 'GitHub Repository'),
+        ('gitlab', 'GitLab Repository'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('exporting', 'Exporting'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    generated_project = models.ForeignKey(
+        GeneratedProject,
+        on_delete=models.CASCADE,
+        related_name='exports'
+    )
+    
+    # Export configuration
+    export_type = models.CharField(max_length=20, choices=EXPORT_TYPE_CHOICES)
+    repository_name = models.CharField(max_length=255, blank=True)
+    repository_url = models.URLField(blank=True)
+    
+    # Export result
+    archive_path = models.CharField(max_length=500, blank=True)
+    archive_size = models.BigIntegerField(null=True, blank=True)
+    
+    # Status tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    error_message = models.TextField(blank=True)
+    
+    # Configuration (for GitHub/GitLab)
+    config = models.JSONField(default=dict, blank=True)
+    
+    # User tracking
+    created_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'repository_exports'
+        verbose_name = 'Repository Export'
+        verbose_name_plural = 'Repository Exports'
+        indexes = [
+            models.Index(fields=['generated_project', '-created_at']),
+            models.Index(fields=['status']),
+            models.Index(fields=['export_type']),
+        ]
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.generated_project.project.name} - {self.export_type} - {self.status}"
 

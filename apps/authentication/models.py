@@ -36,8 +36,32 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    """Custom user model with email as username."""
+    """
+    Custom user model with email as username.
     
+    Note: The role field uses dynamic roles from apps.core.services.roles.RoleService.
+    For backward compatibility, ROLE_CHOICES is still available but validation
+    should use RoleService.is_valid_role() instead.
+    """
+    
+    # Backward compatibility - kept for migrations and admin interface
+    # But actual validation should use RoleService
+    @classmethod
+    def get_role_choices(cls):
+        """Get role choices dynamically from RoleService."""
+        try:
+            from apps.core.services.roles import RoleService
+            return [(role, info['label']) for role, info in RoleService.SYSTEM_ROLES.items()]
+        except ImportError:
+            # Fallback for migrations
+            return [
+                ('admin', 'Administrator'),
+                ('manager', 'Project Manager'),
+                ('developer', 'Developer'),
+                ('viewer', 'Viewer'),
+            ]
+    
+    # Keep ROLE_CHOICES for backward compatibility
     ROLE_CHOICES = [
         ('admin', 'Administrator'),
         ('manager', 'Project Manager'),
@@ -50,7 +74,22 @@ class User(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(max_length=150, unique=True)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='viewer')
+    
+    # Organization relationship (for SaaS multi-tenancy)
+    # Users belong to an organization, but super admins can access all organizations
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users',
+        db_index=True,
+        help_text='Primary organization this user belongs to. Super admins can access all organizations.'
+    )
+    
+    # Role field - validation should use RoleService.is_valid_role()
+    # Note: 'admin' role is deprecated. Use 'org_admin' for organization admins or is_superuser for super admins
+    role = models.CharField(max_length=50, default='viewer', help_text='System-level role. Use RoleService for validation.')
     
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

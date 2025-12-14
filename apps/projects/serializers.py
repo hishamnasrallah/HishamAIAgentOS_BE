@@ -12,8 +12,9 @@ from apps.projects.models import (
     StatusChangeApproval, ProjectLabelPreset, Milestone, TicketReference, StoryLink, CardTemplate, BoardTemplate,
     SearchHistory, FilterPreset, TimeBudget, OvertimeRecord, CardCoverImage, CardChecklist, CardVote,
     StoryArchive, StoryVersion, Webhook, StoryClone, GitHubIntegration, JiraIntegration, SlackIntegration,
-    ProjectMember
+    ProjectMember, GeneratedProject, ProjectFile, RepositoryExport
 )
+from apps.core.services.roles import RoleService
 # Alias for backward compatibility
 Story = UserStory
 
@@ -105,18 +106,24 @@ def validate_component_name(value):
     return value
 
 
-def validate_state_transition(project, old_status: str, new_status: str) -> None:
+def validate_state_transition(project, old_status: str, new_status: str, user=None) -> None:
     """
     Validate that a state transition is allowed according to project configuration.
+    Super admins can bypass all state transition validations.
     
     Args:
         project: Project instance
         old_status: Current status
         new_status: Desired new status
+        user: Optional user instance to check for super admin status
         
     Raises:
         serializers.ValidationError: If transition is not allowed
     """
+    # Super admins can bypass all state transition validations
+    if user and RoleService.is_super_admin(user):
+        return
+    
     if not project or not old_status or not new_status or old_status == new_status:
         return  # No transition or no project
     
@@ -155,7 +162,8 @@ class ProjectSerializer(serializers.ModelSerializer):
     """Project serializer."""
     
     # Make slug optional - will auto-generate from name
-    slug = serializers.SlugField(required=False)
+    # Explicitly define as optional to override model field requirements
+    slug = serializers.SlugField(required=False, allow_blank=True, allow_null=True, default='')
     # Make description optional
     description = serializers.CharField(required=False, allow_blank=True, default='')
     
@@ -165,17 +173,65 @@ class ProjectSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {
             'description': {'required': False, 'allow_blank': True},
+            'slug': {'required': False, 'allow_blank': True, 'allow_null': True},
         }
     
+    def __init__(self, *args, **kwargs):
+        """Override __init__ to ensure slug field is not required."""
+        super().__init__(*args, **kwargs)
+        # Force slug to be optional
+        if 'slug' in self.fields:
+            self.fields['slug'].required = False
+            self.fields['slug'].allow_blank = True
+            self.fields['slug'].allow_null = True
+    
+    def validate(self, attrs):
+        """Override validate to ensure slug is not required during validation."""
+        # Remove slug from validation if it's empty/None - will be generated in create()
+        if 'slug' in attrs and (not attrs.get('slug') or attrs.get('slug') == ''):
+            attrs.pop('slug', None)
+        return attrs
+    
     def create(self, validated_data):
+        # Get organization from validated_data (set by perform_create in viewset)
+        organization = validated_data.get('organization')
+        
+        # Note: Organization validation (status, subscription, limits) is done in perform_create
+        # This is a backup check in case organization is set directly
+        # Super admins can bypass these checks (checked in perform_create, but also here for safety)
+        if organization:
+            # Get user from context (if available) to check super admin status
+            user = self.context.get('request').user if self.context.get('request') else None
+            is_super_admin = RoleService.is_super_admin(user) if user else False
+            
+            if not is_super_admin:
+                # Check if organization is active
+                if not organization.is_active():
+                    raise serializers.ValidationError({
+                        'organization': f'Cannot create project. Organization "{organization.name}" is {organization.get_status_display()}.'
+                    })
+                
+                # Check if organization subscription is active
+                if not organization.is_subscription_active():
+                    raise serializers.ValidationError({
+                        'organization': f'Cannot create project. Organization subscription has expired.'
+                    })
+                
+                # Check project limit
+                if not organization.can_add_project():
+                    current_count = organization.get_project_count()
+                    raise serializers.ValidationError({
+                        'organization': f'Cannot create project. Organization has reached the maximum number of projects ({organization.max_projects}). Current: {current_count}'
+                    })
+        
         # Auto-generate slug from name if not provided
         if 'slug' not in validated_data or not validated_data.get('slug'):
             from django.utils.text import slugify
             base_slug = slugify(validated_data['name'])
             slug = base_slug
-            # Handle slug uniqueness
+            # Handle slug uniqueness per organization
             counter = 1
-            while Project.objects.filter(slug=slug).exists():
+            while Project.objects.filter(slug=slug, organization=organization).exists():
                 slug = f"{base_slug}-{counter}"
                 counter += 1
             validated_data['slug'] = slug
@@ -321,6 +377,88 @@ class StorySerializer(serializers.ModelSerializer):
             'custom_fields': {'required': False, 'allow_null': True},
         }
     
+    def validate_custom_fields(self, value):
+        """Validate custom fields against project configuration schema."""
+        if not value or not isinstance(value, dict):
+            return value or {}
+        
+        # Get project from instance or validated_data
+        project = None
+        if self.instance:
+            project = self.instance.project
+        elif 'project' in self.initial_data:
+            from apps.projects.models import Project
+            try:
+                project = Project.objects.get(id=self.initial_data['project'])
+            except (Project.DoesNotExist, ValueError):
+                pass
+        
+        if not project:
+            return value  # Can't validate without project
+        
+        try:
+            config = project.configuration
+            if not config or not config.custom_fields_schema:
+                return value  # No schema defined, allow any values
+            
+            schema = config.custom_fields_schema
+            schema_dict = {field.get('id'): field for field in schema if field.get('id')}
+            
+            # Validate each custom field value
+            validated = {}
+            for field_id, field_value in value.items():
+                if field_id not in schema_dict:
+                    continue  # Skip unknown fields
+                
+                field_schema = schema_dict[field_id]
+                field_type = field_schema.get('type')
+                
+                # Type validation and conversion
+                if field_type == 'number':
+                    if field_value is not None and field_value != '':
+                        try:
+                            validated[field_id] = float(field_value)
+                        except (ValueError, TypeError):
+                            raise serializers.ValidationError({
+                                'custom_fields': f"Field '{field_schema.get('name', field_id)}' must be a number"
+                            })
+                    else:
+                        validated[field_id] = None
+                elif field_type == 'date':
+                    validated[field_id] = field_value  # Date validation handled by frontend
+                elif field_type == 'select':
+                    options = field_schema.get('options', [])
+                    if field_value and field_value not in options:
+                        raise serializers.ValidationError({
+                            'custom_fields': f"Field '{field_schema.get('name', field_id)}' must be one of: {', '.join(options)}"
+                        })
+                    validated[field_id] = field_value
+                elif field_type == 'multi_select':
+                    options = field_schema.get('options', [])
+                    if field_value:
+                        if not isinstance(field_value, list):
+                            field_value = [field_value]
+                        invalid = [v for v in field_value if v not in options]
+                        if invalid:
+                            raise serializers.ValidationError({
+                                'custom_fields': f"Field '{field_schema.get('name', field_id)}' contains invalid values: {', '.join(invalid)}"
+                            })
+                        validated[field_id] = field_value
+                    else:
+                        validated[field_id] = []
+                else:  # text or other
+                    validated[field_id] = field_value
+                
+                # Required field validation
+                if field_schema.get('required', False) and (validated[field_id] is None or validated[field_id] == '' or (isinstance(validated[field_id], list) and len(validated[field_id]) == 0)):
+                    raise serializers.ValidationError({
+                        'custom_fields': f"Field '{field_schema.get('name', field_id)}' is required"
+                    })
+            
+            return validated
+        except ProjectConfiguration.DoesNotExist:
+            return value  # No configuration, allow any values
+    
     def to_representation(self, instance):
         """Override to include nested user data for assigned_to and epic data."""
         representation = super().to_representation(instance)
@@ -361,6 +499,13 @@ class StorySerializer(serializers.ModelSerializer):
         if not value:
             return value
         
+        # Get user from context to check super admin status
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Super admins can bypass all status validations
+        if user and RoleService.is_super_admin(user):
+            return value
+        
         # Get project from instance (update) or validated_data (create)
         project = None
         if self.instance:
@@ -384,7 +529,7 @@ class StorySerializer(serializers.ModelSerializer):
                 
                 # Validate state transition if updating
                 if self.instance and self.instance.status:
-                    validate_state_transition(project, self.instance.status, value)
+                    validate_state_transition(project, self.instance.status, value, user=user)
             except ProjectConfiguration.DoesNotExist:
                 pass  # No configuration yet, allow default status
         
@@ -726,9 +871,99 @@ class TaskSerializer(serializers.ModelSerializer):
             'custom_fields': {'required': False, 'allow_null': True},
         }
     
+    def validate_custom_fields(self, value):
+        """Validate custom fields against project configuration schema."""
+        if not value or not isinstance(value, dict):
+            return value or {}
+        
+        # Get project from instance or validated_data
+        project = None
+        if self.instance:
+            project = self.instance.story.project if self.instance.story else None
+        elif 'story' in self.initial_data:
+            from apps.projects.models import UserStory
+            try:
+                story = UserStory.objects.get(id=self.initial_data['story'])
+                project = story.project
+            except (UserStory.DoesNotExist, ValueError):
+                pass
+        
+        if not project:
+            return value  # Can't validate without project
+        
+        try:
+            config = project.configuration
+            if not config or not config.custom_fields_schema:
+                return value  # No schema defined, allow any values
+            
+            schema = config.custom_fields_schema
+            schema_dict = {field.get('id'): field for field in schema if field.get('id')}
+            
+            # Validate each custom field value
+            validated = {}
+            for field_id, field_value in value.items():
+                if field_id not in schema_dict:
+                    continue  # Skip unknown fields
+                
+                field_schema = schema_dict[field_id]
+                field_type = field_schema.get('type')
+                
+                # Type validation and conversion
+                if field_type == 'number':
+                    if field_value is not None and field_value != '':
+                        try:
+                            validated[field_id] = float(field_value)
+                        except (ValueError, TypeError):
+                            raise serializers.ValidationError({
+                                'custom_fields': f"Field '{field_schema.get('name', field_id)}' must be a number"
+                            })
+                    else:
+                        validated[field_id] = None
+                elif field_type == 'date':
+                    validated[field_id] = field_value  # Date validation handled by frontend
+                elif field_type == 'select':
+                    options = field_schema.get('options', [])
+                    if field_value and field_value not in options:
+                        raise serializers.ValidationError({
+                            'custom_fields': f"Field '{field_schema.get('name', field_id)}' must be one of: {', '.join(options)}"
+                        })
+                    validated[field_id] = field_value
+                elif field_type == 'multi_select':
+                    options = field_schema.get('options', [])
+                    if field_value:
+                        if not isinstance(field_value, list):
+                            field_value = [field_value]
+                        invalid = [v for v in field_value if v not in options]
+                        if invalid:
+                            raise serializers.ValidationError({
+                                'custom_fields': f"Field '{field_schema.get('name', field_id)}' contains invalid values: {', '.join(invalid)}"
+                            })
+                        validated[field_id] = field_value
+                    else:
+                        validated[field_id] = []
+                else:  # text or other
+                    validated[field_id] = field_value
+                
+                # Required field validation
+                if field_schema.get('required', False) and (validated[field_id] is None or validated[field_id] == '' or (isinstance(validated[field_id], list) and len(validated[field_id]) == 0)):
+                    raise serializers.ValidationError({
+                        'custom_fields': f"Field '{field_schema.get('name', field_id)}' is required"
+                    })
+            
+            return validated
+        except ProjectConfiguration.DoesNotExist:
+            return value  # No configuration, allow any values
+    
     def validate_status(self, value):
         """Validate status against project configuration and state transitions."""
         if not value:
+            return value
+        
+        # Get user from context to check super admin status
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Super admins can bypass all status validations
+        if user and RoleService.is_super_admin(user):
             return value
         
         # Get project from task's story or from validated_data
@@ -758,7 +993,7 @@ class TaskSerializer(serializers.ModelSerializer):
                 
                 # Validate state transition if updating
                 if self.instance and self.instance.status:
-                    validate_state_transition(project, self.instance.status, value)
+                    validate_state_transition(project, self.instance.status, value, user=user)
             except ProjectConfiguration.DoesNotExist:
                 pass  # No configuration yet, allow default status
         
@@ -869,36 +1104,33 @@ class BugSerializer(serializers.ModelSerializer):
         }
     
     def validate_status(self, value):
-        """Validate status against project configuration and state transitions."""
+        """Validate status against Bug model's STATUS_CHOICES and state transitions."""
         if not value:
             return value
         
-        # Get project from instance (update) or validated_data (create)
-        project = None
-        if self.instance:
-            project = self.instance.project
-        elif 'project' in self.initial_data:
-            from apps.projects.models import Project
-            try:
-                project = Project.objects.get(id=self.initial_data['project'])
-            except (Project.DoesNotExist, ValueError):
-                pass
+        # Get user from context to check super admin status
+        user = self.context.get('request').user if self.context.get('request') else None
         
-        if project:
-            try:
-                config = project.configuration
-                if config and config.custom_states:
-                    valid_statuses = [state.get('id') for state in config.custom_states if state.get('id')]
-                    if value not in valid_statuses:
-                        raise serializers.ValidationError(
-                            f"Invalid status '{value}'. Valid statuses for this project are: {', '.join(valid_statuses)}"
-                        )
-                
-                # Validate state transition if updating
-                if self.instance and self.instance.status:
-                    validate_state_transition(project, self.instance.status, value)
-            except ProjectConfiguration.DoesNotExist:
-                pass  # No configuration yet, allow default status
+        # Super admins can bypass all status validations
+        if user and RoleService.is_super_admin(user):
+            return value
+        
+        # Bug model has fixed STATUS_CHOICES, not custom states
+        from apps.projects.models import Bug
+        valid_statuses = [choice[0] for choice in Bug.STATUS_CHOICES]
+        if value not in valid_statuses:
+            raise serializers.ValidationError(
+                f"Invalid status '{value}'. Valid statuses are: {', '.join(valid_statuses)}"
+            )
+        
+        # Validate state transition if updating (even with fixed statuses, projects may have transition rules)
+        if self.instance and self.instance.status:
+            project = self.instance.project
+            if project:
+                try:
+                    validate_state_transition(project, self.instance.status, value, user=user)
+                except (ProjectConfiguration.DoesNotExist, AttributeError):
+                    pass  # No configuration or no transitions defined, allow all
         
         return value
     
@@ -1073,36 +1305,23 @@ class IssueSerializer(serializers.ModelSerializer):
         }
     
     def validate_status(self, value):
-        """Validate status against project configuration and state transitions."""
+        """Validate status against Issue model's STATUS_CHOICES."""
         if not value:
             return value
         
-        # Get project from instance (update) or validated_data (create)
-        project = None
-        if self.instance:
-            project = self.instance.project
-        elif 'project' in self.initial_data:
-            from apps.projects.models import Project
-            try:
-                project = Project.objects.get(id=self.initial_data['project'])
-            except (Project.DoesNotExist, ValueError):
-                pass
+        # Get user from context to check super admin status
+        user = self.context.get('request').user if self.context.get('request') else None
         
-        if project:
-            try:
-                config = project.configuration
-                if config and config.custom_states:
-                    valid_statuses = [state.get('id') for state in config.custom_states if state.get('id')]
-                    if value not in valid_statuses:
-                        raise serializers.ValidationError(
-                            f"Invalid status '{value}'. Valid statuses for this project are: {', '.join(valid_statuses)}"
-                        )
-                
-                # Validate state transition if updating
-                if self.instance and self.instance.status:
-                    validate_state_transition(project, self.instance.status, value)
-            except ProjectConfiguration.DoesNotExist:
-                pass  # No configuration yet, allow default status
+        # Super admins can bypass all status validations
+        if user and RoleService.is_super_admin(user):
+            return value
+        
+        # Issue model has fixed STATUS_CHOICES, not custom states
+        valid_statuses = [choice[0] for choice in Issue.STATUS_CHOICES]
+        if value not in valid_statuses:
+            raise serializers.ValidationError(
+                f"Invalid status '{value}'. Valid statuses are: {', '.join(valid_statuses)}"
+            )
         
         return value
     
@@ -1121,13 +1340,16 @@ class IssueSerializer(serializers.ModelSerializer):
         if 'component' in validated_data and validated_data['component'] is None:
             validated_data['component'] = ''
         
+        # Extract ManyToMany fields that can't be set directly during creation
+        watchers = validated_data.pop('watchers', [])
+        
         # Validate using project validation rules
         project = validated_data.get('project')
         if project:
             from apps.projects.services.validation import get_validation_service
             validation_service = get_validation_service(project)
             
-            # Create instance temporarily for validation
+            # Create instance temporarily for validation (without watchers)
             issue = Issue(**validated_data)
             is_valid, error, warnings = validation_service.validate_issue_before_status_change(
                 issue,
@@ -1137,7 +1359,14 @@ class IssueSerializer(serializers.ModelSerializer):
             if not is_valid:
                 raise serializers.ValidationError({'status': error})
         
-        return super().create(validated_data)
+        # Create the issue instance (without watchers)
+        issue = super().create(validated_data)
+        
+        # Set ManyToMany fields after creation
+        if watchers:
+            issue.watchers.set(watchers)
+        
+        return issue
     
     def update(self, instance, validated_data):
         """Convert null values to empty strings for CharFields and validate."""
@@ -1215,8 +1444,15 @@ class IssueSerializer(serializers.ModelSerializer):
                 if not is_valid:
                     raise serializers.ValidationError({'status': error})
         
+        # Extract ManyToMany fields that can't be set directly during update
+        watchers = validated_data.pop('watchers', None)
+        
         # Call parent update
         instance = super().update(instance, validated_data)
+        
+        # Set ManyToMany fields after update if provided
+        if watchers is not None:
+            instance.watchers.set(watchers)
         
         # Execute automation rules if status changed
         if old_status != instance.status and project:
@@ -2241,7 +2477,7 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'added_at', 'updated_at']
     
     def validate_roles(self, value):
-        """Validate that roles are valid (system roles or custom roles from project)."""
+        """Validate that roles are valid (system roles or custom roles from project) using RoleService."""
         if not isinstance(value, list):
             raise serializers.ValidationError("Roles must be a list.")
         
@@ -2249,23 +2485,23 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("At least one role is required.")
         
         # Get project to check custom roles
-        project = self.instance.project if self.instance else self.initial_data.get('project')
-        if project:
+        project = None
+        if self.instance:
+            project = self.instance.project
+        elif 'project' in self.initial_data:
             try:
-                from apps.projects.models import ProjectConfiguration
-                config = ProjectConfiguration.objects.get(project=project)
-                custom_roles = config.custom_roles or []
-            except ProjectConfiguration.DoesNotExist:
-                custom_roles = []
-        else:
-            custom_roles = []
+                project = Project.objects.get(pk=self.initial_data['project'])
+            except (Project.DoesNotExist, ValueError, TypeError):
+                pass
         
-        # All valid roles (system + custom)
-        valid_roles = ProjectMember.SYSTEM_ROLES + custom_roles
+        # Validate each role using RoleService
+        invalid_roles = []
+        for role in value:
+            if not RoleService.is_valid_role(role, project):
+                invalid_roles.append(role)
         
-        # Validate each role
-        invalid_roles = [role for role in value if role not in valid_roles]
         if invalid_roles:
+            valid_roles = RoleService.get_all_available_roles(project)
             raise serializers.ValidationError(
                 f"Invalid roles: {', '.join(invalid_roles)}. "
                 f"Valid roles are: {', '.join(valid_roles)}"
@@ -2289,3 +2525,259 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
                 )
         
         return data
+
+
+class GeneratedProjectSerializer(serializers.ModelSerializer):
+    """Serializer for GeneratedProject model."""
+    
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+    files_count = serializers.SerializerMethodField()
+    exports_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GeneratedProject
+        fields = [
+            'id',
+            'project',
+            'project_name',
+            'workflow_execution',
+            'output_directory',
+            'status',
+            'error_message',
+            'total_files',
+            'total_size',
+            'files_count',
+            'exports_count',
+            'created_by',
+            'created_by_name',
+            'created_at',
+            'updated_at',
+            'completed_at',
+        ]
+        read_only_fields = [
+            'id',
+            'created_by',
+            'created_at',
+            'updated_at',
+            'completed_at',
+            'total_files',
+            'total_size',
+        ]
+    
+    def get_created_by_name(self, obj):
+        """Get created by user's full name."""
+        if obj.created_by:
+            return obj.created_by.get_full_name() or obj.created_by.email
+        return None
+    
+    def get_files_count(self, obj):
+        """Get count of files."""
+        if hasattr(obj, '_prefetched_objects_cache') and 'files' in obj._prefetched_objects_cache:
+            return len(obj._prefetched_objects_cache['files'])
+        return obj.files.count() if obj.id else 0
+    
+    def get_exports_count(self, obj):
+        """Get count of exports."""
+        if hasattr(obj, '_prefetched_objects_cache') and 'exports' in obj._prefetched_objects_cache:
+            return len(obj._prefetched_objects_cache['exports'])
+        return obj.exports.count() if obj.id else 0
+    
+    def validate_status(self, value):
+        """Validate status transitions."""
+        if self.instance:
+            current_status = self.instance.status
+            valid_transitions = {
+                'pending': ['generating'],
+                'generating': ['completed', 'failed'],
+                'completed': ['archived'],
+                'failed': [],
+                'archived': [],
+            }
+            if value not in valid_transitions.get(current_status, []):
+                raise serializers.ValidationError(
+                    f"Invalid transition from {current_status} to {value}"
+                )
+        return value
+
+
+class ProjectFileSerializer(serializers.ModelSerializer):
+    """Serializer for ProjectFile model."""
+    
+    file_size_display = serializers.SerializerMethodField()
+    file_type_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ProjectFile
+        fields = [
+            'id',
+            'generated_project',
+            'file_path',
+            'file_name',
+            'file_type',
+            'file_type_display',
+            'file_size',
+            'file_size_display',
+            'content_hash',
+            'content_preview',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'content_hash',
+            'created_at',
+            'updated_at',
+        ]
+    
+    def validate_file_path(self, value):
+        """Validate file path."""
+        # Prevent path traversal
+        if '..' in value or value.startswith('/'):
+            raise serializers.ValidationError("Invalid file path")
+        return value
+    
+    def get_file_size_display(self, obj):
+        """Format file size."""
+        return self._format_file_size(obj.file_size)
+    
+    def get_file_type_display(self, obj):
+        """Format file type."""
+        return obj.file_type.upper() if obj.file_type else None
+    
+    @staticmethod
+    def _format_file_size(size_bytes):
+        """Format file size in human-readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.2f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.2f} TB"
+
+
+class RepositoryExportSerializer(serializers.ModelSerializer):
+    """Serializer for RepositoryExport model."""
+    
+    export_type_display = serializers.CharField(
+        source='get_export_type_display',
+        read_only=True
+    )
+    status_display = serializers.CharField(
+        source='get_status_display',
+        read_only=True
+    )
+    archive_size_display = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = RepositoryExport
+        fields = [
+            'id',
+            'generated_project',
+            'export_type',
+            'export_type_display',
+            'repository_name',
+            'repository_url',
+            'archive_path',
+            'archive_size',
+            'archive_size_display',
+            'status',
+            'status_display',
+            'error_message',
+            'config',
+            'download_url',
+            'created_by',
+            'created_at',
+            'updated_at',
+            'completed_at',
+        ]
+        read_only_fields = [
+            'id',
+            'created_by',
+            'created_at',
+            'updated_at',
+            'completed_at',
+            'archive_path',
+            'archive_size',
+            'repository_url',
+            'status',
+            'error_message',
+        ]
+    
+    def validate_export_type(self, value):
+        """Validate export type."""
+        valid_types = ['zip', 'tar', 'tar.gz', 'github', 'gitlab']
+        if value not in valid_types:
+            raise serializers.ValidationError(f"Invalid export type: {value}")
+        return value
+    
+    def validate_repository_name(self, value):
+        """Validate repository name."""
+        if value:
+            # GitHub/GitLab naming rules
+            pattern = r'^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$'
+            if not re.match(pattern, value) or len(value) > 100:
+                raise serializers.ValidationError("Invalid repository name")
+        return value
+    
+    def get_archive_size_display(self, obj):
+        """Format archive size."""
+        if obj.archive_size:
+            return ProjectFileSerializer._format_file_size(obj.archive_size)
+        return None
+    
+    def get_download_url(self, obj):
+        """Get download URL if available."""
+        if obj.status == 'completed' and obj.archive_path:
+            from django.urls import reverse
+            try:
+                return reverse('export-download', kwargs={'export_id': str(obj.id)})
+            except:
+                return None
+        return None
+
+
+class ProjectGenerationRequestSerializer(serializers.Serializer):
+    """Serializer for project generation requests."""
+    
+    workflow_id = serializers.UUIDField(required=True)
+    input_data = serializers.JSONField(required=True)
+    
+    def validate_workflow_id(self, value):
+        """Validate workflow exists."""
+        from apps.workflows.models import Workflow
+        try:
+            workflow = Workflow.objects.get(id=value)
+            if workflow.status != 'active':
+                raise serializers.ValidationError("Workflow is not active")
+        except Workflow.DoesNotExist:
+            raise serializers.ValidationError("Workflow not found")
+        return value
+
+
+class GitHubExportRequestSerializer(serializers.Serializer):
+    """Serializer for GitHub export requests."""
+    
+    repository_name = serializers.CharField(required=True, max_length=100)
+    organization = serializers.CharField(required=False, allow_blank=True)
+    private = serializers.BooleanField(default=False)
+    github_token = serializers.CharField(required=False, write_only=True)
+    
+    def validate_repository_name(self, value):
+        """Validate repository name."""
+        pattern = r'^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$'
+        if not re.match(pattern, value) or len(value) > 100:
+            raise serializers.ValidationError("Invalid repository name")
+        return value
+
+
+class GitLabExportRequestSerializer(serializers.Serializer):
+    """Serializer for GitLab export requests."""
+    
+    project_name = serializers.CharField(required=True, max_length=255)
+    namespace = serializers.CharField(required=False, allow_blank=True)
+    visibility = serializers.ChoiceField(
+        choices=['private', 'internal', 'public'],
+        default='private'
+    )
+    gitlab_token = serializers.CharField(required=False, write_only=True)

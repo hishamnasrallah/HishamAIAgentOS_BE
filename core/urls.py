@@ -30,6 +30,7 @@ urlpatterns = [
     
     # API v1
     path('api/v1/auth/', include('apps.authentication.urls')),
+    path('api/v1/organizations/', include('apps.organizations.urls')),  # Organizations (SaaS multi-tenancy)
     path('api/v1/agents/', include('apps.agents.urls')),
     path('api/v1/commands/', include('apps.commands.urls')),
     path('api/v1/workflows/', include('apps.workflows.urls')),

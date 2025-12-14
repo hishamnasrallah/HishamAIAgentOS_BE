@@ -20,6 +20,8 @@ class CompletionRequest:
     temperature: float = 0.7
     max_tokens: int = 1000
     system_prompt: Optional[str] = None
+    messages: Optional[List[Dict[str, str]]] = None  # For conversation history (role/content pairs)
+    conversation_id: Optional[str] = None  # AI provider's conversation/thread ID to reference existing conversation
     stop_sequences: Optional[List[str]] = None
     top_p: Optional[float] = None
     frequency_penalty: Optional[float] = None
@@ -89,6 +91,111 @@ class BaseAIAdapter(ABC):
         self.max_retries = 3
         self.retry_delay = 1.0
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+    
+    def extract_conversation_id(self, response: Any, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """
+        Extract primary conversation/thread/session ID from provider response.
+        
+        Override in subclasses for provider-specific extraction logic.
+        
+        Args:
+            response: Raw API response from provider
+            metadata: Optional CompletionResponse metadata
+            
+        Returns:
+            Primary conversation/thread/session ID if found, None otherwise
+        """
+        from ..services.conversation_manager import ConversationManager
+        return ConversationManager.extract_conversation_id(
+            self.platform_config,
+            response,
+            metadata
+        )
+    
+    def extract_all_identifiers(self, response: Any, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """
+        Extract ALL possible identifiers from provider response.
+        
+        Checks for thread_id, session_id, conversation_id, run_id, assistant_id, etc.
+        
+        Override in subclasses for provider-specific extraction logic.
+        
+        Args:
+            response: Raw API response from provider
+            metadata: Optional CompletionResponse metadata
+            
+        Returns:
+            Dictionary of all found identifiers: {identifier_type: identifier_value}
+        """
+        from ..services.conversation_manager import ConversationManager
+        return ConversationManager.extract_all_identifiers(
+            self.platform_config,
+            response,
+            metadata
+        )
+    
+    def extract_all_metadata(self, response: Any, completion_response: Optional['CompletionResponse'] = None) -> Dict[str, Any]:
+        """
+        Extract ALL metadata from provider response.
+        
+        Override in subclasses for provider-specific metadata extraction.
+        
+        Args:
+            response: Raw API response from provider
+            completion_response: Optional CompletionResponse object
+            
+        Returns:
+            Dictionary containing all available metadata
+        """
+        metadata = {}
+        
+        # Start with completion response metadata if available
+        if completion_response and completion_response.metadata:
+            metadata.update(completion_response.metadata)
+        
+        # Extract identifiers
+        identifiers = self.extract_all_identifiers(response, metadata)
+        if identifiers:
+            metadata['identifiers'] = identifiers
+        
+        # Try to extract additional metadata from response
+        if hasattr(response, '__dict__'):
+            response_dict = response.__dict__
+        elif isinstance(response, dict):
+            response_dict = response
+        else:
+            response_dict = {}
+        
+        # Extract common metadata fields
+        common_fields = [
+            'id', 'model', 'object', 'created', 'usage',
+            'choices', 'finish_reason', 'system_fingerprint',
+            'provider', 'request_id', 'response_id'
+        ]
+        
+        for field in common_fields:
+            if field in response_dict:
+                metadata[field] = response_dict[field]
+        
+        return metadata
+    
+    def get_provider_capabilities(self) -> Dict[str, Any]:
+        """
+        Get comprehensive provider capabilities information.
+        
+        Returns:
+            Dictionary with provider capabilities, notes, and metadata
+        """
+        return {
+            'platform_name': self.platform_name,
+            'conversation_strategy': self.platform_config.conversation_strategy,
+            'api_stateful': self.platform_config.api_stateful,
+            'sdk_session_support': self.platform_config.sdk_session_support,
+            'supported_identifiers': self.platform_config.supported_identifiers or [],
+            'metadata_fields': self.platform_config.metadata_fields or [],
+            'provider_notes': self.platform_config.provider_notes or '',
+            'cost_optimization_notes': self.platform_config.cost_optimization_notes or '',
+        }
     
     @abstractmethod
     async def generate_completion(

@@ -18,6 +18,7 @@ from apps.projects.models import (
     Task,
     ProjectMember
 )
+from apps.core.services.roles import RoleService
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -38,23 +39,23 @@ class PermissionEnforcementService:
     # Supports all system roles: admin, owner, product_owner, scrum_master, tech_lead, developer, qa, designer, analyst, manager, member, viewer
     # Plus any custom roles defined per project
     DEFAULT_PERMISSIONS = {
-        'who_can_create_stories': ['developer', 'product_owner', 'scrum_master', 'manager', 'member', 'admin', 'owner'],
-        'who_can_edit_stories': ['developer', 'product_owner', 'scrum_master', 'manager', 'member', 'admin', 'owner'],
-        'who_can_delete_stories': ['admin', 'owner', 'product_owner'],
-        'who_can_assign_stories': ['product_owner', 'scrum_master', 'tech_lead', 'manager', 'admin', 'owner'],
-        'who_can_change_status': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
-        'who_can_manage_sprints': ['admin', 'owner', 'scrum_master', 'product_owner'],
-        'who_can_view_analytics': ['product_owner', 'scrum_master', 'manager', 'tech_lead', 'member', 'admin', 'owner'],
-        'who_can_create_epics': ['product_owner', 'scrum_master', 'manager', 'admin', 'owner'],
-        'who_can_edit_epics': ['product_owner', 'scrum_master', 'manager', 'admin', 'owner'],
-        'who_can_delete_epics': ['admin', 'owner', 'product_owner'],
-        'who_can_create_issues': ['developer', 'qa', 'product_owner', 'scrum_master', 'manager', 'member', 'admin', 'owner'],
-        'who_can_create_tasks': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
-        'who_can_edit_tasks': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
-        'who_can_delete_tasks': ['developer', 'tech_lead', 'scrum_master', 'manager', 'admin', 'owner'],
-        'who_can_add_comments': ['developer', 'qa', 'designer', 'analyst', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
-        'who_can_add_attachments': ['developer', 'qa', 'designer', 'analyst', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'admin', 'owner'],
-        'who_can_manage_dependencies': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'admin', 'owner'],
+        'who_can_create_stories': ['developer', 'product_owner', 'scrum_master', 'manager', 'member', 'org_admin', 'owner'],
+        'who_can_edit_stories': ['developer', 'product_owner', 'scrum_master', 'manager', 'member', 'org_admin', 'owner'],
+        'who_can_delete_stories': ['org_admin', 'owner', 'product_owner'],
+        'who_can_assign_stories': ['product_owner', 'scrum_master', 'tech_lead', 'manager', 'org_admin', 'owner'],
+        'who_can_change_status': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'org_admin', 'owner'],
+        'who_can_manage_sprints': ['org_admin', 'owner', 'scrum_master', 'product_owner'],
+        'who_can_view_analytics': ['product_owner', 'scrum_master', 'manager', 'tech_lead', 'member', 'org_admin', 'owner'],
+        'who_can_create_epics': ['product_owner', 'scrum_master', 'manager', 'org_admin', 'owner'],
+        'who_can_edit_epics': ['product_owner', 'scrum_master', 'manager', 'org_admin', 'owner'],
+        'who_can_delete_epics': ['org_admin', 'owner', 'product_owner'],
+        'who_can_create_issues': ['developer', 'qa', 'product_owner', 'scrum_master', 'manager', 'member', 'org_admin', 'owner'],
+        'who_can_create_tasks': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'org_admin', 'owner'],
+        'who_can_edit_tasks': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'org_admin', 'owner'],
+        'who_can_delete_tasks': ['developer', 'tech_lead', 'scrum_master', 'manager', 'org_admin', 'owner'],
+        'who_can_add_comments': ['developer', 'qa', 'designer', 'analyst', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'org_admin', 'owner'],
+        'who_can_add_attachments': ['developer', 'qa', 'designer', 'analyst', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'member', 'org_admin', 'owner'],
+        'who_can_manage_dependencies': ['developer', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'org_admin', 'owner'],
     }
     
     def __init__(self, project: Optional[Project] = None):
@@ -73,15 +74,11 @@ class PermissionEnforcementService:
             settings = self.config.permission_settings
             if permission_key in settings:
                 allowed_roles = settings[permission_key]
-                # Validate that all roles exist (system roles or custom roles)
+                # Validate that all roles exist using RoleService
                 if isinstance(allowed_roles, list):
                     valid_roles = []
-                    system_roles = ProjectMember.SYSTEM_ROLES
-                    custom_roles = self.config.custom_roles if self.config.custom_roles else []
-                    all_valid_roles = system_roles + custom_roles
-                    
                     for role in allowed_roles:
-                        if role in all_valid_roles:
+                        if RoleService.is_valid_role(role, self.project):
                             valid_roles.append(role)
                         else:
                             logger.warning(f"Invalid role '{role}' in permission setting '{permission_key}' for project {self.project.id if self.project else 'None'}")
@@ -95,41 +92,13 @@ class PermissionEnforcementService:
         """
         Get user's roles in the project.
         
-        Returns: List of role strings (e.g., ['developer', 'scrum_master'])
+        Uses RoleService for unified role management.
+        Includes organization context for org-level roles.
+        
+        Returns: List of role strings (e.g., ['super_admin', 'org_admin', 'developer', 'scrum_master'])
         """
-        if not self.project:
-            return [user.role] if hasattr(user, 'role') else ['viewer']
-        
-        roles = []
-        
-        # System admins always have admin role
-        if user.role == 'admin' or user.is_superuser:
-            roles.append('admin')
-        
-        # Project owner always has owner role
-        if self.project.owner == user:
-            roles.append('owner')
-        
-        # Get project-specific roles from ProjectMember
-        try:
-            project_member = ProjectMember.objects.get(project=self.project, user=user)
-            # Add all roles from ProjectMember (can include custom roles)
-            for role in project_member.roles:
-                if role not in roles:
-                    roles.append(role)
-        except ProjectMember.DoesNotExist:
-            # Fallback: check if user is in members ManyToMany (backward compatibility)
-            if self.project.members.filter(id=user.id).exists():
-                roles.append('member')
-            else:
-                # Default to viewer if not a member
-                roles.append('viewer')
-        
-        # If no roles found, default to viewer
-        if not roles:
-            roles.append('viewer')
-        
-        return roles
+        organization = self.project.organization if self.project else None
+        return RoleService.get_user_roles(user, self.project, organization)
     
     def _check_role_permission(
         self,
@@ -139,52 +108,34 @@ class PermissionEnforcementService:
         """
         Check if user's roles in project match allowed roles.
         
+        Uses RoleService for unified role hierarchy checking.
+        
         Supports:
         - System roles: admin, owner, product_owner, scrum_master, tech_lead, developer, qa, designer, analyst, manager, member, viewer
         - Custom roles: defined per project in ProjectConfiguration.custom_roles
-        - Role hierarchy: admin > owner > other roles > viewer
+        - Role hierarchy: defined in RoleService.ROLE_HIERARCHY
         
-        Returns True if user has any of the allowed roles.
+        Returns True if user has any of the allowed roles (considering hierarchy).
         """
-        user_roles = self._get_user_roles_in_project(user)
-        
-        # Admin always has access
-        if 'admin' in user_roles:
+        # Super admins always have access - bypass all checks
+        if RoleService.is_super_admin(user):
             return True
         
-        # Owner has access if 'owner' is in allowed roles or if allowed roles include 'member'
-        if 'owner' in user_roles:
-            if 'owner' in allowed_roles or 'member' in allowed_roles:
-                return True
+        user_roles = self._get_user_roles_in_project(user)
+        
+        # Org admin always has access (legacy 'admin' is mapped to 'org_admin')
+        if 'org_admin' in user_roles:
+            return True
         
         # Check if any of the user's roles match allowed roles
         if any(role in allowed_roles for role in user_roles):
             return True
         
-        # Role hierarchy: members can do what viewers can do
-        if 'member' in user_roles and 'viewer' in allowed_roles:
-            return True
-        
-        # Check role hierarchy (higher roles inherit lower role permissions)
-        role_hierarchy = {
-            'admin': ['admin', 'owner', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'developer', 'qa', 'designer', 'analyst', 'member', 'viewer'],
-            'owner': ['owner', 'product_owner', 'scrum_master', 'tech_lead', 'manager', 'developer', 'qa', 'designer', 'analyst', 'member', 'viewer'],
-            'product_owner': ['product_owner', 'scrum_master', 'manager', 'member', 'viewer'],
-            'scrum_master': ['scrum_master', 'member', 'viewer'],
-            'tech_lead': ['tech_lead', 'developer', 'member', 'viewer'],
-            'manager': ['manager', 'member', 'viewer'],
-            'developer': ['developer', 'member', 'viewer'],
-            'qa': ['qa', 'member', 'viewer'],
-            'designer': ['designer', 'member', 'viewer'],
-            'analyst': ['analyst', 'member', 'viewer'],
-            'member': ['member', 'viewer'],
-            'viewer': ['viewer']
-        }
-        
-        # Check if any of the user's roles have hierarchy that includes allowed roles
+        # Check role hierarchy using RoleService
         for user_role in user_roles:
-            if user_role in role_hierarchy:
-                if any(allowed_role in role_hierarchy[user_role] for allowed_role in allowed_roles):
+            # Check if any allowed role is in the hierarchy of user_role
+            if user_role in RoleService.ROLE_HIERARCHY:
+                if any(allowed_role in RoleService.ROLE_HIERARCHY[user_role] for allowed_role in allowed_roles):
                     return True
         
         return False
@@ -232,6 +183,10 @@ class PermissionEnforcementService:
     
     def can_change_status(self, user: User, story: Optional[UserStory] = None) -> Tuple[bool, Optional[str]]:
         """Check if user can change story status."""
+        # Super admins always have access - bypass all checks including approval requirements
+        if RoleService.is_super_admin(user):
+            return True, None
+        
         allowed_roles = self._get_permission_setting('who_can_change_status')
         has_permission = self._check_role_permission(user, allowed_roles)
         
@@ -241,9 +196,11 @@ class PermissionEnforcementService:
         # Check if approval is required
         if self._requires_approval('status_change_to_done', story):
             # Check if user has approval (future: implement approval system)
-            # For now, just check if user is admin/owner/scrum_master/product_owner
+            # For now, just check if user is org_admin/owner/scrum_master/product_owner
             user_roles = self._get_user_roles_in_project(user)
-            if not any(role in ['admin', 'owner', 'scrum_master', 'product_owner'] for role in user_roles):
+            # Check if user has any of the required roles for sprint management
+            required_roles = ['org_admin', 'owner', 'scrum_master', 'product_owner']
+            if not any(role in required_roles for role in user_roles):
                 return False, "Status change to 'done' requires approval"
         
         return True, None
