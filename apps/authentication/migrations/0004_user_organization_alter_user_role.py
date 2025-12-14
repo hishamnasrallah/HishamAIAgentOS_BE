@@ -8,9 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("authentication", "0003_apikey_created_by_apikey_updated_at_and_more"),
-        # Note: organizations dependency removed temporarily to fix migration order
-        # The organization field will be added but may fail if organizations don't exist
-        # This will be fixed when organizations migrations are applied
+        ("organizations", "0001_initial"),  # Ensure organizations app is migrated first
     ]
 
     operations = [
