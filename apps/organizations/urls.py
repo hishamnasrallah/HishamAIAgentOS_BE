@@ -4,13 +4,30 @@ URL configuration for organizations app.
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import OrganizationViewSet, OrganizationMemberViewSet
+from .views import (
+    OrganizationViewSet,
+    OrganizationMemberViewSet,
+    SubscriptionPlanViewSet,
+    FeatureViewSet,
+    TierFeatureViewSet,
+    SubscriptionViewSet,
+    BillingRecordViewSet,
+    OrganizationUsageViewSet,
+)
 
 router = DefaultRouter()
 # Register organization members at root level (for direct access)
 router.register(r'organization-members', OrganizationMemberViewSet, basename='organization-member')
 # Also register with nested path for RESTful nested access
 router.register(r'(?P<organization_pk>[^/.]+)/members', OrganizationMemberViewSet, basename='organization-member-nested')
+
+# Register subscription-related viewsets
+router.register(r'subscription-plans', SubscriptionPlanViewSet, basename='subscription-plan')
+router.register(r'features', FeatureViewSet, basename='feature')
+router.register(r'tier-features', TierFeatureViewSet, basename='tier-feature')
+router.register(r'subscriptions', SubscriptionViewSet, basename='subscription')
+router.register(r'billing-records', BillingRecordViewSet, basename='billing-record')
+router.register(r'usage', OrganizationUsageViewSet, basename='organization-usage')
 
 urlpatterns = [
     # Organization CRUD endpoints (explicit to avoid double 'organizations' in path)

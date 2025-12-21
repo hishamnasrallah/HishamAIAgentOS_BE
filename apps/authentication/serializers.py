@@ -169,7 +169,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
                 if not organization.can_add_user():
                     current_count = organization.get_member_count()
                     raise serializers.ValidationError({
-                        'organization': f'Cannot create user. Organization has reached the maximum number of users ({organization.max_users}). Current: {current_count}'
+                        'organization': f'Cannot create user. Organization has reached the maximum number of users. Current: {current_count}'
                     })
         
         user = User.objects.create_user(**validated_data)

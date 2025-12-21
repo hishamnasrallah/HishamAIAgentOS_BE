@@ -185,11 +185,134 @@ class ProjectSerializer(serializers.ModelSerializer):
             self.fields['slug'].allow_blank = True
             self.fields['slug'].allow_null = True
     
+    def validate_name(self, value):
+        """Validate project name: uniqueness per organization, minimum length, and format."""
+        if not value or not value.strip():
+            raise serializers.ValidationError('Project name is required.')
+        
+        trimmed = value.strip()
+        
+        # Minimum length validation (at least 3 characters)
+        if len(trimmed) < 3:
+            raise serializers.ValidationError('Project name must be at least 3 characters long.')
+        
+        # Maximum length validation
+        if len(trimmed) > 200:
+            raise serializers.ValidationError('Project name must be less than 200 characters.')
+        
+        # Check if name contains at least one alphanumeric character
+        import re
+        if not re.search(r'[a-zA-Z0-9]', trimmed):
+            raise serializers.ValidationError('Project name must contain at least one letter or number.')
+        
+        # Check if name is only quotes with spaces
+        quotes_only = trimmed.replace('"', '').replace("'", '').replace(' ', '')
+        if not quotes_only:
+            raise serializers.ValidationError('Project name cannot consist only of quotes and spaces.')
+        
+        # Check for uniqueness within organization
+        organization = None
+        if self.instance:
+            # When updating, get organization from instance
+            organization = getattr(self.instance, 'organization', None)
+            # If organization is not loaded, try to get it from the project
+            if not organization and hasattr(self.instance, 'pk'):
+                try:
+                    from apps.projects.models import Project
+                    project = Project.objects.select_related('organization').get(pk=self.instance.pk)
+                    organization = project.organization
+                except Project.DoesNotExist:
+                    pass
+        elif 'organization' in self.initial_data:
+            from apps.organizations.models import Organization
+            try:
+                organization = Organization.objects.get(id=self.initial_data['organization'])
+            except (Organization.DoesNotExist, ValueError):
+                pass
+        
+        if organization:
+            # Check for duplicate names (case-insensitive) within the same organization
+            existing_projects = Project.objects.filter(organization=organization, name__iexact=trimmed)
+            # Exclude current project if updating
+            if self.instance:
+                existing_projects = existing_projects.exclude(id=self.instance.id)
+            
+            if existing_projects.exists():
+                raise serializers.ValidationError(
+                    f'A project with the name "{trimmed}" already exists in this organization. Please choose a different name.'
+                )
+        # If organization is None, skip uniqueness check (might be a data inconsistency issue)
+        
+        return trimmed
+    
+    def validate_description(self, value):
+        """Validate description: max length 5000, not JSON format."""
+        if not value:
+            return value
+        
+        # Check maximum length
+        if len(value) > 5000:
+            raise serializers.ValidationError('Description must be less than 5000 characters.')
+        
+        # Check if description is JSON format (starts with { or [ and looks like JSON)
+        stripped = value.strip()
+        if stripped:
+            # Check if it starts with JSON-like characters
+            if (stripped.startswith('{') and stripped.endswith('}')) or (stripped.startswith('[') and stripped.endswith(']')):
+                # Try to parse as JSON to confirm
+                import json
+                try:
+                    json.loads(stripped)
+                    raise serializers.ValidationError('Description cannot be in JSON format. Please provide a plain text description.')
+                except (json.JSONDecodeError, ValueError):
+                    # Not valid JSON, allow it
+                    pass
+        
+        return value
+    
     def validate(self, attrs):
-        """Override validate to ensure slug is not required during validation."""
+        """Override validate to ensure slug is not required during validation and validate dates."""
         # Remove slug from validation if it's empty/None - will be generated in create()
         if 'slug' in attrs and (not attrs.get('slug') or attrs.get('slug') == ''):
             attrs.pop('slug', None)
+        
+        # Validate start_date and end_date are required on create
+        if not self.instance:  # Creating new project
+            start_date = attrs.get('start_date')
+            end_date = attrs.get('end_date')
+            
+            # Check if start_date is missing or empty
+            if not start_date or (isinstance(start_date, str) and start_date.strip() == ''):
+                raise serializers.ValidationError({
+                    'start_date': 'Start date is required when creating a new project.'
+                })
+            
+            # Check if end_date is missing or empty
+            if not end_date or (isinstance(end_date, str) and end_date.strip() == ''):
+                raise serializers.ValidationError({
+                    'end_date': 'End date is required when creating a new project.'
+                })
+            
+            # Update attrs with cleaned values
+            attrs['start_date'] = start_date
+            attrs['end_date'] = end_date
+            
+            # Validate end_date is after start_date
+            start_date = attrs.get('start_date')
+            end_date = attrs.get('end_date')
+            if start_date and end_date and end_date < start_date:
+                raise serializers.ValidationError({
+                    'end_date': 'End date must be after start date.'
+                })
+        else:  # Updating existing project
+            # If dates are being updated, validate end_date is after start_date
+            start_date = attrs.get('start_date', self.instance.start_date)
+            end_date = attrs.get('end_date', self.instance.end_date)
+            if start_date and end_date and end_date < start_date:
+                raise serializers.ValidationError({
+                    'end_date': 'End date must be after start date.'
+                })
+        
         return attrs
     
     def create(self, validated_data):
@@ -217,11 +340,13 @@ class ProjectSerializer(serializers.ModelSerializer):
                         'organization': f'Cannot create project. Organization subscription has expired.'
                     })
                 
-                # Check project limit
+                # Check project limit using FeatureService
                 if not organization.can_add_project():
+                    from apps.organizations.services import FeatureService
                     current_count = organization.get_project_count()
+                    max_projects = FeatureService.get_feature_value(organization, 'projects.max_count', default=0)
                     raise serializers.ValidationError({
-                        'organization': f'Cannot create project. Organization has reached the maximum number of projects ({organization.max_projects}). Current: {current_count}'
+                        'organization': f'Cannot create project. Organization has reached the maximum number of projects ({max_projects}). Current: {current_count}'
                     })
         
         # Auto-generate slug from name if not provided
@@ -543,6 +668,93 @@ class StorySerializer(serializers.ModelSerializer):
         """Validate component name."""
         return validate_component_name(value)
     
+    def validate_number(self, value):
+        """Validate story number uniqueness within project."""
+        if not value or value.strip() == '':
+            return value  # Empty is OK, will be auto-generated
+        
+        # Get project from instance (update) or initial_data (create)
+        project = None
+        if self.instance:
+            project = self.instance.project
+        elif 'project' in self.initial_data:
+            from apps.projects.models import Project
+            try:
+                project = Project.objects.get(id=self.initial_data['project'])
+            except (Project.DoesNotExist, ValueError):
+                pass
+        
+        if not project:
+            return value  # Can't validate without project
+        
+        # Check for duplicates within the same project
+        existing_stories = Story.objects.filter(project=project, number=value.strip())
+        
+        # Exclude current story if updating
+        if self.instance:
+            existing_stories = existing_stories.exclude(id=self.instance.id)
+        
+        if existing_stories.exists():
+            raise serializers.ValidationError(
+                f"Story number '{value.strip()}' already exists in this project. Please use a different number or leave it empty for auto-generation."
+            )
+        
+        return value.strip()
+    
+    def validate(self, data):
+        """Validate story data including required fields and sprint status."""
+        # Validate description and acceptance_criteria are required for new stories
+        description = data.get('description')
+        acceptance_criteria = data.get('acceptance_criteria')
+        
+        # Get project to check if this is create or update
+        project = None
+        if self.instance:
+            project = self.instance.project
+        elif 'project' in self.initial_data:
+            from apps.projects.models import Project
+            try:
+                project = Project.objects.get(id=self.initial_data['project'])
+            except (Project.DoesNotExist, ValueError):
+                pass
+        
+        # For new stories, description and acceptance_criteria are required
+        if not self.instance:
+            # Check description
+            desc_value = description if description is not None else (self.initial_data.get('description') if hasattr(self, 'initial_data') else None)
+            if not desc_value or (isinstance(desc_value, str) and desc_value.strip() in ['', '<p></p>', '<p><br></p>']):
+                raise serializers.ValidationError({
+                    'description': 'Description is required.'
+                })
+            
+            # Check acceptance_criteria
+            ac_value = acceptance_criteria if acceptance_criteria is not None else (self.initial_data.get('acceptance_criteria') if hasattr(self, 'initial_data') else None)
+            if not ac_value or (isinstance(ac_value, str) and ac_value.strip() in ['', '<p></p>', '<p><br></p>']):
+                raise serializers.ValidationError({
+                    'acceptance_criteria': 'Acceptance criteria is required.'
+                })
+        
+        # Validate sprint is not completed
+        sprint = data.get('sprint')
+        if sprint:
+            if hasattr(sprint, 'status') and sprint.status == 'completed':
+                raise serializers.ValidationError({
+                    'sprint': 'Cannot add story to a completed sprint. Please select an active or planned sprint.'
+                })
+            elif isinstance(sprint, str):
+                # Sprint ID provided, need to fetch sprint
+                from apps.projects.models import Sprint
+                try:
+                    sprint_obj = Sprint.objects.get(id=sprint)
+                    if sprint_obj.status == 'completed':
+                        raise serializers.ValidationError({
+                            'sprint': 'Cannot add story to a completed sprint. Please select an active or planned sprint.'
+                        })
+                except Sprint.DoesNotExist:
+                    pass  # Will be caught by foreign key validation
+        
+        return data
+    
     def update(self, instance, validated_data):
         """Override update to ensure all fields are saved, including null values, and validate."""
         import logging
@@ -655,6 +867,9 @@ class StorySerializer(serializers.ModelSerializer):
                 value = validated_data[field]
                 if field == 'component' and value is None:
                     value = ''
+                elif field in array_fields and value is None:
+                    # Ensure array fields default to empty list, not None
+                    value = []
                 setattr(instance, field, value)
                 logger.info(f"[StorySerializer] Set {field} = {value} (from validated_data)")
             elif field in raw_data:
@@ -682,6 +897,13 @@ class StorySerializer(serializers.ModelSerializer):
                         # Component is CharField
                         setattr(instance, field, str(raw_value) if raw_value else '')
                         logger.info(f"[StorySerializer] Set {field} = {raw_value} (from raw_data, not in validated_data)")
+                    elif field in ['tags', 'labels']:
+                        # Array fields (JSONField) - ensure it's a list
+                        if isinstance(raw_value, list):
+                            setattr(instance, field, raw_value)
+                        else:
+                            setattr(instance, field, [])
+                        logger.info(f"[StorySerializer] Set {field} = {getattr(instance, field)} (from raw_data, not in validated_data)")
         
         instance.save()
         logger.info(f"[StorySerializer] Story saved. Story points: {instance.story_points}, Assigned to: {instance.assigned_to}, Epic: {instance.epic}, Sprint: {instance.sprint}")
@@ -723,6 +945,19 @@ class StorySerializer(serializers.ModelSerializer):
                     # Field was in request but not validated - add it
                     validated_data[field] = raw_data[field] if raw_data[field] not in [None, '', 'null'] else None
                     logger.info(f"[StorySerializer] Added {field} = {validated_data[field]} to validated_data")
+            
+            # Ensure tags and labels are included (JSONField arrays) - default to empty list if not provided
+            if 'tags' in raw_data and 'tags' not in validated_data:
+                validated_data['tags'] = raw_data['tags'] if isinstance(raw_data['tags'], list) else []
+                logger.info(f"[StorySerializer] Added tags = {validated_data['tags']} to validated_data")
+            elif 'tags' not in validated_data:
+                validated_data['tags'] = []
+                
+            if 'labels' in raw_data and 'labels' not in validated_data:
+                validated_data['labels'] = raw_data['labels'] if isinstance(raw_data['labels'], list) else []
+                logger.info(f"[StorySerializer] Added labels = {validated_data['labels']} to validated_data")
+            elif 'labels' not in validated_data:
+                validated_data['labels'] = []
         
         # Validate using project validation rules
         project = validated_data.get('project')

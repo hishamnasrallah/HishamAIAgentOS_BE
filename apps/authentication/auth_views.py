@@ -40,18 +40,38 @@ class UserRegistrationView(generics.CreateAPIView):
     
     @extend_schema(
         summary="Register new user",
-        description="Create a new user account with email and password",
+        description="Create a new user account with email and password. Automatically creates an organization and trial subscription.",
         tags=["Authentication"]
     )
     def post(self, request, *args, **kwargs):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        from .serializers import UserSerializer
+        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         
-        return Response({
+        # Generate tokens for automatic login
+        refresh = RefreshToken.for_user(user)
+        access = refresh.access_token
+        
+        # Get organization ID from serializer if available
+        organization_id = getattr(serializer, 'organization_id', None)
+        if not organization_id and user.organization:
+            organization_id = str(user.organization.id)
+        
+        response_data = {
             "user": UserSerializer(user).data,
-            "message": "User created successfully. Please login to get access tokens."
-        }, status=status.HTTP_201_CREATED)
+            "access": str(access),
+            "refresh": str(refresh),
+            "message": "User and organization created successfully. You are now logged in."
+        }
+        
+        # Include organization ID in response for frontend to set as current
+        if organization_id:
+            response_data["organization_id"] = organization_id
+        
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
 
 @extend_schema(

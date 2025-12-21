@@ -130,11 +130,13 @@ class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError('Cannot create user. Organization subscription has expired.')
             
-            # Check user limit
+            # Check user limit using FeatureService
             if not organization.can_add_user():
-                current_count = organization.get_member_count()
+                from apps.organizations.services import FeatureService
                 from rest_framework.exceptions import ValidationError
-                raise ValidationError(f'Cannot create user. Organization has reached the maximum number of users ({organization.max_users}). Current: {current_count}')
+                current_count = organization.get_member_count()
+                max_users = FeatureService.get_feature_value(organization, 'users.max_count', default=0)
+                raise ValidationError(f'Cannot create user. Organization has reached the maximum number of users ({max_users}). Current: {current_count}')
         
         # Save the user (organization will be set in serializer.create() if not already set)
         serializer.save()
@@ -711,15 +713,15 @@ class APIKeyViewSet(viewsets.ModelViewSet):
             # Check subscription active
             OrganizationStatusService.require_subscription_active(organization, user=user)
             
-            # Check API key limit based on tier
-            from apps.organizations.services import SubscriptionService
+            # Check API key limit based on subscription tier using FeatureService
+            from apps.organizations.services import FeatureService
             current_count = APIKey.objects.filter(user=user, is_active=True).count()
-            tier = organization.subscription_tier or 'trial'
-            max_api_keys = SubscriptionService.get_limit_for_feature(tier, 'max_api_keys')
+            max_api_keys = FeatureService.get_feature_value(organization, 'integrations.api_keys', default=0)
             
             # Super admins can bypass API key limits
-            if not RoleService.is_super_admin(user) and max_api_keys is not None and current_count >= max_api_keys:
+            if not RoleService.is_super_admin(user) and max_api_keys is not None and max_api_keys > 0 and current_count >= max_api_keys:
                 from rest_framework.exceptions import ValidationError
+                tier = organization.subscription_tier or 'trial'
                 raise ValidationError(
                     f'You have reached your API key limit ({max_api_keys} for {tier.title()} tier). '
                     f'Current: {current_count}/{max_api_keys}. Please upgrade your subscription or deactivate existing keys.'

@@ -138,10 +138,58 @@ class ChatConsumer(AsyncWebsocketConsumer):
         
         logger.info(f"[ChatConsumer] Processing message: '{content[:50]}...' (length: {len(content)})")
         
+        # Get user and organization for usage tracking
+        user = self.scope['user']
+        
+        # Get organization for usage limit checking
+        organization = None
+        if user and user.is_authenticated:
+            from apps.core.services.roles import RoleService
+            try:
+                # Use sync_to_async for service call
+                organization = await database_sync_to_async(RoleService.get_user_organization)(user)
+            except Exception as e:
+                logger.warning(f"[ChatConsumer] Failed to get organization: {e}")
+        
+        # Check usage limit before saving message (if organization exists)
+        if organization:
+            try:
+                from apps.organizations.services import OrganizationStatusService, SubscriptionService
+                from apps.core.services.roles import RoleService
+                
+                # Validate organization status and subscription (sync calls wrapped in async)
+                await database_sync_to_async(
+                    OrganizationStatusService.require_active_organization
+                )(organization, user=user)
+                await database_sync_to_async(
+                    OrganizationStatusService.require_subscription_active
+                )(organization, user=user)
+                
+                # Check chat message usage limit
+                await database_sync_to_async(
+                    SubscriptionService.check_usage_limit
+                )(organization, 'chat_messages', user=user)
+            except Exception as e:
+                logger.warning(f"[ChatConsumer] Usage limit check failed: {e}")
+                await self.send_error(f'Cannot send message: {str(e)}')
+                self.processing_message = False
+                return
+        
         # Save user message
         try:
             user_message = await self.save_message('user', content)
             logger.info(f"[ChatConsumer] User message saved with ID: {user_message.id}")
+            
+            # Increment usage count after successful message save (if organization exists)
+            if organization:
+                try:
+                    from apps.organizations.services import SubscriptionService
+                    await database_sync_to_async(
+                        SubscriptionService.increment_usage
+                    )(organization, 'chat_messages')
+                except Exception as e:
+                    logger.warning(f"[ChatConsumer] Failed to increment usage count: {e}")
+                    # Don't fail the message send if usage tracking fails
             
             # Extract code context from the new message (non-blocking, best effort)
             # Do this after getting conversation to avoid async issues

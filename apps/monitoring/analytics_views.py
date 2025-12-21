@@ -15,6 +15,7 @@ from decimal import Decimal
 from apps.integrations.models import PlatformUsage, AIPlatform
 from apps.agents.models import AgentExecution
 from apps.core.services.roles import RoleService
+from apps.organizations.services import FeatureService
 
 
 class AnalyticsViewSet(viewsets.ViewSet):
@@ -22,8 +23,22 @@ class AnalyticsViewSet(viewsets.ViewSet):
     
     permission_classes = [IsAuthenticated]
     
+    def get_organization(self, request):
+        """Get user's organization."""
+        return RoleService.get_user_organization(request.user)
+    
     @action(detail=False, methods=['get'])
     def usage_summary(self, request):
+        """Get usage summary - requires analytics.basic or analytics.advanced."""
+        organization = self.get_organization(request)
+        if organization:
+            # Basic analytics is enough for usage summary
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.basic', 
+                user=request.user, 
+                raise_exception=True
+            )
         """
         Get usage summary (tokens, requests, cost) for different time periods.
         
@@ -116,6 +131,16 @@ class AnalyticsViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['get'])
     def cost_timeline(self, request):
+        """Get cost timeline - requires analytics.advanced for detailed timeline."""
+        organization = self.get_organization(request)
+        if organization:
+            # Advanced analytics required for timeline views
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.advanced', 
+                user=request.user, 
+                raise_exception=True
+            )
         """
         Get cost timeline data for charts.
         
@@ -196,6 +221,16 @@ class AnalyticsViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['get'])
     def token_usage(self, request):
+        """Get token usage - requires analytics.advanced for detailed breakdowns."""
+        organization = self.get_organization(request)
+        if organization:
+            # Advanced analytics required for detailed token usage
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.advanced', 
+                user=request.user, 
+                raise_exception=True
+            )
         """
         Get token usage breakdown.
         
@@ -279,6 +314,16 @@ class AnalyticsViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['get'])
     def top_users(self, request):
+        """Get top users - requires analytics.advanced and admin access."""
+        organization = self.get_organization(request)
+        if organization:
+            # Advanced analytics required for top users
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.advanced', 
+                user=request.user, 
+                raise_exception=True
+            )
         """
         Get top users by usage (admin only).
         

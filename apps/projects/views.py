@@ -26,7 +26,8 @@ from apps.projects.models import (
 )
 # Alias for backward compatibility
 Story = UserStory
-from apps.organizations.services import OrganizationStatusService, SubscriptionService
+from apps.organizations.services import OrganizationStatusService, SubscriptionService, FeatureService
+from apps.core.services.roles import RoleService
 from apps.projects.serializers import (
     ProjectSerializer,
     SprintSerializer,
@@ -340,11 +341,25 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError('Cannot create project. Organization subscription has expired.')
             
-            # Validate project limit
+            # Validate project limit using FeatureService
             if not organization.can_add_project():
-                current_count = organization.get_project_count()
+                from apps.organizations.services import FeatureService
                 from rest_framework.exceptions import ValidationError
-                raise ValidationError(f'Cannot create project. Organization has reached the maximum number of projects ({organization.max_projects}). Current: {current_count}')
+                current_count = organization.get_project_count()
+                max_projects = FeatureService.get_feature_value(organization, 'projects.max_count', default=0)
+                tier = organization.subscription_tier or 'trial'
+                if max_projects is None or max_projects <= 0:
+                    # This shouldn't happen if can_add_project is correct, but add safety check
+                    pass  # Unlimited projects
+                else:
+                    raise ValidationError(
+                        f'Cannot create project. Organization has reached the maximum number of projects ({max_projects} for {tier} tier). '
+                        f'Current: {current_count}. Please upgrade your subscription to create more projects.'
+                    )
+            
+            # Explicitly check projects.create feature availability
+            from apps.organizations.services import FeatureService
+            FeatureService.is_feature_available(organization, 'projects.create', user=user, raise_exception=True)
         
         serializer.save(owner=user, organization=organization)
     
@@ -618,148 +633,167 @@ class ProjectViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='members/(?P<user_id>[^/.]+)/statistics')
     def member_statistics(self, request, pk=None, user_id=None):
         """Get statistics for a specific member."""
-        from apps.authentication.models import User
-        from django.db.models import Count, Sum, Q
-        from datetime import datetime, timedelta
-        
-        project = self.get_object()
+        import logging
+        logger = logging.getLogger(__name__)
         
         try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            return Response(
-                {'error': 'User not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Verify user is a member or owner
-        if project.owner != user and not project.members.filter(id=user.id).exists():
-            return Response(
-                {'error': 'User is not a member of this project'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        # Get time range (default: last 30 days)
-        days = int(request.query_params.get('days', 30))
-        since_date = timezone.now() - timedelta(days=days)
-        
-        # Stories assigned
-        stories_assigned = UserStory.objects.filter(project=project, assigned_to=user).count()
-        stories_completed = UserStory.objects.filter(project=project, assigned_to=user, status='done').count()
-        
-        # Tasks assigned
-        tasks_assigned = Task.objects.filter(story__project=project, assigned_to=user).count()
-        tasks_completed = Task.objects.filter(story__project=project, assigned_to=user, status='done').count()
-        
-        # Bugs assigned
-        bugs_assigned = Bug.objects.filter(project=project, assigned_to=user).count()
-        bugs_resolved = Bug.objects.filter(project=project, assigned_to=user, status='resolved').count()
-        
-        # Issues assigned
-        issues_assigned = Issue.objects.filter(project=project, assigned_to=user).count()
-        issues_resolved = Issue.objects.filter(project=project, assigned_to=user, status='resolved').count()
-        
-        # Time logs
-        time_logs = TimeLog.objects.filter(
-            Q(story__project=project) | Q(task__story__project=project),
-            user=user,
-            created_at__gte=since_date
-        )
-        # Sum duration_minutes and convert to hours
-        total_minutes = time_logs.aggregate(total=Sum('duration_minutes'))['total'] or 0
-        total_hours = total_minutes / 60.0 if total_minutes else 0
-        time_logs_count = time_logs.count()
-        
-        # Recent activity (last 10)
-        from apps.projects.models import Activity
-        recent_activities_qs = Activity.objects.filter(
-            project=project,
-            user=user
-        ).order_by('-created_at')
-        
-        # If no activities found with project filter, try to find activities through related work items
-        if not recent_activities_qs.exists():
-            # Get activities through stories, tasks, bugs, issues
-            story_ids = list(UserStory.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
-            task_ids = list(Task.objects.filter(story__project=project, assigned_to=user).values_list('id', flat=True))
-            bug_ids = list(Bug.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
-            issue_ids = list(Issue.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
+            from apps.authentication.models import User
+            from django.db.models import Count, Sum, Q
+            from datetime import datetime, timedelta
             
-            from django.contrib.contenttypes.models import ContentType
-            story_ct = ContentType.objects.get_for_model(UserStory)
-            task_ct = ContentType.objects.get_for_model(Task)
-            bug_ct = ContentType.objects.get_for_model(Bug)
-            issue_ct = ContentType.objects.get_for_model(Issue)
+            project = self.get_object()
             
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            except Exception as e:
+                logger.error(f"Error fetching user {user_id}: {str(e)}")
+                return Response(
+                    {'error': f'Error fetching user: {str(e)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Verify user is a member or owner
+            if project.owner != user and not project.members.filter(id=user.id).exists():
+                return Response(
+                    {'error': 'User is not a member of this project'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Get time range (default: last 30 days)
+            try:
+                days = int(request.query_params.get('days', 30))
+            except (ValueError, TypeError):
+                days = 30
+            since_date = timezone.now() - timedelta(days=days)
+            
+            # Stories assigned
+            stories_assigned = UserStory.objects.filter(project=project, assigned_to=user).count()
+            stories_completed = UserStory.objects.filter(project=project, assigned_to=user, status='done').count()
+            
+            # Tasks assigned
+            tasks_assigned = Task.objects.filter(story__project=project, assigned_to=user).count()
+            tasks_completed = Task.objects.filter(story__project=project, assigned_to=user, status='done').count()
+            
+            # Bugs assigned
+            bugs_assigned = Bug.objects.filter(project=project, assigned_to=user).count()
+            bugs_resolved = Bug.objects.filter(project=project, assigned_to=user, status='resolved').count()
+            
+            # Issues assigned
+            issues_assigned = Issue.objects.filter(project=project, assigned_to=user).count()
+            issues_resolved = Issue.objects.filter(project=project, assigned_to=user, status='resolved').count()
+            
+            # Time logs
+            time_logs = TimeLog.objects.filter(
+                Q(story__project=project) | Q(task__story__project=project),
+                user=user,
+                created_at__gte=since_date
+            )
+            # Sum duration_minutes and convert to hours
+            total_minutes = time_logs.aggregate(total=Sum('duration_minutes'))['total'] or 0
+            total_hours = total_minutes / 60.0 if total_minutes else 0
+            time_logs_count = time_logs.count()
+            
+            # Recent activity (last 10)
+            from apps.projects.models import Activity
             recent_activities_qs = Activity.objects.filter(
-                Q(project=project, user=user) |
-                Q(content_type=story_ct, object_id__in=story_ids, user=user) |
-                Q(content_type=task_ct, object_id__in=task_ids, user=user) |
-                Q(content_type=bug_ct, object_id__in=bug_ids, user=user) |
-                Q(content_type=issue_ct, object_id__in=issue_ids, user=user)
+                project=project,
+                user=user
             ).order_by('-created_at')
-        
-        # Get last 10 activities
-        recent_activities = list(recent_activities_qs[:10])
-        
-        from apps.projects.serializers import ActivitySerializer
-        activity_serializer = ActivitySerializer(recent_activities, many=True)
-        
-        # Comments
-        from apps.projects.models import StoryComment
-        comments_count = StoryComment.objects.filter(
-            story__project=project,
-            created_by=user,
-            created_at__gte=since_date
-        ).count()
-        
-        # Epics owned
-        epics_owned = Epic.objects.filter(project=project, owner=user).count()
-        
-        return Response({
-            'user_id': str(user.id),
-            'user': {
-                'id': str(user.id),
-                'email': user.email,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'username': user.username,
-            },
-            'statistics': {
-                'stories': {
-                    'assigned': stories_assigned,
-                    'completed': stories_completed,
-                    'completion_rate': round((stories_completed / stories_assigned * 100) if stories_assigned > 0 else 0, 1)
+            
+            # If no activities found with project filter, try to find activities through related work items
+            if not recent_activities_qs.exists():
+                # Get activities through stories, tasks, bugs, issues
+                story_ids = list(UserStory.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
+                task_ids = list(Task.objects.filter(story__project=project, assigned_to=user).values_list('id', flat=True))
+                bug_ids = list(Bug.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
+                issue_ids = list(Issue.objects.filter(project=project, assigned_to=user).values_list('id', flat=True))
+                
+                from django.contrib.contenttypes.models import ContentType
+                story_ct = ContentType.objects.get_for_model(UserStory)
+                task_ct = ContentType.objects.get_for_model(Task)
+                bug_ct = ContentType.objects.get_for_model(Bug)
+                issue_ct = ContentType.objects.get_for_model(Issue)
+                
+                recent_activities_qs = Activity.objects.filter(
+                    Q(project=project, user=user) |
+                    Q(content_type=story_ct, object_id__in=story_ids, user=user) |
+                    Q(content_type=task_ct, object_id__in=task_ids, user=user) |
+                    Q(content_type=bug_ct, object_id__in=bug_ids, user=user) |
+                    Q(content_type=issue_ct, object_id__in=issue_ids, user=user)
+            ).order_by('-created_at')
+            
+            # Get last 10 activities
+            recent_activities = list(recent_activities_qs[:10])
+            
+            from apps.projects.serializers import ActivitySerializer
+            activity_serializer = ActivitySerializer(recent_activities, many=True)
+            
+            # Comments
+            from apps.projects.models import StoryComment
+            comments_count = StoryComment.objects.filter(
+                story__project=project,
+                created_by=user,
+                created_at__gte=since_date
+            ).count()
+            
+            # Epics owned
+            epics_owned = Epic.objects.filter(project=project, owner=user).count()
+            
+            return Response({
+                'user_id': str(user.id),
+                'user': {
+                    'id': str(user.id),
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'username': user.username,
                 },
-                'tasks': {
-                    'assigned': tasks_assigned,
-                    'completed': tasks_completed,
-                    'completion_rate': round((tasks_completed / tasks_assigned * 100) if tasks_assigned > 0 else 0, 1)
+                'statistics': {
+                    'stories': {
+                        'assigned': stories_assigned,
+                        'completed': stories_completed,
+                        'completion_rate': round((stories_completed / stories_assigned * 100) if stories_assigned > 0 else 0, 1)
+                    },
+                    'tasks': {
+                        'assigned': tasks_assigned,
+                        'completed': tasks_completed,
+                        'completion_rate': round((tasks_completed / tasks_assigned * 100) if tasks_assigned > 0 else 0, 1)
+                    },
+                    'bugs': {
+                        'assigned': bugs_assigned,
+                        'resolved': bugs_resolved,
+                        'resolution_rate': round((bugs_resolved / bugs_assigned * 100) if bugs_assigned > 0 else 0, 1)
+                    },
+                    'issues': {
+                        'assigned': issues_assigned,
+                        'resolved': issues_resolved,
+                        'resolution_rate': round((issues_resolved / issues_assigned * 100) if issues_assigned > 0 else 0, 1)
+                    },
+                    'time_tracking': {
+                        'total_hours': round(total_hours, 2),
+                        'time_logs_count': time_logs_count,
+                        'average_per_log': round(total_hours / time_logs_count, 2) if time_logs_count > 0 else 0
+                    },
+                    'engagement': {
+                        'comments': comments_count,
+                        'epics_owned': epics_owned,
+                        'activities': len(recent_activities)
+                    }
                 },
-                'bugs': {
-                    'assigned': bugs_assigned,
-                    'resolved': bugs_resolved,
-                    'resolution_rate': round((bugs_resolved / bugs_assigned * 100) if bugs_assigned > 0 else 0, 1)
-                },
-                'issues': {
-                    'assigned': issues_assigned,
-                    'resolved': issues_resolved,
-                    'resolution_rate': round((issues_resolved / issues_assigned * 100) if issues_assigned > 0 else 0, 1)
-                },
-                'time_tracking': {
-                    'total_hours': round(total_hours, 2),
-                    'time_logs_count': time_logs_count,
-                    'average_per_log': round(total_hours / time_logs_count, 2) if time_logs_count > 0 else 0
-                },
-                'engagement': {
-                    'comments': comments_count,
-                    'epics_owned': epics_owned,
-                    'activities': recent_activities.count()
-                }
-            },
-            'recent_activities': activity_serializer.data,
-            'period_days': days
-        }, status=status.HTTP_200_OK)
+                'recent_activities': activity_serializer.data,
+                'period_days': days
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.exception(f"Error in member_statistics for project {pk}, user {user_id}: {str(e)}")
+            return Response(
+                {'error': f'An error occurred while fetching statistics: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @extend_schema(
         description="Get all tags used in projects accessible to the user",
@@ -1204,7 +1238,16 @@ class StoryViewSet(viewsets.ModelViewSet):
             except (ValueError, TypeError):
                 pass  # Invalid date format, ignore
         
-        return queryset.select_related('project', 'project__owner', 'sprint', 'epic', 'assigned_to', 'created_by').prefetch_related('project__members')
+        # Order by story number ascending (nulls last), then by created_at
+        # Simple string sort - handles alphanumeric naturally (STORY-1, STORY-2, STORY-10, etc.)
+        # For proper numeric sorting, we'd need regex which isn't portable
+        # This will sort alphabetically which works reasonably well for prefixed numbers
+        queryset = queryset.select_related('project', 'project__owner', 'sprint', 'epic', 'assigned_to', 'created_by').prefetch_related('project__members')
+        
+        return queryset.order_by(
+            models.F('number').asc(nulls_last=True),
+            'created_at'
+        )
     
     def perform_create(self, serializer):
         """Set the current user as the story creator when creating."""
@@ -2564,8 +2607,23 @@ class ProjectConfigurationViewSet(viewsets.ModelViewSet):
         serializer.save(updated_by=self.request.user)
     
     def perform_update(self, serializer):
-        """Set updated_by when updating."""
-        serializer.save(updated_by=self.request.user)
+        """Set updated_by when updating with custom fields feature check."""
+        user = self.request.user
+        config = serializer.instance
+        project = config.project
+        organization = project.organization
+        
+        # Check if custom_fields are being updated
+        if 'custom_fields' in serializer.validated_data:
+            # Check if custom fields feature is available
+            FeatureService.is_feature_available(
+                organization, 
+                'projects.custom_fields', 
+                user=user, 
+                raise_exception=True
+            )
+        
+        serializer.save(updated_by=user)
     
     @extend_schema(
         description="Get configuration by project ID",
@@ -4285,8 +4343,21 @@ class StoryArchiveViewSet(viewsets.ModelViewSet):
         return queryset.select_related('story', 'archived_by').order_by('-archived_at')
     
     def perform_create(self, serializer):
-        """Set archived_by on archive creation."""
-        serializer.save(archived_by=self.request.user)
+        """Set archived_by on archive creation with feature check."""
+        user = self.request.user
+        story = serializer.validated_data.get('story')
+        
+        if story and story.project:
+            organization = story.project.organization
+            # Check if archive feature is available
+            FeatureService.is_feature_available(
+                organization, 
+                'projects.archive', 
+                user=user, 
+                raise_exception=True
+            )
+        
+        serializer.save(archived_by=user)
     
     @extend_schema(
         description="Restore an archived story",
@@ -4994,13 +5065,33 @@ class BoardTemplateViewSet(viewsets.ModelViewSet):
             return BoardTemplate.objects.filter(scope='global').order_by('is_default', 'name')
 
     def perform_create(self, serializer):
+        """Create board template with feature check."""
         project_id = self.kwargs.get('project_pk')
+        user = self.request.user
+        
         if project_id:
             project = Project.objects.get(pk=project_id)
             self.check_object_permissions(self.request, project)
-            serializer.save(project=project, created_by=self.request.user)
+            # Check if templates feature is available
+            organization = project.organization
+            FeatureService.is_feature_available(
+                organization, 
+                'projects.templates', 
+                user=user, 
+                raise_exception=True
+            )
+            serializer.save(project=project, created_by=user)
         else:
-            serializer.save(scope='global', created_by=self.request.user)
+            # Global templates - need to check user's organization
+            organization = RoleService.get_user_organization(user)
+            if organization:
+                FeatureService.is_feature_available(
+                    organization, 
+                    'projects.templates', 
+                    user=user, 
+                    raise_exception=True
+                )
+            serializer.save(scope='global', created_by=user)
 
     @extend_schema(
         description="Apply a board template to project configuration",
@@ -5095,6 +5186,10 @@ class StatisticsViewSet(viewsets.ViewSet):
     
     from apps.projects.services.statistics_service import StatisticsService
     
+    def get_organization(self):
+        """Get user's organization."""
+        return RoleService.get_user_organization(self.request.user)
+    
     def get_project(self):
         """Get and validate project from URL or query parameters."""
         # Try to get project ID from URL kwargs first (nested routes)
@@ -5131,8 +5226,16 @@ class StatisticsViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], url_path='story-type-distribution')
     def story_type_distribution(self, request, project_pk=None):
-        """Get story type distribution."""
+        """Get story type distribution - requires analytics.basic."""
         project = self.get_project()
+        organization = self.get_organization()
+        if organization:
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.basic', 
+                user=request.user, 
+                raise_exception=True
+            )
         from apps.projects.services.statistics_service import StatisticsService
         service = StatisticsService()
         data = service.get_story_type_distribution(str(project.id))
@@ -5144,8 +5247,16 @@ class StatisticsViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], url_path='component-distribution')
     def component_distribution(self, request, project_pk=None):
-        """Get component distribution."""
+        """Get component distribution - requires analytics.basic."""
         project = self.get_project()
+        organization = self.get_organization()
+        if organization:
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.basic', 
+                user=request.user, 
+                raise_exception=True
+            )
         from apps.projects.services.statistics_service import StatisticsService
         service = StatisticsService()
         data = service.get_component_distribution(str(project.id))
@@ -5160,8 +5271,16 @@ class StatisticsViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], url_path='story-type-trends')
     def story_type_trends(self, request, project_pk=None):
-        """Get story type trends."""
+        """Get story type trends - requires analytics.advanced."""
         project = self.get_project()
+        organization = self.get_organization()
+        if organization:
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.advanced', 
+                user=request.user, 
+                raise_exception=True
+            )
         from apps.projects.services.statistics_service import StatisticsService
         service = StatisticsService()
         days = int(request.query_params.get('days', 30))
@@ -5194,8 +5313,16 @@ class StatisticsViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], url_path='cycle-time')
     def cycle_time(self, request, project_pk=None):
-        """Get cycle time analytics."""
+        """Get cycle time analytics - requires analytics.advanced."""
         project = self.get_project()
+        organization = self.get_organization()
+        if organization:
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.advanced', 
+                user=request.user, 
+                raise_exception=True
+            )
         days = int(request.query_params.get('days', 90))
         data = asyncio.run(analytics.calculate_cycle_time(str(project.id), days))
         return Response(data)
@@ -5267,7 +5394,15 @@ class StatisticsViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], url_path='time-reports')
     def time_reports(self, request, project_pk=None):
-        """Get time reports."""
+        """Get time reports - requires analytics.basic."""
+        organization = self.get_organization()
+        if organization:
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.basic', 
+                user=request.user, 
+                raise_exception=True
+            )
         project = self.get_project()
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
@@ -5298,7 +5433,15 @@ class StatisticsViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], url_path='burndown-chart')
     def burndown_chart(self, request, project_pk=None):
-        """Get burndown chart data."""
+        """Get burndown chart data - requires analytics.advanced."""
+        organization = self.get_organization()
+        if organization:
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.advanced', 
+                user=request.user, 
+                raise_exception=True
+            )
         sprint_id = request.query_params.get('sprint_id')
         if not sprint_id:
             return Response({'error': 'sprint_id is required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -5317,7 +5460,15 @@ class StatisticsViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], url_path='velocity-tracking')
     def velocity_tracking(self, request, project_pk=None):
-        """Get velocity tracking."""
+        """Get velocity tracking - requires analytics.advanced."""
+        organization = self.get_organization()
+        if organization:
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.advanced', 
+                user=request.user, 
+                raise_exception=True
+            )
         project = self.get_project()
         num_sprints = int(request.query_params.get('num_sprints', 5))
         data = ReportsService.get_velocity_tracking(str(project.id), num_sprints)
@@ -5384,7 +5535,39 @@ class ProjectMemberViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Set added_by to current user when creating a project member."""
-        serializer.save(added_by=self.request.user)
+        user = self.request.user
+        project = serializer.validated_data.get('project')
+        
+        # Check if custom roles feature is required (only if custom roles are being used)
+        if project:
+            organization = RoleService.get_user_organization(user)
+            if organization:
+                # Get project configuration to check for custom roles
+                try:
+                    from apps.projects.models import ProjectConfiguration
+                    config = ProjectConfiguration.objects.filter(project=project).first()
+                    
+                    # Get all available roles (system + custom)
+                    available_roles = RoleService.get_all_available_roles(project)
+                    system_roles = RoleService.get_all_system_roles()
+                    custom_roles = [r for r in available_roles if r not in system_roles]
+                    
+                    # If custom roles exist and are being used, check feature
+                    roles = serializer.validated_data.get('roles', [])
+                    if custom_roles and any(role in custom_roles for role in roles):
+                        FeatureService.is_feature_available(
+                            organization, 
+                            'users.roles', 
+                            user=user, 
+                            raise_exception=True
+                        )
+                except Exception:
+                    # If we can't check, allow but log warning
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Could not verify custom roles feature for project {project.id}")
+        
+        serializer.save(added_by=user)
     
     @extend_schema(
         description="Get all members for a specific project",
@@ -5743,8 +5926,21 @@ class RepositoryExportViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-created_at')
     
     def perform_create(self, serializer):
-        """Set created_by to current user."""
-        serializer.save(created_by=self.request.user)
+        """Set created_by to current user with import/export feature check."""
+        user = self.request.user
+        generated_project = serializer.validated_data.get('generated_project')
+        
+        if generated_project and generated_project.project:
+            organization = generated_project.project.organization
+            # Check if import/export feature is available
+            FeatureService.is_feature_available(
+                organization, 
+                'projects.import_export', 
+                user=user, 
+                raise_exception=True
+            )
+        
+        serializer.save(created_by=user)
     
     @extend_schema(
         description="Export project as ZIP archive",
@@ -5764,6 +5960,22 @@ class RepositoryExportViewSet(viewsets.ModelViewSet):
             generated_project = GeneratedProject.objects.get(id=generated_project_id)
             # Check permissions
             self.check_object_permissions(request, generated_project.project)
+            
+            # Check if import/export feature is available
+            organization = generated_project.project.organization
+            FeatureService.is_feature_available(
+                organization, 
+                'projects.import_export', 
+                user=request.user, 
+                raise_exception=True
+            )
+            # Also check analytics export feature for report exports
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.export_reports', 
+                user=request.user, 
+                raise_exception=True
+            )
         except GeneratedProject.DoesNotExist:
             return Response(
                 {'error': 'Generated project not found'},
@@ -5829,6 +6041,22 @@ class RepositoryExportViewSet(viewsets.ModelViewSet):
         try:
             generated_project = GeneratedProject.objects.get(id=generated_project_id)
             self.check_object_permissions(request, generated_project.project)
+            
+            # Check if import/export feature is available
+            organization = generated_project.project.organization
+            FeatureService.is_feature_available(
+                organization, 
+                'projects.import_export', 
+                user=request.user, 
+                raise_exception=True
+            )
+            # Also check analytics export feature for report exports
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.export_reports', 
+                user=request.user, 
+                raise_exception=True
+            )
         except GeneratedProject.DoesNotExist:
             return Response(
                 {'error': 'Generated project not found'},
@@ -5895,6 +6123,7 @@ class RepositoryExportViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='export-gitlab')
     def export_gitlab(self, request):
         """Export a generated project to GitLab."""
+        # Feature checks will be done after getting generated_project
         serializer = GitLabExportRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -5908,6 +6137,22 @@ class RepositoryExportViewSet(viewsets.ModelViewSet):
         try:
             generated_project = GeneratedProject.objects.get(id=generated_project_id)
             self.check_object_permissions(request, generated_project.project)
+            
+            # Check if import/export feature is available
+            organization = generated_project.project.organization
+            FeatureService.is_feature_available(
+                organization, 
+                'projects.import_export', 
+                user=request.user, 
+                raise_exception=True
+            )
+            # Also check analytics export feature for report exports
+            FeatureService.is_feature_available(
+                organization, 
+                'analytics.export_reports', 
+                user=request.user, 
+                raise_exception=True
+            )
         except GeneratedProject.DoesNotExist:
             return Response(
                 {'error': 'Generated project not found'},

@@ -5,6 +5,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from .models import (
     GitHubIntegration,
@@ -29,6 +30,8 @@ from .services import (
     EmailService,
     WebhookService
 )
+from apps.core.services.roles import RoleService
+from apps.organizations.services import FeatureService
 
 
 class GitHubIntegrationViewSet(viewsets.ModelViewSet):
@@ -49,8 +52,45 @@ class GitHubIntegrationViewSet(viewsets.ModelViewSet):
         return GitHubIntegration.objects.filter(user=self.request.user)
     
     def perform_create(self, serializer):
-        """Create a GitHub integration."""
-        serializer.save(user=self.request.user)
+        """Create a GitHub integration with integration limit and feature checks."""
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        if organization:
+            # Check if GitHub integration feature is available
+            FeatureService.is_feature_available(
+                organization, 
+                'integrations.github', 
+                user=user, 
+                raise_exception=True
+            )
+            
+            # Check integration limit
+            max_integrations = FeatureService.get_feature_value(organization, 'integrations.max_count', default=0)
+            
+            if max_integrations is not None and max_integrations > 0:
+                # Count all integrations for organization members
+                from apps.organizations.models import OrganizationMember
+                org_member_ids = OrganizationMember.objects.filter(
+                    organization=organization
+                ).values_list('user_id', flat=True)
+                
+                # Count all integrations across all types for organization
+                github_count = GitHubIntegration.objects.filter(user_id__in=org_member_ids).count()
+                slack_count = SlackIntegration.objects.filter(user_id__in=org_member_ids).count()
+                jira_count = JiraIntegration.objects.filter(user_id__in=org_member_ids).count()
+                webhook_count = WebhookEndpoint.objects.filter(user_id__in=org_member_ids).count()
+                current_count = github_count + slack_count + jira_count + webhook_count
+                
+                if current_count >= max_integrations:
+                    tier_display = organization.subscription_tier.title()
+                    raise ValidationError(
+                        f'Integration limit reached ({current_count}/{max_integrations} for {tier_display} tier). '
+                        f'Please upgrade your subscription or remove existing integrations.'
+                    )
+        
+        serializer.save(user=user)
     
     @action(detail=True, methods=['post'])
     def verify(self, request, pk=None):
@@ -95,8 +135,45 @@ class SlackIntegrationViewSet(viewsets.ModelViewSet):
         return SlackIntegration.objects.filter(user=self.request.user)
     
     def perform_create(self, serializer):
-        """Create a Slack integration."""
-        serializer.save(user=self.request.user)
+        """Create a Slack integration with integration limit and feature checks."""
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        if organization:
+            # Check if Slack integration feature is available
+            FeatureService.is_feature_available(
+                organization, 
+                'integrations.slack', 
+                user=user, 
+                raise_exception=True
+            )
+            
+            # Check integration limit
+            max_integrations = FeatureService.get_feature_value(organization, 'integrations.max_count', default=0)
+            
+            if max_integrations is not None and max_integrations > 0:
+                # Count all integrations for organization members
+                from apps.organizations.models import OrganizationMember
+                org_member_ids = OrganizationMember.objects.filter(
+                    organization=organization
+                ).values_list('user_id', flat=True)
+                
+                # Count all integrations across all types for organization
+                github_count = GitHubIntegration.objects.filter(user_id__in=org_member_ids).count()
+                slack_count = SlackIntegration.objects.filter(user_id__in=org_member_ids).count()
+                jira_count = JiraIntegration.objects.filter(user_id__in=org_member_ids).count()
+                webhook_count = WebhookEndpoint.objects.filter(user_id__in=org_member_ids).count()
+                current_count = github_count + slack_count + jira_count + webhook_count
+                
+                if current_count >= max_integrations:
+                    tier_display = organization.subscription_tier.title()
+                    raise ValidationError(
+                        f'Integration limit reached ({current_count}/{max_integrations} for {tier_display} tier). '
+                        f'Please upgrade your subscription or remove existing integrations.'
+                    )
+        
+        serializer.save(user=user)
     
     @action(detail=True, methods=['post'])
     def verify(self, request, pk=None):
@@ -141,8 +218,45 @@ class JiraIntegrationViewSet(viewsets.ModelViewSet):
         return JiraIntegration.objects.filter(user=self.request.user)
     
     def perform_create(self, serializer):
-        """Create a Jira integration."""
-        serializer.save(user=self.request.user)
+        """Create a Jira integration with integration limit and feature checks."""
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        if organization:
+            # Check if Jira integration feature is available
+            FeatureService.is_feature_available(
+                organization, 
+                'integrations.jira', 
+                user=user, 
+                raise_exception=True
+            )
+            
+            # Check integration limit
+            max_integrations = FeatureService.get_feature_value(organization, 'integrations.max_count', default=0)
+            
+            if max_integrations is not None and max_integrations > 0:
+                # Count all integrations for organization members
+                from apps.organizations.models import OrganizationMember
+                org_member_ids = OrganizationMember.objects.filter(
+                    organization=organization
+                ).values_list('user_id', flat=True)
+                
+                # Count all integrations across all types for organization
+                github_count = GitHubIntegration.objects.filter(user_id__in=org_member_ids).count()
+                slack_count = SlackIntegration.objects.filter(user_id__in=org_member_ids).count()
+                jira_count = JiraIntegration.objects.filter(user_id__in=org_member_ids).count()
+                webhook_count = WebhookEndpoint.objects.filter(user_id__in=org_member_ids).count()
+                current_count = github_count + slack_count + jira_count + webhook_count
+                
+                if current_count >= max_integrations:
+                    tier_display = organization.subscription_tier.title()
+                    raise ValidationError(
+                        f'Integration limit reached ({current_count}/{max_integrations} for {tier_display} tier). '
+                        f'Please upgrade your subscription or remove existing integrations.'
+                    )
+        
+        serializer.save(user=user)
     
     @action(detail=True, methods=['post'])
     def verify(self, request, pk=None):
@@ -260,8 +374,45 @@ class WebhookEndpointViewSet(viewsets.ModelViewSet):
         return WebhookEndpoint.objects.filter(user=self.request.user)
     
     def perform_create(self, serializer):
-        """Create a webhook endpoint."""
-        serializer.save(user=self.request.user)
+        """Create a webhook endpoint with integration limit and feature checks."""
+        user = self.request.user
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        if organization:
+            # Check if webhooks feature is available
+            FeatureService.is_feature_available(
+                organization, 
+                'integrations.webhooks', 
+                user=user, 
+                raise_exception=True
+            )
+            
+            # Check integration limit
+            max_integrations = FeatureService.get_feature_value(organization, 'integrations.max_count', default=0)
+            
+            if max_integrations is not None and max_integrations > 0:
+                # Count all integrations for organization members
+                from apps.organizations.models import OrganizationMember
+                org_member_ids = OrganizationMember.objects.filter(
+                    organization=organization
+                ).values_list('user_id', flat=True)
+                
+                # Count all integrations across all types for organization
+                github_count = GitHubIntegration.objects.filter(user_id__in=org_member_ids).count()
+                slack_count = SlackIntegration.objects.filter(user_id__in=org_member_ids).count()
+                jira_count = JiraIntegration.objects.filter(user_id__in=org_member_ids).count()
+                webhook_count = WebhookEndpoint.objects.filter(user_id__in=org_member_ids).count()
+                current_count = github_count + slack_count + jira_count + webhook_count
+                
+                if current_count >= max_integrations:
+                    tier_display = organization.subscription_tier.title()
+                    raise ValidationError(
+                        f'Integration limit reached ({current_count}/{max_integrations} for {tier_display} tier). '
+                        f'Please upgrade your subscription or remove existing integrations.'
+                    )
+        
+        serializer.save(user=user)
     
     @action(detail=True, methods=['post'])
     def test(self, request, pk=None):

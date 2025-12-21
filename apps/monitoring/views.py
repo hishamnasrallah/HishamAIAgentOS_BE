@@ -5,6 +5,7 @@ Views for monitoring app.
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from .models import SystemMetric, HealthCheck, AuditLog, AuditConfiguration
 from .serializers import (
     SystemMetricSerializer, 
@@ -12,6 +13,8 @@ from .serializers import (
     AuditLogSerializer,
     AuditConfigurationSerializer
 )
+from apps.core.services.roles import RoleService
+from apps.organizations.services import FeatureService
 
 
 class SystemMetricViewSet(viewsets.ReadOnlyModelViewSet):
@@ -42,6 +45,32 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ['timestamp']
     
     def get_queryset(self):
+        """Check if user has access to audit logs based on subscription feature."""
+        user = self.request.user
+        
+        # Super admins can always access
+        if RoleService.is_super_admin(user):
+            return AuditLog.objects.select_related('user')
+        
+        # Get user's organization
+        organization = RoleService.get_user_organization(user)
+        if not organization:
+            return AuditLog.objects.none()
+        
+        # Check if audit log feature is available
+        if not FeatureService.is_feature_available(
+            organization, 
+            'users.audit_log', 
+            user=user, 
+            raise_exception=False
+        ):
+            raise PermissionDenied(
+                'Audit log access is not available for your subscription tier. '
+                'Please upgrade your subscription to access audit logs.'
+            )
+        
+        # Filter by organization members if organization-scoped
+        # For now, return all logs (can be refined to organization-scoped if needed)
         return AuditLog.objects.select_related('user')
 
 

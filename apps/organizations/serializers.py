@@ -3,7 +3,16 @@ Serializers for organizations app.
 """
 
 from rest_framework import serializers
-from .models import Organization, OrganizationMember
+from .models import (
+    Organization, 
+    OrganizationMember,
+    SubscriptionPlan,
+    Feature,
+    TierFeature,
+    Subscription,
+    BillingRecord,
+    OrganizationUsage
+)
 from apps.core.services.roles import RoleService
 
 
@@ -40,7 +49,19 @@ class OrganizationSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'member_count', 'project_count']
+        read_only_fields = [
+            'id', 
+            'created_at', 
+            'updated_at', 
+            'member_count', 
+            'project_count',
+            'status',  # Derived from subscription, not editable by users
+            'subscription_tier',  # Derived from subscription, not editable by users
+            'max_users',  # Derived from subscription features, not editable by users
+            'max_projects',  # Derived from subscription features, not editable by users
+            'subscription_start_date',  # Set by subscription, not editable by users
+            'subscription_end_date',  # Set by subscription, not editable by users
+        ]
     
     def get_member_count(self, obj):
         """Get number of members in organization."""
@@ -148,5 +169,200 @@ class OrganizationMemberUpdateSerializer(serializers.Serializer):
     """Serializer for updating an organization member's role."""
     
     role = serializers.ChoiceField(choices=OrganizationMember.ORG_ROLES)
+
+
+class SubscriptionPlanSerializer(serializers.ModelSerializer):
+    """Serializer for SubscriptionPlan model."""
+    
+    class Meta:
+        model = SubscriptionPlan
+        fields = [
+            'id',
+            'tier_code',
+            'tier_name',
+            'description',
+            'monthly_price',
+            'annual_price',
+            'is_active',
+            'display_order',
+            'metadata',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class FeatureSerializer(serializers.ModelSerializer):
+    """Serializer for Feature model."""
+    
+    class Meta:
+        model = Feature
+        fields = [
+            'id',
+            'code',
+            'name',
+            'category',
+            'description',
+            'feature_type',
+            'default_value',
+            'is_active',
+            'is_deprecated',
+            'deprecated_at',
+            'metadata',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class TierFeatureSerializer(serializers.ModelSerializer):
+    """Serializer for TierFeature model."""
+    
+    feature = FeatureSerializer(read_only=True)
+    feature_id = serializers.UUIDField(write_only=True, required=False)
+    
+    class Meta:
+        model = TierFeature
+        fields = [
+            'id',
+            'tier_code',
+            'feature',
+            'feature_id',
+            'value',
+            'is_enabled',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class SubscriptionSerializer(serializers.ModelSerializer):
+    """Serializer for Subscription model."""
+    
+    plan = SubscriptionPlanSerializer(read_only=True)
+    plan_id = serializers.UUIDField(write_only=True, required=False)
+    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    is_active_status = serializers.SerializerMethodField()
+    is_expired_status = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Subscription
+        fields = [
+            'id',
+            'organization',
+            'organization_name',
+            'plan',
+            'plan_id',
+            'tier_code',
+            'status',
+            'billing_cycle',
+            'started_at',
+            'current_period_start',
+            'current_period_end',
+            'cancelled_at',
+            'cancel_at_period_end',
+            'stripe_subscription_id',
+            'stripe_customer_id',
+            'metadata',
+            'is_active_status',
+            'is_expired_status',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_is_active_status(self, obj):
+        """Check if subscription is currently active."""
+        return obj.is_active()
+    
+    def get_is_expired_status(self, obj):
+        """Check if subscription has expired."""
+        return obj.is_expired()
+
+
+class BillingRecordSerializer(serializers.ModelSerializer):
+    """Serializer for BillingRecord model."""
+    
+    subscription = SubscriptionSerializer(read_only=True)
+    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    
+    class Meta:
+        model = BillingRecord
+        fields = [
+            'id',
+            'subscription',
+            'organization',
+            'organization_name',
+            'amount',
+            'currency',
+            'status',
+            'billing_type',
+            'stripe_invoice_id',
+            'stripe_payment_intent_id',
+            'paid_at',
+            'due_date',
+            'metadata',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class OrganizationUsageSerializer(serializers.ModelSerializer):
+    """Serializer for OrganizationUsage model."""
+    
+    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    usage_percentage = serializers.SerializerMethodField()
+    is_over_limit = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = OrganizationUsage
+        fields = [
+            'id',
+            'organization',
+            'organization_name',
+            'usage_type',
+            'month',
+            'year',
+            'count',
+            'limit_value',
+            'warning_threshold',
+            'warning_sent',
+            'usage_percentage',
+            'is_over_limit',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_usage_percentage(self, obj):
+        """Calculate usage percentage if limit exists."""
+        if obj.limit_value and obj.limit_value > 0:
+            return min(100, int((obj.count / obj.limit_value) * 100))
+        return None
+    
+    def get_is_over_limit(self, obj):
+        """Check if usage is over limit."""
+        if obj.limit_value is None:
+            return False
+        return obj.count > obj.limit_value
+
+
+class FeatureAvailabilitySerializer(serializers.Serializer):
+    """Serializer for feature availability check."""
+    
+    feature_code = serializers.CharField()
+    is_available = serializers.BooleanField()
+    limit = serializers.IntegerField(allow_null=True)
+    current_usage = serializers.IntegerField(allow_null=True)
+    tier_code = serializers.CharField()
+    feature_name = serializers.CharField(allow_null=True)
+
+
+class TierFeaturesListSerializer(serializers.Serializer):
+    """Serializer for listing all features for a tier."""
+    
+    tier_code = serializers.CharField()
+    features = serializers.DictField()
 
 

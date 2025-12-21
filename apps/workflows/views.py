@@ -28,7 +28,7 @@ from apps.workflows.serializers import (
 )
 from apps.workflows.services.workflow_executor import workflow_executor
 from apps.core.services.roles import RoleService
-from apps.organizations.services import OrganizationStatusService, SubscriptionService
+from apps.organizations.services import OrganizationStatusService, SubscriptionService, FeatureService
 
 
 class WorkflowViewSet(viewsets.ModelViewSet):
@@ -106,7 +106,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             OrganizationStatusService.require_subscription_active(organization, user=user)
             
             # Check if tier allows custom workflow creation (Professional+ only)
-            SubscriptionService.check_tier_feature(organization, 'allows_custom_workflows', user=user)
+            FeatureService.is_feature_available(organization, 'ai.custom_workflows', user=user, raise_exception=True)
         
         serializer.save(created_by=user)
     

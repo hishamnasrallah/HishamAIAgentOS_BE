@@ -24,7 +24,7 @@ class Project(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=200, db_index=True, blank=True)  # No longer unique globally, unique per organization. Auto-generated from name if not provided.
-    description = models.TextField(blank=True, default='')
+    description = models.TextField(blank=True, default='', help_text="Project description (max 5000 characters, plain text only)")
     
     # Organization relationship (for SaaS multi-tenancy)
     # Projects belong to an organization

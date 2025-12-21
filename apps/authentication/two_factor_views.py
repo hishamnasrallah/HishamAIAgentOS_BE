@@ -8,6 +8,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema
 from django.contrib.auth import get_user_model
+from apps.organizations.services import FeatureService
+from apps.core.services.roles import RoleService
 
 from .two_factor import (
     setup_two_factor,
@@ -44,6 +46,16 @@ def two_factor_setup(request):
     Returns QR code and backup codes. User must verify with a token before enabling.
     """
     user = request.user
+    
+    # Check if 2FA feature is available (typically always available, but check for consistency)
+    organization = RoleService.get_user_organization(user)
+    if organization:
+        FeatureService.is_feature_available(
+            organization, 
+            'security.2fa', 
+            user=user, 
+            raise_exception=True
+        )
     
     if user.two_factor_enabled:
         return Response(

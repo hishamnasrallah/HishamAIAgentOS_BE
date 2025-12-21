@@ -88,7 +88,8 @@ class AgentViewSet(viewsets.ModelViewSet):
             OrganizationStatusService.require_subscription_active(organization, user=user)
             
             # Check if tier allows custom agent creation (Professional+ only)
-            SubscriptionService.check_tier_feature(organization, 'allows_custom_agents', user=user)
+            from apps.organizations.services import FeatureService
+            FeatureService.is_feature_available(organization, 'ai.custom_agents', user=user, raise_exception=True)
         
         serializer.save(created_by=user)
     

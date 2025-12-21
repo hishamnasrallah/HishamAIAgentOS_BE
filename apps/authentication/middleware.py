@@ -7,6 +7,8 @@ from django.contrib.auth import get_user_model
 from rest_framework.authentication import BaseAuthentication
 from rest_framework import exceptions
 from .models import APIKey
+from apps.core.services.roles import RoleService
+from apps.organizations.services import FeatureService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,24 @@ class APIKeyAuthentication(BaseAuthentication):
             # Check if key is expired
             if key_obj.is_expired():
                 raise exceptions.AuthenticationFailed('API key has expired.')
+            
+            # Check if API access is enabled for the organization
+            user = key_obj.user
+            organization = RoleService.get_user_organization(user)
+            
+            if organization:
+                # Super admins bypass this check
+                if not RoleService.is_super_admin(user):
+                    if not FeatureService.is_feature_available(
+                        organization, 
+                        'ai.api_access', 
+                        user=user, 
+                        raise_exception=False
+                    ):
+                        raise exceptions.AuthenticationFailed(
+                            'API access is not available for your subscription tier. '
+                            'Please upgrade your subscription to use API keys.'
+                        )
             
             # Update last used timestamp
             key_obj.update_last_used()
